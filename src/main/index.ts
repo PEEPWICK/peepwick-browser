@@ -1,0 +1,141 @@
+import './early'
+import { app, dialog, Menu } from 'electron'
+import { existsSync } from 'node:fs'
+import { resolve } from 'node:path'
+import { pathToFileURL } from 'node:url'
+import { hostOf } from '@shared/url'
+import { activeDownloadCount, cancelAllDownloads, flushDownloads, loadDownloads } from './downloads'
+import { bus } from './events'
+import { initExtensions } from './extensions'
+import { loadFocus } from './focus'
+import { startHarness } from './harness'
+import { closeHistory, openHistory } from './history'
+import { installIPC } from './ipc'
+import { lifecycle } from './lifecycle'
+import { flushPermissions, loadPermissions } from './permissions'
+import { tabForContents } from './registry'
+import { browsingSession, configureUISession, registerSchemes, setUserAgent, uiSession } from './sessions'
+import { flushSettings, loadSettings, settings, t } from './settings'
+import { ensureShield, installCosmeticHandlers } from './shield'
+import { flushStats, loadStats } from './stats'
+import { certificateAllowed } from './tab'
+import { startUpdater } from './updater'
+import { anyWindow, createWindow, markQuitting, restoreSession, wireBroadcasts } from './windows'
+
+process.env['CHROME_DESKTOP'] = 'peepwick-browser.desktop'
+registerSchemes()
+setUserAgent()
+
+function urlsFrom(argv: string[]): string[] {
+  const urls: string[] = []
+  for (const arg of argv.slice(1)) {
+    if (arg.startsWith('-')) continue
+    if (/^(https?|file):\/\//i.test(arg)) urls.push(arg)
+    else if (/\.(html?|xhtml|svg|pdf)$/i.test(arg) && existsSync(arg)) urls.push(pathToFileURL(resolve(arg)).href)
+  }
+  return urls
+}
+
+async function boot(): Promise<void> {
+  Menu.setApplicationMenu(null)
+  loadSettings()
+  loadStats()
+  loadFocus()
+  loadPermissions()
+  loadDownloads()
+  openHistory()
+  configureUISession()
+  installIPC()
+  wireBroadcasts()
+  installCosmeticHandlers((event) => tabForContents(event.sender.id)?.pageURL() ?? null)
+
+  const browsing = browsingSession()
+  // Start blocking before the first page loads, but never hold the window back for long.
+  await Promise.race([ensureShield(), new Promise((r) => setTimeout(r, 2500))])
+  let level = settings().shieldLevel
+  bus.on('settings', () => {
+    if (settings().shieldLevel !== level) {
+      level = settings().shieldLevel
+      void ensureShield()
+    }
+  })
+
+  try {
+    await initExtensions(browsing, uiSession())
+  } catch (error) {
+    console.error('[extensions] could not start', error)
+  }
+
+  restoreSession(urlsFrom(process.argv))
+  startUpdater()
+  startHarness()
+}
+
+if (!app.requestSingleInstanceLock()) {
+  app.quit()
+} else {
+  app.on('second-instance', (_event, argv) => {
+    const urls = urlsFrom(argv)
+    const win = anyWindow()
+    if (!win || win.base.isDestroyed() || win.incognito) {
+      createWindow({ incognito: false, urls })
+      return
+    }
+    for (const url of urls) win.openTab({ url })
+    if (win.base.isMinimized()) win.base.restore()
+    win.base.show()
+    win.base.focus()
+  })
+
+  app.on('certificate-error', (event, _wc, url, _error, _certificate, callback) => {
+    if (certificateAllowed(hostOf(url))) {
+      event.preventDefault()
+      callback(true)
+    } else {
+      callback(false)
+    }
+  })
+
+  app.on('web-contents-created', (_event, contents) => {
+    contents.on('will-attach-webview', (event) => event.preventDefault())
+  })
+
+  app.on('window-all-closed', () => app.quit())
+
+  // Logout and shutdown send SIGTERM: quit cleanly without blocking on a dialog.
+  for (const signal of ['SIGTERM', 'SIGINT', 'SIGHUP'] as const) {
+    process.on(signal, () => {
+      lifecycle.forceQuit = true
+      app.quit()
+    })
+  }
+
+  app.on('before-quit', (event) => {
+    const active = activeDownloadCount()
+    if (active > 0 && !lifecycle.forceQuit) {
+      const choice = dialog.showMessageBoxSync({
+        type: 'question',
+        buttons: [t('dialog.quit'), t('common.cancel')],
+        defaultId: 1,
+        cancelId: 1,
+        message: t('dialog.quitDownloads', { n: active }),
+      })
+      if (choice !== 0) {
+        event.preventDefault()
+        return
+      }
+    }
+    if (active > 0) cancelAllDownloads()
+    markQuitting()
+  })
+
+  app.on('will-quit', () => {
+    flushSettings()
+    flushStats()
+    flushPermissions()
+    flushDownloads()
+    closeHistory()
+  })
+
+  void app.whenReady().then(boot)
+}

@@ -1,0 +1,186 @@
+/* PEEPWICK brand tokens (brand book §09–11): seven colours, three type families,
+   an 8 px grid, 4 px maximum radius, no shadows, 200–400 ms ease-out motion. */
+
+:root {
+  --gece: #0b0b0c;
+  --beyaz: #ffffff;
+  --grafit: #1d1e20;
+  --antrasit: #3a3b3f;
+  --tas: #8e8981;
+  --sis: #e7e6e2;
+  --fitil: #f2a93b;
+  --kirik-beyaz: #f4f3f0;
+
+  --font-sans: 'Archivo Variable', Archivo, Arial, sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, monospace;
+  --font-serif: 'Newsreader Variable', Newsreader, Georgia, serif;
+
+  --s1: 4px;
+  --s2: 8px;
+  --s3: 12px;
+  --s4: 16px;
+  --s5: 24px;
+  --s6: 32px;
+  --s7: 48px;
+  --s8: 64px;
+  --s9: 96px;
+
+  --radius: 4px;
+  --ease: cubic-bezier(0.16, 0.84, 0.3, 1);
+  --fast: 200ms;
+  --slow: 320ms;
+
+  --sidebar: 264px;
+  --rail: 56px;
+  --toolbar: 48px;
+  --gutter: 8px;
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --frame: var(--gece);
+  --surface: var(--grafit);
+  --surface-hover: color-mix(in srgb, var(--antrasit) 55%, var(--grafit));
+  --raised: var(--grafit);
+  --line: var(--grafit);
+  --line-strong: var(--antrasit);
+  --text: var(--kirik-beyaz);
+  --text-2: var(--tas);
+  --page: var(--gece);
+  --accent: var(--fitil);
+  --on-accent: var(--gece);
+  --focus: var(--fitil);
+  --scrim: color-mix(in srgb, var(--gece) 72%, transparent);
+  --dot: var(--grafit);
+}
+
+:root[data-theme='light'] {
+  color-scheme: light;
+  --frame: var(--sis);
+  --surface: var(--beyaz);
+  --surface-hover: color-mix(in srgb, var(--sis) 55%, var(--beyaz));
+  --raised: var(--beyaz);
+  --line: color-mix(in srgb, var(--tas) 28%, var(--sis));
+  --line-strong: color-mix(in srgb, var(--tas) 55%, var(--sis));
+  --text: var(--gece);
+  --text-2: var(--antrasit);
+  --page: var(--beyaz);
+  --accent: var(--fitil);
+  --on-accent: var(--gece);
+  --focus: var(--gece);
+  --scrim: color-mix(in srgb, var(--sis) 70%, transparent);
+  --dot: var(--sis);
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  /* Transparent: when the UI is raised over the pages, the pages show through. */
+  background: transparent;
+}
+
+body {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--text);
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+  cursor: default;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+  color: inherit;
+}
+
+button {
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: default;
+}
+
+:focus {
+  outline: none;
+}
+
+:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 1px;
+}
+
+/* Text fields sit inside their own framed containers. */
+input[type='text']:focus-visible,
+input:not([type]):focus-visible,
+input[type='search']:focus-visible {
+  outline: none;
+}
+
+::selection {
+  background: var(--fitil);
+  color: var(--gece);
+}
+
+.mono {
+  font-family: var(--font-mono);
+}
+
+/* Plex Mono label: uppercase, +8 % tracking, at most four words (brand book §10). */
+.label {
+  font-family: var(--font-mono);
+  font-weight: 500;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-2);
+}
+
+.muted {
+  color: var(--text-2);
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--line-strong);
+  border: 3px solid transparent;
+  background-clip: content-box;
+  border-radius: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 1ms !important;
+    transition-duration: 1ms !important;
+  }
+}

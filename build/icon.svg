@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1 1" width="512" height="512">
+    <circle cx="0.5" cy="0.5" r="0.46" fill="#0B0B0C"/>
+    <g transform="translate(0.21999999999999997 0.3037355371900826) scale(0.004628099173553719)">
+  <clipPath id="c"><polygon points="0,0 15,15 106,15 121,0 121,110 0,110"/></clipPath>
+  <path d="M7.5,-20 V56 A26.5,26.5 0 0 0 60.5,56 V30 M60.5,56 A26.5,26.5 0 0 0 113.5,56 V-20"
+    fill="none" stroke="#FFFFFF" stroke-width="15" stroke-linecap="butt" stroke-linejoin="round" clip-path="url(#c)"/>
+  <path d="M22,51 A12,12 0 1 0 46,51 A12,12 0 1 0 22,51 Z M35.44,45.96 A3.6,3.6 0 1 0 42.64,45.96 A3.6,3.6 0 1 0 35.44,45.96 Z" fill="#FFFFFF" fill-rule="evenodd"/>
+  <path d="M75,51 A12,12 0 1 0 99,51 A12,12 0 1 0 75,51 Z M88.44,45.96 A3.6,3.6 0 1 0 95.64,45.96 A3.6,3.6 0 1 0 88.44,45.96 Z" fill="#FFFFFF" fill-rule="evenodd"/></g>
+  </svg>
