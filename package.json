@@ -28,7 +28,8 @@
     "test": "vitest run",
     "icons": "node scripts/icons.mjs",
     "dist": "npm run build && electron-builder --linux --publish never",
-    "release": "npm run build && electron-builder --linux --publish always"
+    "release": "npm run build && electron-builder --linux --publish always",
+    "social": "electron scripts/social.cjs"
   },
   "dependencies": {
     "@ghostery/adblocker-electron": "2.20.1",

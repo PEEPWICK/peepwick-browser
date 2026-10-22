@@ -98,7 +98,8 @@ npm test
 npm run dist       # build an AppImage and a .deb into dist/
 ```
 
-`npm run icons` regenerates the app icons from the brand geometry.
+`npm run icons` regenerates the app icons from the brand geometry, and `npm run social` the
+social preview card in `docs/`.
 
 ## Releasing
 
