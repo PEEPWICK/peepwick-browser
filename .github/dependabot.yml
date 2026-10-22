@@ -7,6 +7,11 @@ updates:
       interval: weekly
       day: monday
     open-pull-requests-limit: 5
+    ignore:
+      # Node types follow the Node version bundled in Electron (Node 24 in Electron 45);
+      # they move together with Electron's major version, by hand.
+      - dependency-name: '@types/node'
+        update-types: ['version-update:semver-major']
     groups:
       electron:
         patterns:
