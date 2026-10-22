@@ -17,7 +17,7 @@ import {
   type LucideProps,
 } from 'lucide-react'
 import type { WorkspaceIcon } from '@shared/types'
-import { displayHost } from '@shared/url'
+import { displayHost, isImageDataURL } from '@shared/url'
 import { api } from './api'
 
 /** Lucide icons at the brand's 1.5 px stroke. */
@@ -64,7 +64,7 @@ export const WORKSPACE_GLYPHS: Record<WorkspaceIcon, LucideIcon> = {
 export function Favicon({ src, url, size = 16 }: { src: string | null | undefined; url?: string; size?: number }) {
   const [broken, setBroken] = useState(false)
   useEffect(() => setBroken(false), [src])
-  if (src && !broken) {
+  if (src && isImageDataURL(src) && !broken) {
     return <img className="favicon" src={src} width={size} height={size} alt="" draggable={false} onError={() => setBroken(true)} />
   }
   const letter = (url ? displayHost(url) : '').charAt(0).toLocaleUpperCase('tr') || '·'

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { dictionariesForTest, dictionaryKeys, formatBytes, formatNumber, translate } from '@shared/i18n'
 import { defaultSettings, hostMatches, normalizeDomain, sanitizeSettingsPatch } from '@shared/settings'
-import { displayParts, internalPage, securityOf } from '@shared/url'
+import { displayParts, internalPage, isImageDataURL, securityOf } from '@shared/url'
 
 describe('i18n', () => {
   it('has every key in both languages', () => {
@@ -81,6 +81,13 @@ describe('url helpers', () => {
     expect(securityOf('http://a.com')).toBe('insecure')
     expect(securityOf('http://localhost:3000')).toBe('local')
     expect(securityOf('peepwick://newtab')).toBe('internal')
+  })
+
+  it('ignores empty data URL favicons', () => {
+    expect(isImageDataURL('data:,')).toBe(false)
+    expect(isImageDataURL('data:image/png;base64,')).toBe(false)
+    expect(isImageDataURL('data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJ')).toBe(true)
+    expect(isImageDataURL('data:text/html;base64,PHNjcmlwdD5hbGVydCgxKTwvc2NyaXB0Pg==AAAAAAAA')).toBe(false)
   })
 
   it('splits URLs for display', () => {

@@ -90,9 +90,11 @@ export function startHarness(): void {
           case 'settings':
             updateSettings(step.patch)
             break
-          case 'eval':
-            await win.ui.webContents.executeJavaScript(step.js)
+          case 'eval': {
+            const result: unknown = await win.ui.webContents.executeJavaScript(step.js)
+            if (result !== undefined) console.log('[harness] eval', JSON.stringify(result))
             break
+          }
           case 'resize':
             win.base.setContentSize(step.width, step.height)
             break

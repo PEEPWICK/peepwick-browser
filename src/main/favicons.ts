@@ -1,7 +1,7 @@
 // Favicons are fetched once through the tab's own session and kept as data URLs,
 // so the browser UI never loads remote images itself.
 import type { Session } from 'electron'
-import { hostOf } from '@shared/url'
+import { hostOf, isImageDataURL } from '@shared/url'
 import { getFavicon, setFavicon } from './history'
 
 const MAX_BYTES = 150_000
@@ -18,7 +18,8 @@ export async function resolveFavicon(
   pageURL: string,
   persist: boolean,
 ): Promise<string | null> {
-  const url = candidates.find((c) => /^(https?|data):/.test(c))
+  // Pages often declare an empty `data:,` icon just to stop the favicon request.
+  const url = candidates.find((c) => /^https?:/.test(c) || isImageDataURL(c))
   if (!url) return null
   if (url.startsWith('data:')) return url.length <= MAX_BYTES ? url : null
   const cached = cache.get(url)

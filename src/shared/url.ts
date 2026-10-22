@@ -66,6 +66,11 @@ export function displayParts(url: string): { prefix: string; host: string; rest:
   }
 }
 
+/** A data URL that actually carries an image (pages often declare an empty `data:,` icon). */
+export function isImageDataURL(value: string): boolean {
+  return /^data:image\/[\w.+-]+(;[\w=-]+)*[;,]/.test(value) && value.length > 40
+}
+
 function decodeSafe(value: string): string {
   try {
     return decodeURI(value)

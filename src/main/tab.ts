@@ -581,7 +581,8 @@ export class Tab {
 
   displayTitle(): string {
     if (this.page) return t(PAGE_TITLES[this.page])
-    return this.title || hostOf(this.url) || this.url
+    if (this.interstitial && 'url' in this.interstitial) return hostOf(this.interstitial.url).replace(/^www\./, '')
+    return this.title || hostOf(this.url).replace(/^www\./, '') || this.url
   }
 
   toState(): TabState {
