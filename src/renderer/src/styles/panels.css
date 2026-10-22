@@ -487,6 +487,13 @@
   margin-bottom: var(--s2);
 }
 
+.onboarding-stage {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  font-size: 12px;
+}
+
 .onboarding-choices {
   display: flex;
   flex-direction: column;

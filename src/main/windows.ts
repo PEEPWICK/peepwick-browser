@@ -1,11 +1,10 @@
 // Creating windows, restoring the last session and keeping every UI in sync with
 // app-wide state (focus, updates, downloads, settings).
-import { app } from 'electron'
 import type { GlobalState } from '@shared/types'
 import { downloads } from './downloads'
 import { bus } from './events'
 import { focusState } from './focus'
-import { userPath } from './paths'
+import { shownVersion, userPath } from './paths'
 import { browsingSession, incognitoSession, wipeIncognito } from './sessions'
 import { settings } from './settings'
 import { JsonFile } from './store'
@@ -76,7 +75,7 @@ export function markQuitting(): void {
 }
 
 export function globalState(): GlobalState {
-  return { focus: focusState(), update: updateState(), downloads: downloads(), version: app.getVersion() }
+  return { focus: focusState(), update: updateState(), downloads: downloads(), version: shownVersion() }
 }
 
 let globalTimer: NodeJS.Timeout | null = null

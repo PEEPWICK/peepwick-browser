@@ -267,7 +267,7 @@ function UpdateCard() {
 }
 
 export function Sidebar() {
-  const { state, settings, global } = useSnapshot()
+  const { state, settings, global, app } = useSnapshot()
   const t = useT()
   const { openPanel } = useUI()
   const workspace = activeWorkspace(state)
@@ -296,6 +296,11 @@ export function Sidebar() {
           <DoubleEye height={collapsed ? 16 : 18} mode={state.incognito ? 'closed' : 'rest'} />
         </span>
         {state.incognito && !collapsed && <span className="label">{t('incognito.label')}</span>}
+        {!state.incognito && !collapsed && app.stage !== 'stable' && (
+          <span className="label stage-label" title={app.version}>
+            {t(`stage.${app.stage}`)}
+          </span>
+        )}
         {!collapsed && (
           <IconButton
             icon={PanelLeftClose}

@@ -2,6 +2,7 @@
   "name": "peepwick-browser",
   "productName": "PEEPWICK Browser",
   "version": "0.1.2",
+  "releaseStage": "alpha",
   "private": true,
   "description": "PEEPWICK Browser — a calm, private browser that guards your attention. First, we look.",
   "license": "GPL-3.0-only",
@@ -28,7 +29,7 @@
     "test": "vitest run",
     "icons": "node scripts/icons.mjs",
     "dist": "npm run build && electron-builder --linux --publish never",
-    "release": "npm run build && electron-builder --linux --publish always",
+    "release": "node scripts/release.mjs",
     "social": "electron scripts/social.cjs"
   },
   "dependencies": {

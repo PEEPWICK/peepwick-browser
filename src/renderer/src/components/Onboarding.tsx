@@ -4,13 +4,14 @@ import { SEARCH_ENGINES } from '@shared/search'
 import type { SearchEngineId, ThemePref } from '@shared/types'
 import { api, call } from '../api'
 import { DoubleEye } from '../brand'
-import { useSettings, useT } from '../store'
+import { useSettings, useSnapshot, useT } from '../store'
 import { Button, Segmented, useOverlay } from '../ui'
 
 export function Onboarding() {
   useOverlay(true)
   const t = useT()
   const settings = useSettings()
+  const { app } = useSnapshot()
   const [makeDefault, setMakeDefault] = useState(true)
 
   const finish = async () => {
@@ -22,6 +23,12 @@ export function Onboarding() {
     <div className="onboarding" role="dialog" aria-labelledby="onboard-title">
       <div className="onboarding-inner">
         <DoubleEye height={54} mode="blink" className="onboarding-mark" />
+        {app.stage !== 'stable' && (
+          <span className="onboarding-stage">
+            <span className="label">{t(`stage.${app.stage}`)}</span>
+            <span className="mono muted">{app.version}</span>
+          </span>
+        )}
         <h1 id="onboard-title" className="display">
           {t('onboard.title')}
         </h1>

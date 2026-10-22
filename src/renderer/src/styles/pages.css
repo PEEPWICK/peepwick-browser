@@ -411,6 +411,23 @@
   font-size: 18px;
 }
 
+.about-version {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  margin-top: 2px;
+  font-size: 12px;
+}
+
+.stage-note {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--s2);
+  padding: var(--s3) var(--s4);
+  border-left: 2px solid var(--accent);
+}
+
 .about-facts {
   display: grid;
   grid-template-columns: auto 1fr;

@@ -2,6 +2,9 @@
 
 **A calm, private browser that guards your attention. First, we look.**
 
+> **Alpha.** PEEPWICK Browser is in alpha: features may change and you may run into bugs.
+> Releases are tagged with an `a` (v0.1.3a). Please [report what you find](https://github.com/PEEPWICK/peepwick-browser/issues/new?template=bug_report.yml).
+
 PEEPWICK Browser is built on Chromium (through [Electron](https://www.electronjs.org/)) and shaped
 by one idea from the PEEPWICK brand: attention is the scarcest thing online. It blocks ads and
 trackers, keeps your spaces apart and helps you focus, inside a quiet black-and-white frame that
@@ -103,7 +106,10 @@ social preview card in `docs/`.
 
 ## Releasing
 
-1. Bump the version: `npm version patch` (or `minor`, `major`). This commits and tags `vX.Y.Z`.
+1. Bump the version: `npm run release -- patch` (or `minor`, `major`). This commits and tags
+   the release. `package.json` keeps a SemVer version (`0.1.3`) for the build tools and the
+   updater; `releaseStage` adds the suffix people see: `alpha` → `v0.1.3a`, `beta` → `v0.1.3b`,
+   `stable` → `v0.1.3`.
 2. Push the commit and the tag: `git push --follow-tags`.
 3. The **Release** workflow builds the AppImage and the .deb and publishes a GitHub release.
    Installed browsers see it within four hours, or right away from *Settings › About*.
@@ -144,6 +150,9 @@ If you distribute a modified version, please give it your own name and icon.
 
 **Dikkatinizi koruyan, sakin ve gizli bir tarayıcı. Önce bakarız.**
 
+> **Alpha.** PEEPWICK Browser alpha aşamasında: özellikler değişebilir, hatalarla
+> karşılaşabilirsiniz. Sürüm etiketleri `a` ile biter (v0.1.3a).
+
 PEEPWICK Browser, Chromium tabanlıdır (Electron ile) ve PEEPWICK markasının bir fikrine dayanır:
 dijital dünyanın en kıt kaynağı dikkattir. Reklamları ve izleyicileri engeller, alanlarınızı
 ayrı tutar, odaklanmanıza yardım eder. Siyah-beyaz, sakin bir çerçeve sunar; gezdiğiniz
@@ -173,7 +182,7 @@ sürümü denetler, arka planda indirir ve yeniden başlatınca kurar.
 ### Sürüm yayınlama
 
 ```bash
-npm version patch
+npm run release -- patch
 git push --follow-tags
 ```
 

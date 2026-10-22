@@ -13,6 +13,7 @@ import { showAppMenu, showTabMenu } from './menus'
 import { resolveInput } from '@shared/input'
 import { commandSuggestions, suggest } from './omnibox'
 import { clearPermissions, listPermissions, removePermission, respond } from './permissions'
+import { releaseStage, shownVersion } from './paths'
 import { browsingSession } from './sessions'
 import { settings, updateSettings } from './settings'
 import { siteOf } from './shield'
@@ -50,7 +51,8 @@ async function makeDefaultBrowser(): Promise<boolean> {
 
 export function appInfo(): AppInfo {
   return {
-    version: app.getVersion(),
+    version: shownVersion(),
+    stage: releaseStage(),
     electron: process.versions.electron,
     chrome: process.versions.chrome,
     node: process.versions.node,

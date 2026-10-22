@@ -1,0 +1,79 @@
+// electron-builder configuration. JavaScript rather than YAML so file names can carry
+// the release stage suffix (peepwick-browser-0.1.3a-x86_64.AppImage).
+const pkg = require('./package.json')
+const { displayVersion } = require('./scripts/stage.cjs')
+
+/** @type {import('electron-builder').Configuration} */
+module.exports = {
+  appId: 'com.peepwick.browser',
+  productName: 'PEEPWICK Browser',
+  executableName: 'peepwick-browser',
+  copyright: 'Copyright © 2026 PEEPWICK',
+  artifactName: `\${name}-${displayVersion(pkg)}-\${arch}.\${ext}`,
+
+  directories: { buildResources: 'build', output: 'dist' },
+
+  files: [
+    'out/**',
+    'package.json',
+    '!**/*.map',
+    '!src/**',
+    '!**/{README.md,CHANGELOG.md,CONTRIBUTING.md,SECURITY.md,CODE_OF_CONDUCT.md}',
+  ],
+
+  extraResources: [{ from: 'resources', to: 'resources' }],
+
+  electronFuses: {
+    runAsNode: false,
+    enableCookieEncryption: true,
+    enableNodeOptionsEnvironmentVariable: false,
+    enableNodeCliInspectArguments: false,
+    onlyLoadAppFromAsar: true,
+  },
+
+  linux: {
+    target: ['AppImage', 'deb'],
+    category: 'Network',
+    syncDesktopName: true,
+    icon: 'build/icons',
+    synopsis: 'A calm, private browser that guards your attention.',
+    description:
+      'PEEPWICK Browser blocks ads and trackers, keeps your workspaces apart, and helps you focus. First, we look.',
+    maintainer: 'PEEPWICK <322821078+1emircanturan@users.noreply.github.com>',
+    vendor: 'PEEPWICK',
+    mimeTypes: ['text/html', 'application/xhtml+xml', 'x-scheme-handler/http', 'x-scheme-handler/https'],
+    desktop: {
+      entry: {
+        Name: 'PEEPWICK Browser',
+        GenericName: 'Web Browser',
+        'GenericName[tr]': 'Web Tarayıcısı',
+        Comment: 'Browse the web, calmly and privately',
+        'Comment[tr]': "Web'de sakin ve gizli gezinin",
+        Keywords: 'browser;web;internet;privacy;peepwick;',
+        'Keywords[tr]': 'tarayıcı;web;internet;gizlilik;peepwick;',
+        StartupWMClass: 'peepwick-browser',
+        Categories: 'Network;WebBrowser;',
+      },
+    },
+  },
+
+  deb: {
+    depends: [
+      'libgtk-3-0t64 | libgtk-3-0',
+      'libnotify4',
+      'libnss3',
+      'libxss1',
+      'libxtst6',
+      'xdg-utils',
+      'libatspi2.0-0t64 | libatspi2.0-0',
+      'libuuid1',
+      'libsecret-1-0',
+      'libasound2t64 | libasound2',
+      'pkexec | policykit-1',
+    ],
+  },
+
+  // Releases are created by the Release workflow with the stage-suffixed tag (v0.1.3a);
+  // this only tells the installed app where to look for updates.
+  publish: { provider: 'github', owner: 'PEEPWICK', repo: 'peepwick-browser' },
+}

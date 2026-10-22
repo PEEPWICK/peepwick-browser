@@ -259,6 +259,13 @@
   color: var(--text);
 }
 
+.stage-label {
+  padding: 1px 5px;
+  border: 1px solid var(--line-strong);
+  border-radius: 2px;
+  font-size: 10px;
+}
+
 .sidebar-toggle {
   margin-left: auto;
   color: var(--text-2);

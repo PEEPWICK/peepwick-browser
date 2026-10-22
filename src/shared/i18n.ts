@@ -5,6 +5,11 @@ import type { Lang } from './types'
 const tr = {
   'app.name': 'PEEPWICK Browser',
   'app.tagline': 'Önce bakarız.',
+  'stage.alpha': 'Alpha',
+  'stage.beta': 'Beta',
+  'stage.stable': 'Kararlı',
+  'stage.note': 'Bu bir alpha sürümü: özellikler değişebilir, hatalarla karşılaşabilirsiniz. Bildirdiğiniz her hata işimize yarar.',
+  'stage.report': 'Hata bildirin',
 
   'nav.back': 'Geri',
   'nav.forward': 'İleri',
@@ -345,6 +350,11 @@ export type MessageKey = keyof typeof tr
 const en: Record<MessageKey, string> = {
   'app.name': 'PEEPWICK Browser',
   'app.tagline': 'First, we look.',
+  'stage.alpha': 'Alpha',
+  'stage.beta': 'Beta',
+  'stage.stable': 'Stable',
+  'stage.note': 'This is an alpha: features may change and you may run into bugs. Every report helps.',
+  'stage.report': 'Report a bug',
 
   'nav.back': 'Back',
   'nav.forward': 'Forward',

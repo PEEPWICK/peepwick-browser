@@ -148,11 +148,25 @@ function About() {
         <DoubleEye height={36} />
         <div>
           <div className="about-name">{t('app.name')}</div>
-          <div className="label">
-            {t('settings.version')} {info?.version}
+          <div className="about-version">
+            <span className="label">{t('settings.version')}</span>
+            <span className="mono">{info?.version}</span>
+            {info && info.stage !== 'stable' && <span className="label stage-label">{t(`stage.${info.stage}`)}</span>}
           </div>
         </div>
       </div>
+      {info && info.stage !== 'stable' && (
+        <div className="stage-note">
+          <p className="setting-hint">{t('stage.note')}</p>
+          <button
+            type="button"
+            className="link-button"
+            onClick={() => api.openURL('https://github.com/PEEPWICK/peepwick-browser/issues/new?template=bug_report.yml', true)}
+          >
+            {t('stage.report')} <Icon icon={ExternalLink} size={13} />
+          </button>
+        </div>
+      )}
       <Row title={t('update.check')} hint={status || undefined}>
         {update.status === 'ready' ? (
           <Button variant="accent" onClick={() => api.updateInstall()}>
@@ -213,16 +227,23 @@ export function Settings({ hash }: { hash: string }) {
   const scroller = useRef<HTMLDivElement>(null)
   const [current, setCurrent] = useState<Section>((SECTIONS as readonly string[]).includes(hash) ? (hash as Section) : 'general')
 
+  // Scroll only the settings column: scrollIntoView would also scroll the clipped
+  // ancestors (the pane) and push the whole page out of view.
+  const scrollTo = (section: string, behavior: ScrollBehavior) => {
+    const root = scroller.current
+    const el = root?.querySelector<HTMLElement>(`#settings-${section}`)
+    if (!root || !el) return
+    const top = el.getBoundingClientRect().top - root.getBoundingClientRect().top + root.scrollTop - 32
+    root.scrollTo({ top: Math.max(0, top), behavior })
+  }
+
   const go = (section: Section) => {
     setCurrent(section)
-    const el = scroller.current?.querySelector(`#settings-${section}`)
-    el?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    scrollTo(section, 'smooth')
   }
 
   useEffect(() => {
-    if ((SECTIONS as readonly string[]).includes(hash)) {
-      requestAnimationFrame(() => scroller.current?.querySelector(`#settings-${hash}`)?.scrollIntoView({ block: 'start' }))
-    }
+    if ((SECTIONS as readonly string[]).includes(hash)) requestAnimationFrame(() => scrollTo(hash, 'auto'))
   }, [hash])
 
   const onScroll = () => {
@@ -234,6 +255,8 @@ export function Settings({ hash }: { hash: string }) {
       const el = root.querySelector(`#settings-${section}`)
       if (el && el.getBoundingClientRect().top - top < 120) active = section
     }
+    // The last sections are short; at the bottom, the last one is the one being read.
+    if (root.scrollTop + root.clientHeight >= root.scrollHeight - 4) active = SECTIONS[SECTIONS.length - 1]
     setCurrent(active)
   }
 

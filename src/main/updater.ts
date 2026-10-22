@@ -7,7 +7,7 @@ import { dirname } from 'node:path'
 import updaterPackage from 'electron-updater'
 import type { UpdateState } from '@shared/types'
 import { bus } from './events'
-import { userPath } from './paths'
+import { shownVersion, userPath } from './paths'
 
 const { autoUpdater } = updaterPackage
 const CHECK_EVERY = 4 * 60 * 60 * 1000
@@ -62,10 +62,10 @@ export function startUpdater(): void {
   autoUpdater.allowPrerelease = false
 
   autoUpdater.on('checking-for-update', () => set({ status: 'checking', error: null }))
-  autoUpdater.on('update-available', (info) => set({ status: 'available', version: info.version, progress: 0 }))
+  autoUpdater.on('update-available', (info) => set({ status: 'available', version: shownVersion(info.version), progress: 0 }))
   autoUpdater.on('update-not-available', () => set({ status: 'latest', progress: 0 }))
   autoUpdater.on('download-progress', (progress) => set({ status: 'downloading', progress: Math.round(progress.percent) }))
-  autoUpdater.on('update-downloaded', (info) => set({ status: 'ready', version: info.version, progress: 100 }))
+  autoUpdater.on('update-downloaded', (info) => set({ status: 'ready', version: shownVersion(info.version), progress: 100 }))
   autoUpdater.on('error', (error) => set({ status: 'error', error: error?.message ?? String(error) }))
 
   setTimeout(() => void checkForUpdates(), 15_000)
