@@ -1,7 +1,7 @@
 {
   "name": "peepwick-browser",
   "productName": "PEEPWICK Browser",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "description": "PEEPWICK Browser — a calm, private browser that guards your attention. First, we look.",
   "license": "GPL-3.0-only",
