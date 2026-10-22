@@ -146,6 +146,9 @@ export class Tab {
     view.setBorderRadius(4)
     this.view = view
     const wc = view.webContents
+    // A busy page briefly holds many listeners (pending loads, cosmetic filter scripts,
+    // extension observers); they go away when loading stops, so this is not a leak.
+    wc.setMaxListeners(50)
     registerContents(wc.id, this)
     wc.setAudioMuted(this.muted)
     this.wire(wc)

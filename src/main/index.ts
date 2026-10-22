@@ -23,6 +23,15 @@ import { startUpdater } from './updater'
 import { anyWindow, createWindow, markQuitting, restoreSession, wireBroadcasts } from './windows'
 
 process.env['CHROME_DESKTOP'] = 'peepwick-browser.desktop'
+
+// Electron reports every failed frame load as a process warning. Requests the shield
+// or the focus gate cancel on purpose would flood stderr with tracker URLs, so only
+// those are dropped; every other warning is still printed.
+process.removeAllListeners('warning')
+process.on('warning', (warning) => {
+  if (warning.name === 'electron' && warning.message.includes('ERR_BLOCKED_BY_CLIENT')) return
+  console.warn(`${warning.name}: ${warning.message}`)
+})
 registerSchemes()
 setUserAgent()
 
