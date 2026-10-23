@@ -79,6 +79,7 @@ export class BrowserWin {
   activeWorkspaceId = ''
   private panes: PaneRect[] = []
   private overlay = false
+  private raised = false
   private fullscreenTab: Tab | null = null
   private closedTabs: ClosedTab[] = []
   private dirty = false
@@ -498,6 +499,13 @@ export class BrowserWin {
     else this.focusActive()
   }
 
+  /** Raises the UI over the pages without moving focus, for tooltips. */
+  setRaised(raised: boolean): void {
+    if (this.raised === raised) return
+    this.raised = raised
+    this.layout()
+  }
+
   focusActive(): void {
     const tab = this.activeTab()
     const wc = tab?.reader?.webContents ?? tab?.webContents
@@ -535,7 +543,7 @@ export class BrowserWin {
       }
     }
 
-    const desired = this.overlay ? [...placed.map((p) => p.view), this.ui] : [this.ui, ...placed.map((p) => p.view)]
+    const desired = this.overlay || this.raised ? [...placed.map((p) => p.view), this.ui] : [this.ui, ...placed.map((p) => p.view)]
     const container = this.base.contentView
     const current = container.children
     for (const child of current) if (!desired.includes(child as WebContentsView)) container.removeChildView(child)

@@ -12,6 +12,7 @@ import { openPage, runCommand } from './actions'
 import { bookmarkTree } from './bookmarks'
 import { detectSources, importBookmarks } from './importers'
 import { lifecycle } from './lifecycle'
+import { confirm } from './popup'
 import { browsingSession } from './sessions'
 import { updateSettings } from './settings'
 import { BrowserWin } from './window'
@@ -35,6 +36,8 @@ type Step =
   | { do: 'page'; page: InternalPage; sub?: string }
   | { do: 'importDetected'; index: number }
   | { do: 'bookmarks' }
+  | { do: 'mouse'; target?: 'ui' | 'tab'; x: number; y: number; button?: 'left' | 'right' | 'middle'; move?: boolean }
+  | { do: 'confirm'; title: string; body?: string; lines?: string[]; danger?: boolean }
   | { do: 'quit' }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
@@ -145,6 +148,21 @@ export function startHarness(): void {
           case 'installExtension':
             await installExtension(step.id, { session: browsingSession() })
             console.log('[harness] installed', step.id)
+            break
+          case 'mouse': {
+            const wc = step.target === 'tab' ? win.activeTab()?.webContents : win.ui.webContents
+            if (!wc) break
+            const { x, y } = step
+            if (step.move) wc.sendInputEvent({ type: 'mouseMove', x, y })
+            else
+              for (const type of ['mouseDown', 'mouseUp'] as const)
+                wc.sendInputEvent({ type, x, y, button: step.button ?? 'left', clickCount: 1 })
+            break
+          }
+          case 'confirm':
+            void confirm(win, { title: step.title, body: step.body, lines: step.lines, danger: step.danger, confirm: 'OK', cancel: 'Cancel' }).then((ok) =>
+              console.log('[harness] confirm', ok),
+            )
             break
           case 'quit':
             lifecycle.forceQuit = true

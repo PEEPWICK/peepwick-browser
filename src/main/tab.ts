@@ -240,6 +240,8 @@ export class Tab {
       if (handleShortcut(this.win, input)) event.preventDefault()
     })
     wc.on('focus', () => this.win.paneFocused(this))
+    // The answer is needed synchronously, so this stays a system dialog (themed
+    // through GTK_THEME, see early.ts) rather than one drawn by the UI.
     wc.on('will-prevent-unload', (event) => {
       const choice = dialog.showMessageBoxSync(this.win.base, {
         type: 'question',

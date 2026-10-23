@@ -1,5 +1,5 @@
-import './early'
-import { app, dialog, Menu } from 'electron'
+import { gtkThemeSet } from './early'
+import { app, Menu, nativeTheme } from 'electron'
 import { existsSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -14,12 +14,14 @@ import { closeHistory, openHistory } from './history'
 import { installIPC } from './ipc'
 import { lifecycle } from './lifecycle'
 import { flushPermissions, loadPermissions } from './permissions'
+import { confirm } from './popup'
 import { tabForContents } from './registry'
 import { browsingSession, configureUISession, registerSchemes, setUserAgent, uiSession } from './sessions'
 import { flushSettings, loadSettings, settings, t } from './settings'
 import { ensureShield, installCosmeticHandlers } from './shield'
 import { flushStats, loadStats } from './stats'
 import { certificateAllowed } from './tab'
+import { BrowserWin } from './window'
 import { startUpdater } from './updater'
 import { anyWindow, createWindow, markQuitting, restoreSession, wireBroadcasts } from './windows'
 
@@ -48,7 +50,15 @@ function urlsFrom(argv: string[]): string[] {
 
 async function boot(): Promise<void> {
   Menu.setApplicationMenu(null)
+  if (gtkThemeSet) delete process.env['GTK_THEME']
   loadSettings()
+  // Pages (prefers-color-scheme), scrollbars and form controls follow the browser's
+  // theme, as in Chrome, not only the desktop's.
+  const applyTheme = () => {
+    if (nativeTheme.themeSource !== settings().theme) nativeTheme.themeSource = settings().theme
+  }
+  applyTheme()
+  bus.on('settings', applyTheme)
   loadStats()
   loadFocus()
   loadPermissions()
@@ -121,20 +131,26 @@ if (!app.requestSingleInstanceLock()) {
     })
   }
 
+  let quitConfirmed = false
+  let askingToQuit = false
   app.on('before-quit', (event) => {
     const active = activeDownloadCount()
-    if (active > 0 && !lifecycle.forceQuit) {
-      const choice = dialog.showMessageBoxSync({
-        type: 'question',
-        buttons: [t('dialog.quit'), t('common.cancel')],
-        defaultId: 1,
-        cancelId: 1,
-        message: t('dialog.quitDownloads', { n: active }),
+    if (active > 0 && !lifecycle.forceQuit && !quitConfirmed) {
+      event.preventDefault()
+      if (askingToQuit) return
+      askingToQuit = true
+      void confirm(BrowserWin.lastFocused, {
+        title: t('dialog.quitDownloads', { n: active }),
+        confirm: t('dialog.quit'),
+        cancel: t('common.cancel'),
+        danger: true,
+      }).then((ok) => {
+        askingToQuit = false
+        if (!ok) return
+        quitConfirmed = true
+        app.quit()
       })
-      if (choice !== 0) {
-        event.preventDefault()
-        return
-      }
+      return
     }
     if (active > 0) cancelAllDownloads()
     markQuitting()

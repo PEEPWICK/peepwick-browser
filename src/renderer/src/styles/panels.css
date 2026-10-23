@@ -626,3 +626,120 @@
   list-style: none;
   margin-left: calc(-1 * var(--s5));
 }
+
+/* Menus (page, tab, app, bookmarks, extensions) */
+
+.menu-layer {
+  outline: none;
+  animation: none;
+}
+
+.menu {
+  position: fixed;
+  min-width: 200px;
+  max-width: min(420px, calc(100vw - 16px));
+  max-height: calc(100vh - 16px);
+  overflow-y: auto;
+  padding: var(--s1);
+  background: var(--raised);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  animation: fade 120ms var(--ease);
+}
+
+.menu-item {
+  display: flex;
+  align-items: center;
+  gap: var(--s3);
+  height: 30px;
+  padding: 0 var(--s2) 0 var(--s3);
+  border-radius: 3px;
+  white-space: nowrap;
+}
+
+.menu-item.is-active {
+  background: var(--surface-hover);
+}
+
+:root[data-theme='light'] .menu-item.is-active {
+  background: var(--sis);
+}
+
+.menu-item.is-disabled {
+  color: var(--text-2);
+  opacity: 0.6;
+}
+
+.menu-icon {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 16px;
+  height: 16px;
+  color: var(--text-2);
+}
+
+.menu-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.menu-key {
+  padding-left: var(--s4);
+  font-size: 11px;
+  color: var(--text-2);
+}
+
+.menu-arrow {
+  color: var(--text-2);
+}
+
+.menu-separator {
+  height: 1px;
+  margin: var(--s1) var(--s2);
+  background: var(--line-strong);
+}
+
+/* Tooltips for the browser's own controls */
+
+.tooltip {
+  position: fixed;
+  z-index: 100;
+  max-width: 360px;
+  padding: var(--s1) var(--s2);
+  background: var(--raised);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  font-size: 12px;
+  line-height: 1.4;
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+  pointer-events: none;
+  animation: fade 120ms var(--ease);
+}
+
+/* Questions from the browser (system message boxes before) */
+
+.confirm-title {
+  display: flex;
+  align-items: center;
+  gap: var(--s3);
+  min-width: 0;
+}
+
+.confirm-body {
+  margin: 0;
+  color: var(--text-2);
+  line-height: 1.5;
+}
+
+.confirm-lines {
+  margin: 0;
+  padding-left: var(--s5);
+  display: flex;
+  flex-direction: column;
+  gap: var(--s1);
+  line-height: 1.5;
+}

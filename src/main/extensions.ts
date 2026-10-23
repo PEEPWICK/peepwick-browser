@@ -1,10 +1,12 @@
 // Chrome extension support: electron-chrome-extensions provides the chrome.* APIs
 // (tabs, windows, action popups…) and electron-chrome-web-store installs and updates
 // extensions from the Chrome Web Store. Both are wired to our tabs and windows.
-import { dialog, type BaseWindow, type Session, type WebContents } from 'electron'
+import type { BaseWindow, MenuItem, Session, WebContents } from 'electron'
 import { ElectronChromeExtensions } from 'electron-chrome-extensions'
 import { installChromeWebStore, uninstallExtension } from 'electron-chrome-web-store'
 import type { ExtensionInfo } from '@shared/types'
+import { openPage } from './actions'
+import { confirm, fromElectron, imageURL, popupMenu, separator } from './popup'
 import { tabForContents } from './registry'
 import { BROWSING_PARTITION } from './sessions'
 import { settings, t } from './settings'
@@ -91,26 +93,65 @@ export async function initExtensions(session: Session, uiSession: Session): Prom
     },
   })
   ElectronChromeExtensions.handleCRXProtocol(uiSession)
+  // The extension button's right-click menu: ours instead of the library's native one.
+  const internals = extensions as unknown as {
+    api: { browserAction: { activateContextMenu: (details: ActionMenuDetails) => void } }
+    ctx: { store: { buildMenuItems: (extensionId: string, menuType: string) => MenuItem[] } }
+  }
+  internals.api.browserAction.activateContextMenu = (details) =>
+    showActionMenu(details, internals.ctx.store.buildMenuItems(details.extensionId, 'browser_action'))
 
   await installChromeWebStore({
     session,
     autoUpdate: true,
     async beforeInstall(details) {
-      const parent = BrowserWin.lastFocused?.base
       const lines = describePermissions(details.manifest)
-      const options = {
-        type: 'question' as const,
-        buttons: [t('ext.install.add'), t('ext.install.cancel')],
-        defaultId: 0,
-        cancelId: 1,
-        message: t('ext.install.title', { name: details.localizedName }),
-        detail: lines.length > 0 ? `${t('ext.install.body')}\n\n${lines.map((l) => `• ${l}`).join('\n')}` : t('ext.install.none'),
-        icon: details.icon,
-      }
-      const { response } = parent ? await dialog.showMessageBox(parent, options) : await dialog.showMessageBox(options)
-      return { action: response === 0 ? 'allow' : 'deny' }
+      const ok = await confirm(BrowserWin.lastFocused, {
+        title: t('ext.install.title', { name: details.localizedName }),
+        body: lines.length > 0 ? t('ext.install.body') : t('ext.install.none'),
+        lines,
+        icon: imageURL(details.icon),
+        confirm: t('ext.install.add'),
+        cancel: t('ext.install.cancel'),
+      })
+      return { action: ok ? 'allow' : 'deny' }
     },
   })
+}
+
+interface ActionMenuDetails {
+  extensionId: string
+  tabId: number
+  anchorRect: { x: number; y: number; width: number; height: number }
+}
+
+function showActionMenu(details: ActionMenuDetails, extensionItems: MenuItem[]): void {
+  const extension = browsing?.extensions.getExtension(details.extensionId)
+  const win = tabForContents(details.tabId)?.win ?? BrowserWin.lastFocused
+  if (!extension || !win) return
+  const manifest = extension.manifest as chrome.runtime.Manifest & { options_ui?: { page?: string }; options_page?: string }
+  const options = manifest.options_ui?.page ?? manifest.options_page
+  const home = manifest.homepage_url || `https://chromewebstore.google.com/detail/${extension.id}`
+  const { x, y, height } = details.anchorRect
+  popupMenu(
+    win,
+    [
+      { label: extension.name, click: () => win.openTab({ url: home }) },
+      separator,
+      ...fromElectron(win, extensionItems),
+      separator,
+      {
+        label: t('ext.options'),
+        enabled: !!options,
+        click: () => win.openTab({ url: `chrome-extension://${extension.id}/${options?.replace(/^\//, '')}` }),
+      },
+      { label: t('ext.remove'), click: () => void removeExtension(extension.id) },
+      separator,
+      { label: t('menu.extensions'), click: () => openPage(win, 'extensions') },
+    ],
+    x,
+    y + height,
+  )
 }
 
 function iconURL(extension: Electron.Extension): string | null {
@@ -139,15 +180,12 @@ export async function removeExtension(id: string): Promise<void> {
   if (!browsing) return
   const extension = browsing.extensions.getExtension(id)
   if (!extension) return
-  const parent = BrowserWin.lastFocused?.base
-  const options = {
-    type: 'question' as const,
-    buttons: [t('ext.remove'), t('common.cancel')],
-    defaultId: 1,
-    cancelId: 1,
-    message: t('ext.removeConfirm', { name: extension.name }),
-  }
-  const { response } = parent ? await dialog.showMessageBox(parent, options) : await dialog.showMessageBox(options)
-  if (response !== 0) return
+  const ok = await confirm(BrowserWin.lastFocused, {
+    title: t('ext.removeConfirm', { name: extension.name }),
+    confirm: t('ext.remove'),
+    cancel: t('common.cancel'),
+    danger: true,
+  })
+  if (!ok) return
   await uninstallExtension(id, { session: browsing })
 }

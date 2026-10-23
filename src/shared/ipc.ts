@@ -11,6 +11,7 @@ import type {
   ImportResult,
   ImportSource,
   InternalPage,
+  MenuClickEvent,
   PaneRect,
   PermissionKind,
   Settings,
@@ -71,6 +72,11 @@ export interface SendMethods {
   windowControl(action: 'minimize' | 'maximize' | 'close'): void
   setPanes(rects: PaneRect[]): void
   setOverlay(open: boolean): void
+  /** Raises the UI over the pages without moving focus (tooltips). */
+  setRaised(raised: boolean): void
+  menuSelect(menuId: number, itemId: number, event: MenuClickEvent): void
+  menuClosed(menuId: number): void
+  confirmReply(id: number, ok: boolean): void
   appMenu(x: number, y: number): void
   newTab(options?: { url?: string; background?: boolean }): void
   closeTab(id: number): void

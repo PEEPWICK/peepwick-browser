@@ -305,6 +305,59 @@ export type UICommand =
   | { type: 'bookmark-edit'; id?: string; parentId?: string; folder?: boolean }
   | { type: 'bookmarks-removed'; count: number }
   | { type: 'import-bookmarks' }
+  | { type: 'menu'; menu: MenuModel }
+  | { type: 'confirm'; dialog: ConfirmModel }
+
+/**
+ * A menu the UI draws. Native menus and message boxes take their colours from the
+ * system (GTK) theme, so they stayed light in a dark browser.
+ */
+export interface MenuModel {
+  id: number
+  items: MenuNode[]
+  /** Window coordinates of the menu's top left corner (top right with align 'end'). */
+  x: number
+  y: number
+  align?: 'end'
+}
+
+export type MenuNode =
+  | { kind: 'separator' }
+  | {
+      kind: 'item' | 'check' | 'submenu'
+      id: number
+      label: string
+      accelerator?: string
+      enabled: boolean
+      checked?: boolean
+      /** Page address whose site icon is shown. */
+      favicon?: string
+      /** Image data URL (extension icons). */
+      icon?: string
+      folder?: boolean
+      submenu?: MenuNode[]
+    }
+
+export interface ConfirmModel {
+  id: number
+  title: string
+  body?: string
+  /** Shown as a list under the body (extension permissions). */
+  lines?: string[]
+  /** Image data URL. */
+  icon?: string
+  confirm: string
+  cancel: string
+  /** The confirming action loses something (removing, leaving). */
+  danger?: boolean
+}
+
+export interface MenuClickEvent {
+  ctrlKey: boolean
+  shiftKey: boolean
+  altKey: boolean
+  metaKey: boolean
+}
 
 export interface ImportSource {
   id: string

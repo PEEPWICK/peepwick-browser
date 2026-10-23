@@ -9,6 +9,9 @@ import { Toolbar } from './components/Toolbar'
 import { FindBar, PermissionBar } from './components/Bars'
 import { BookmarksBar } from './components/BookmarksBar'
 import { EditDialog, ImportDialog, StarPanel, ToastBar } from './components/BookmarkDialogs'
+import { ConfirmDialog } from './components/Confirm'
+import { MenuPopup } from './components/Menu'
+import { Tooltips } from './components/Tooltips'
 import { UIContext, type Panel, type Toast, type UIContextValue } from './context'
 import { activeTab, useSnapshot, useT } from './store'
 
@@ -107,6 +110,12 @@ export function App() {
           case 'import-bookmarks':
             setPanel({ kind: 'import' })
             break
+          case 'menu':
+            setPanel({ kind: 'menu', menu: command.menu })
+            break
+          case 'confirm':
+            setPanel({ kind: 'confirm', dialog: command.dialog })
+            break
           case 'bookmarks-removed':
             setToast({ text: tRef.current('bookmarks.removed', { n: command.count }), action: { label: tRef.current('bookmarks.undo'), run: () => api.bookmarkUndo() } })
             break
@@ -152,6 +161,9 @@ export function App() {
       {panel?.kind === 'star' && <StarPanel anchor={panel.anchor} created={panel.created} />}
       {panel?.kind === 'bookmark-edit' && <EditDialog id={panel.id} parentId={panel.parentId} folder={panel.folder} />}
       {panel?.kind === 'import' && <ImportDialog />}
+      {panel?.kind === 'confirm' && <ConfirmDialog key={panel.dialog.id} dialog={panel.dialog} />}
+      {panel?.kind === 'menu' && <MenuPopup key={panel.menu.id} menu={panel.menu} />}
+      <Tooltips />
       {!settings.onboarded && !state.incognito && <Onboarding />}
     </UIContext.Provider>
   )

@@ -1,4 +1,5 @@
 import { createContext, useContext } from 'react'
+import type { ConfirmModel, MenuModel } from '@shared/types'
 
 export type Panel =
   | { kind: 'shield'; anchor: DOMRect }
@@ -9,6 +10,8 @@ export type Panel =
   | { kind: 'star'; anchor: DOMRect; created: boolean }
   | { kind: 'bookmark-edit'; id?: string; parentId?: string; folder?: boolean }
   | { kind: 'import' }
+  | { kind: 'menu'; menu: MenuModel }
+  | { kind: 'confirm'; dialog: ConfirmModel }
 
 export interface UIContextValue {
   panel: Panel | null

@@ -313,7 +313,7 @@ export function Toolbar() {
           label={t('nav.menu')}
           onClick={(event) => {
             const rect = event.currentTarget.getBoundingClientRect()
-            api.appMenu(rect.left, rect.bottom + 4)
+            api.appMenu(rect.right, rect.bottom + 4)
           }}
         />
       </div>

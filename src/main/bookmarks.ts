@@ -1,6 +1,6 @@
 // Bookmarks: a JSON tree in the profile (like Chromium's Bookmarks file), edited only
 // here and pushed to every window's UI when it changes.
-import { app, clipboard, dialog, Menu, nativeImage, type MenuItemConstructorOptions, type NativeImage } from 'electron'
+import { app, clipboard, dialog } from 'electron'
 import { randomUUID } from 'node:crypto'
 import { writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
@@ -20,11 +20,10 @@ import {
   type DraftTree,
 } from '@shared/bookmarks'
 import type { BookmarkInput, BookmarkOpen } from '@shared/ipc'
-import { hostOf } from '@shared/url'
 import { bus } from './events'
-import { getFavicon } from './history'
 import { userPath } from './paths'
 import { openPage } from './actions'
+import { confirm, popupMenu, separator, type MenuSpec } from './popup'
 import { settings, t } from './settings'
 import { JsonFile } from './store'
 import type { BrowserWin } from './window'
@@ -236,14 +235,12 @@ export async function openBookmarks(win: BrowserWin, ids: string[], how: Bookmar
   const targets = linksUnder(ids)
   if (targets.length === 0) return
   if (targets.length > OPEN_ALL_CONFIRM) {
-    const { response } = await dialog.showMessageBox(win.base, {
-      type: 'question',
-      buttons: [t('bookmarks.openAllConfirm', { n: targets.length }), t('common.cancel')],
-      defaultId: 0,
-      cancelId: 1,
-      message: t('bookmarks.openAllTitle', { n: targets.length }),
+    const ok = await confirm(win, {
+      title: t('bookmarks.openAllTitle', { n: targets.length }),
+      confirm: t('bookmarks.openAllConfirm', { n: targets.length }),
+      cancel: t('common.cancel'),
     })
-    if (response !== 0) return
+    if (!ok) return
   }
   const urls = targets.map((link) => link.url)
   if (how === 'window' || how === 'incognito') {
@@ -261,42 +258,26 @@ export async function openBookmarks(win: BrowserWin, ids: string[], how: Bookmar
   urls.forEach((url, i) => win.openTab({ url, background: how === 'background' || i > 0 }))
 }
 
-// ── Native menus ──────────────────────────────────────────────────────────────
+// ── Menus ─────────────────────────────────────────────────────────────────────
 
-const iconCache = new Map<string, NativeImage | null>()
+const shortLabel = (text: string): string => (text.length > 60 ? `${text.slice(0, 57)}…` : text)
 
-function iconFor(url: string): NativeImage | undefined {
-  const host = hostOf(url)
-  if (!iconCache.has(host)) {
-    const data = getFavicon(host)
-    iconCache.set(host, data ? nativeImage.createFromDataURL(data).resize({ width: 16, height: 16 }) : null)
-    if (iconCache.size > 500) iconCache.delete(iconCache.keys().next().value as string)
-  }
-  return iconCache.get(host) ?? undefined
-}
-
-function label(text: string): string {
-  // Menus treat "&" as a mnemonic marker.
-  const clean = text.replace(/&/g, '&&')
-  return clean.length > 60 ? `${clean.slice(0, 57)}…` : clean
-}
-
-function folderItems(win: BrowserWin, folder: BookmarkFolder, fromIndex = 0): MenuItemConstructorOptions[] {
-  const items: MenuItemConstructorOptions[] = folder.children.slice(fromIndex).map((node) =>
+function folderItems(win: BrowserWin, folder: BookmarkFolder, fromIndex = 0): MenuSpec[] {
+  const items: MenuSpec[] = folder.children.slice(fromIndex).map((node) =>
     node.type === 'url'
       ? {
-          label: label(node.title),
-          icon: iconFor(node.url),
-          click: (_item, _window, event) =>
+          label: shortLabel(node.title || node.url),
+          favicon: node.url,
+          click: (event) =>
             void openBookmarks(win, [node.id], event.ctrlKey || event.metaKey ? 'background' : event.shiftKey ? 'window' : 'current'),
         }
-      : { label: label(node.title), submenu: folderItems(win, node) },
+      : { label: shortLabel(node.title), folder: true, submenu: folderItems(win, node) },
   )
   if (items.length === 0) items.push({ label: t('bookmarks.empty'), enabled: false })
   const linkCount = folder.children.slice(fromIndex).filter((node) => node.type === 'url').length
   if (linkCount > 1) {
     items.push(
-      { type: 'separator' },
+      separator,
       { label: t('bookmarks.openAll', { n: linkCount }), click: () => void openBookmarks(win, folder.children.slice(fromIndex).filter((n) => n.type === 'url').map((n) => n.id), 'tab') },
     )
   }
@@ -306,7 +287,7 @@ function folderItems(win: BrowserWin, folder: BookmarkFolder, fromIndex = 0): Me
 export function showFolderMenu(win: BrowserWin, folderId: string, x: number, y: number, fromIndex = 0): void {
   const folder = folderById(folderId)
   if (!folder) return
-  Menu.buildFromTemplate(folderItems(win, folder, fromIndex)).popup({ window: win.base, x: Math.round(x), y: Math.round(y) })
+  popupMenu(win, folderItems(win, folder, fromIndex), x, y)
 }
 
 export function showBookmarkMenu(win: BrowserWin, id: string, x: number, y: number): void {
@@ -315,22 +296,22 @@ export function showBookmarkMenu(win: BrowserWin, id: string, x: number, y: numb
   const node = found.node
   const parentId = node.type === 'folder' ? node.id : (found.parent?.id ?? 'bar')
   const isRoot = !found.parent
-  const add: MenuItemConstructorOptions[] = [
+  const add: MenuSpec[] = [
     { label: t('bookmarks.addPage'), click: () => win.command({ type: 'bookmark-edit', parentId }) },
     { label: t('bookmarks.addFolder'), click: () => win.command({ type: 'bookmark-edit', parentId, folder: true }) },
   ]
-  let items: MenuItemConstructorOptions[]
+  let items: MenuSpec[]
   if (node.type === 'url') {
     items = [
       { label: t('bookmarks.open'), click: () => void openBookmarks(win, [id], 'current') },
       { label: t('bookmarks.openNewTab'), click: () => void openBookmarks(win, [id], 'background') },
       { label: t('bookmarks.openNewWindow'), click: () => void openBookmarks(win, [id], 'window') },
       { label: t('bookmarks.openIncognito'), click: () => void openBookmarks(win, [id], 'incognito') },
-      { type: 'separator' },
+      separator,
       { label: t('bookmarks.edit'), click: () => win.command({ type: 'bookmark-edit', id }) },
       { label: t('ctx.copyLink'), click: () => clipboard.writeText(node.url) },
       { label: t('bookmarks.delete'), click: () => removeAndTell(win, [id]) },
-      { type: 'separator' },
+      separator,
       ...add,
     ]
   } else {
@@ -339,16 +320,16 @@ export function showBookmarkMenu(win: BrowserWin, id: string, x: number, y: numb
       { label: t('bookmarks.openAll', { n: count }), enabled: count > 0, click: () => void openBookmarks(win, [id], 'tab') },
       { label: t('bookmarks.openAllWindow'), enabled: count > 0, click: () => void openBookmarks(win, [id], 'window') },
       { label: t('bookmarks.openAllIncognito'), enabled: count > 0, click: () => void openBookmarks(win, [id], 'incognito') },
-      { type: 'separator' },
+      separator,
       ...(isRoot ? [] : [{ label: t('bookmarks.rename'), click: () => win.command({ type: 'bookmark-edit', id }) }]),
       { label: t('bookmarks.sort'), enabled: node.children.length > 1, click: () => sortFolder(id) },
       ...(isRoot ? [] : [{ label: t('bookmarks.delete'), click: () => removeAndTell(win, [id]) }]),
-      { type: 'separator' },
+      separator,
       ...add,
     ]
   }
-  items.push({ type: 'separator' }, { label: t('bookmarks.manager'), click: () => openPage(win, 'bookmarks') })
-  Menu.buildFromTemplate(items).popup({ window: win.base, x: Math.round(x), y: Math.round(y) })
+  items.push(separator, { label: t('bookmarks.manager'), click: () => openPage(win, 'bookmarks') })
+  popupMenu(win, items, x, y)
 }
 
 export function removeAndTell(win: BrowserWin, ids: string[]): void {

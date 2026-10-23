@@ -25,6 +25,7 @@ import { listExtensions, removeExtension } from './extensions'
 import { startFocus, stopFocus } from './focus'
 import { clearHistory, getFavicon, matchPages, queryHistory, removeVisit, topSites } from './history'
 import { showAppMenu, showTabMenu } from './menus'
+import { confirmReply, menuClosed, menuSelect } from './popup'
 import { resolveInput } from '@shared/input'
 import { commandSuggestions, suggest } from './omnibox'
 import { clearPermissions, listPermissions, removePermission, respond } from './permissions'
@@ -237,6 +238,24 @@ const send: { [K in keyof SendMethods]: (win: BrowserWin, ...args: unknown[]) =>
   },
   setOverlay(win, open) {
     win.setOverlay(open === true)
+  },
+  setRaised(win, raised) {
+    win.setRaised(raised === true)
+  },
+  menuSelect(win, menuId, itemId, event) {
+    const e = (event ?? {}) as Record<string, unknown>
+    menuSelect(win, num(menuId), num(itemId), {
+      ctrlKey: e.ctrlKey === true,
+      shiftKey: e.shiftKey === true,
+      altKey: e.altKey === true,
+      metaKey: e.metaKey === true,
+    })
+  },
+  menuClosed(win, menuId) {
+    menuClosed(win, num(menuId))
+  },
+  confirmReply(_win, id, ok) {
+    confirmReply(num(id), ok === true)
   },
   appMenu(win, x, y) {
     showAppMenu(win, num(x) || 0, num(y) || 0)

@@ -1,30 +1,20 @@
-// Native menus: the page context menu, the tab menu in the sidebar and the app menu.
-import { app, clipboard, Menu, MenuItem, type ContextMenuParams, type MenuItemConstructorOptions, type WebContents } from 'electron'
+// Menus: the page context menu, the tab menu in the sidebar and the app menu. The UI
+// draws them (popup.ts).
+import { app, clipboard, type ContextMenuParams, type WebContents } from 'electron'
 import { searchURL } from '@shared/search'
 import { focusState, startFocus, stopFocus } from './focus'
 import { getExtensions } from './extensions'
 import { isCommandAvailable, newTab, openDevTools, openPage, runCommand, savePage } from './actions'
 import { createBookmark, exportBookmarks } from './bookmarks'
+import { fromElectron, popupMenu, separator as sep, type MenuSpec } from './popup'
 import { settings, t } from './settings'
 import type { Tab } from './tab'
 import type { BrowserWin } from './window'
 import { createWindow } from './windows'
 
-const sep: MenuItemConstructorOptions = { type: 'separator' }
-
-function clean(items: MenuItemConstructorOptions[]): MenuItemConstructorOptions[] {
-  const out: MenuItemConstructorOptions[] = []
-  for (const item of items) {
-    if (item.type === 'separator' && (out.length === 0 || out.at(-1)?.type === 'separator')) continue
-    out.push(item)
-  }
-  while (out.at(-1)?.type === 'separator') out.pop()
-  return out
-}
-
 export function showPageMenu(tab: Tab, wc: WebContents, params: ContextMenuParams): void {
   const win = tab.win
-  const items: MenuItemConstructorOptions[] = []
+  const items: MenuSpec[] = []
 
   if (params.misspelledWord) {
     for (const suggestion of params.dictionarySuggestions.slice(0, 5)) {
@@ -74,17 +64,17 @@ export function showPageMenu(tab: Tab, wc: WebContents, params: ContextMenuParam
   if (params.isEditable) {
     const flags = params.editFlags
     items.push(
-      { label: t('ctx.cut'), role: 'cut', enabled: flags.canCut },
-      { label: t('ctx.copy'), role: 'copy', enabled: flags.canCopy },
-      { label: t('ctx.paste'), role: 'paste', enabled: flags.canPaste },
-      { label: t('ctx.selectAll'), role: 'selectAll', enabled: flags.canSelectAll },
+      { label: t('ctx.cut'), accelerator: 'Ctrl+X', enabled: flags.canCut, click: () => wc.cut() },
+      { label: t('ctx.copy'), accelerator: 'Ctrl+C', enabled: flags.canCopy, click: () => wc.copy() },
+      { label: t('ctx.paste'), accelerator: 'Ctrl+V', enabled: flags.canPaste, click: () => wc.paste() },
+      { label: t('ctx.selectAll'), accelerator: 'Ctrl+A', enabled: flags.canSelectAll, click: () => wc.selectAll() },
       sep,
     )
   } else if (params.selectionText.trim()) {
     const text = params.selectionText.trim()
     const short = text.length > 24 ? `${text.slice(0, 24)}…` : text
     items.push(
-      { label: t('ctx.copy'), role: 'copy' },
+      { label: t('ctx.copy'), accelerator: 'Ctrl+C', click: () => wc.copy() },
       {
         label: t('ctx.searchFor', { text: short }),
         click: () => win.openTab({ url: searchURL(settings().searchEngine, text), opener: tab }),
@@ -95,31 +85,28 @@ export function showPageMenu(tab: Tab, wc: WebContents, params: ContextMenuParam
 
   if (!link && !params.isEditable && !params.selectionText.trim() && params.mediaType === 'none') {
     items.push(
-      { label: t('ctx.back'), enabled: tab.canGoBack(), click: () => tab.back() },
-      { label: t('ctx.forward'), enabled: tab.canGoForward(), click: () => tab.forward() },
-      { label: t('ctx.reload'), click: () => tab.reload() },
+      { label: t('ctx.back'), accelerator: 'Alt+Left', enabled: tab.canGoBack(), click: () => tab.back() },
+      { label: t('ctx.forward'), accelerator: 'Alt+Right', enabled: tab.canGoForward(), click: () => tab.forward() },
+      { label: t('ctx.reload'), accelerator: 'Ctrl+R', click: () => tab.reload() },
       sep,
-      { label: t('ctx.savePage'), click: () => void savePage(win) },
-      { label: t('ctx.print'), click: () => wc.print() },
+      { label: t('ctx.savePage'), accelerator: 'Ctrl+S', click: () => void savePage(win) },
+      { label: t('ctx.print'), accelerator: 'Ctrl+P', click: () => wc.print() },
       sep,
     )
   }
 
-  const menu = Menu.buildFromTemplate(clean(items))
   const extensionItems = win.incognito ? [] : (getExtensions()?.getContextMenuItems(wc, params) ?? [])
-  if (extensionItems.length > 0 && menu.items.length > 0) menu.append(new MenuItem(sep))
-  for (const item of extensionItems) menu.append(item)
-  if (menu.items.length > 0) menu.append(new MenuItem(sep))
-  menu.append(
-    new MenuItem({
-      label: t('ctx.inspect'),
-      click: () => {
-        if (!wc.isDevToolsOpened()) wc.openDevTools({ mode: 'detach' })
-        wc.inspectElement(params.x, params.y)
-      },
-    }),
-  )
-  menu.popup({ window: win.base })
+  items.push(sep, ...fromElectron(win, extensionItems, wc), sep, {
+    label: t('ctx.inspect'),
+    click: () => {
+      if (!wc.isDevToolsOpened()) wc.openDevTools({ mode: 'detach' })
+      wc.inspectElement(params.x, params.y)
+    },
+  })
+  // Page coordinates are relative to the page's view.
+  const view = tab.reader?.webContents === wc ? tab.reader.view : tab.view
+  const origin = view?.getBounds() ?? { x: 0, y: 0 }
+  popupMenu(win, items, origin.x + params.x, origin.y + params.y)
 }
 
 export function showTabMenu(win: BrowserWin, tab: Tab, x: number, y: number): void {
@@ -130,7 +117,7 @@ export function showTabMenu(win: BrowserWin, tab: Tab, x: number, y: number): vo
   const inSplit = !!workspace?.split && (workspace.split.left === tab.id || workspace.split.right === tab.id)
   const others = win.workspaces.filter((w) => w !== workspace)
 
-  const items: MenuItemConstructorOptions[] = [
+  const items: MenuSpec[] = [
     { label: t('tabmenu.reload'), enabled: !tab.page, click: () => tab.reload() },
     { label: t('tabmenu.duplicate'), enabled: !tab.page, click: () => win.duplicateTab(tab) },
     { label: tab.pinned ? t('tabmenu.unpin') : t('tabmenu.pin'), click: () => win.togglePin(tab) },
@@ -166,13 +153,13 @@ export function showTabMenu(win: BrowserWin, tab: Tab, x: number, y: number): vo
     },
     { label: t('tabmenu.close'), click: () => win.closeTab(tab) },
   ]
-  Menu.buildFromTemplate(clean(items)).popup({ window: win.base, x: Math.round(x), y: Math.round(y) })
+  popupMenu(win, items, x, y)
 }
 
 export function showAppMenu(win: BrowserWin, x: number, y: number): void {
   const tab = win.activeTab()
   const focus = focusState()
-  const items: MenuItemConstructorOptions[] = [
+  const items: MenuSpec[] = [
     { label: t('menu.newTab'), accelerator: 'Ctrl+T', click: () => newTab(win) },
     { label: t('menu.newWindow'), accelerator: 'Ctrl+N', click: () => createWindow({ incognito: false }) },
     { label: t('menu.newIncognito'), accelerator: 'Ctrl+Shift+N', click: () => createWindow({ incognito: true }) },
@@ -185,7 +172,7 @@ export function showAppMenu(win: BrowserWin, x: number, y: number): void {
             submenu: [
               { label: t('cmd.bookmark-page'), accelerator: 'Ctrl+D', enabled: isCommandAvailable(win, 'bookmark-page'), click: () => runCommand(win, 'bookmark-page') },
               { label: t('cmd.bookmark-tabs'), accelerator: 'Ctrl+Shift+D', enabled: isCommandAvailable(win, 'bookmark-tabs'), click: () => runCommand(win, 'bookmark-tabs') },
-              { type: 'separator' as const },
+              sep,
               {
                 label: t('bookmarks.showBar'),
                 type: 'checkbox' as const,
@@ -194,7 +181,7 @@ export function showAppMenu(win: BrowserWin, x: number, y: number): void {
                 click: () => runCommand(win, 'toggle-bookmarks-bar'),
               },
               { label: t('bookmarks.manager'), accelerator: 'Ctrl+Shift+O', click: () => openPage(win, 'bookmarks') },
-              { type: 'separator' as const },
+              sep,
               { label: t('import.menu'), click: () => runCommand(win, 'import-bookmarks') },
               { label: t('bookmarks.exportMenu'), click: () => void exportBookmarks(win) },
             ],
@@ -230,5 +217,6 @@ export function showAppMenu(win: BrowserWin, x: number, y: number): void {
     sep,
     { label: t('menu.quit'), accelerator: 'Ctrl+Q', click: () => app.quit() },
   ]
-  Menu.buildFromTemplate(clean(items)).popup({ window: win.base, x: Math.round(x), y: Math.round(y) })
+  // x is the menu button's right edge: the menu lines up with it.
+  popupMenu(win, items, x, y, 'end')
 }
