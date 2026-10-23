@@ -1,6 +1,6 @@
 // The command bar ("Bak", Ctrl+K): open tabs, history and commands in one list.
 import { useEffect, useRef, useState } from 'react'
-import { CornerDownLeft, History, Search, SquareArrowOutUpRight, Terminal } from 'lucide-react'
+import { CornerDownLeft, History, Search, SquareArrowOutUpRight, Star, Terminal } from 'lucide-react'
 import type { MessageKey } from '@shared/i18n'
 import type { Suggestion, SuggestionKind } from '@shared/types'
 import { api, call } from '../api'
@@ -12,9 +12,10 @@ const GROUP_LABEL: Partial<Record<SuggestionKind, MessageKey>> = {
   command: 'palette.commands',
   tab: 'palette.tabs',
   history: 'palette.history',
+  bookmark: 'palette.bookmarks',
 }
 
-const ICONS = { command: Terminal, tab: SquareArrowOutUpRight, history: History, url: Search, search: Search }
+const ICONS = { command: Terminal, tab: SquareArrowOutUpRight, history: History, url: Search, search: Search, bookmark: Star }
 
 export function Palette() {
   useOverlay(true)
@@ -91,7 +92,7 @@ export function Palette() {
                   onClick={() => run(item)}
                 >
                   <span className="palette-icon">
-                    {item.kind === 'tab' || item.kind === 'history' ? (
+                    {item.kind === 'tab' || item.kind === 'history' || item.kind === 'bookmark' ? (
                       <Favicon src={item.favicon} url={item.value} size={16} />
                     ) : (
                       <Icon icon={ICONS[item.kind]} size={16} />

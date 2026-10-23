@@ -1,6 +1,7 @@
 // Creating windows, restoring the last session and keeping every UI in sync with
 // app-wide state (focus, updates, downloads, settings).
 import type { GlobalState } from '@shared/types'
+import { bookmarkTree } from './bookmarks'
 import { downloads } from './downloads'
 import { bus } from './events'
 import { focusState } from './focus'
@@ -95,6 +96,10 @@ export function wireBroadcasts(): void {
       win.send('settings', current)
       win.markDirty()
     }
+  })
+  bus.on('bookmarks', () => {
+    const tree = bookmarkTree()
+    for (const win of BrowserWin.all.values()) win.send('bookmarks', tree)
   })
   bus.on('window-dirty', (id) => {
     if (!BrowserWin.all.get(id)?.incognito) scheduleSave()

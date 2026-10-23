@@ -5,9 +5,12 @@
 import { app } from 'electron'
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import type { CommandId, UICommand, WorkspaceIcon } from '@shared/types'
+import { countNodes } from '@shared/bookmarks'
+import type { CommandId, InternalPage, UICommand, WorkspaceIcon } from '@shared/types'
 import { installExtension } from 'electron-chrome-web-store'
-import { runCommand } from './actions'
+import { openPage, runCommand } from './actions'
+import { bookmarkTree } from './bookmarks'
+import { detectSources, importBookmarks } from './importers'
 import { lifecycle } from './lifecycle'
 import { browsingSession } from './sessions'
 import { updateSettings } from './settings'
@@ -27,6 +30,11 @@ type Step =
   | { do: 'workspace'; name: string; icon: WorkspaceIcon }
   | { do: 'state' }
   | { do: 'installExtension'; id: string }
+  | { do: 'type'; text: string }
+  | { do: 'key'; key: string }
+  | { do: 'page'; page: InternalPage; sub?: string }
+  | { do: 'importDetected'; index: number }
+  | { do: 'bookmarks' }
   | { do: 'quit' }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
@@ -111,6 +119,29 @@ export function startHarness(): void {
           case 'state':
             console.log('[harness] state', JSON.stringify(Object.values(win.toState().tabs).map((t) => ({ id: t.id, url: t.url, loading: t.loading, title: t.title, blocked: t.blocked }))))
             break
+          case 'type':
+            win.ui.webContents.insertText(step.text)
+            break
+          case 'key':
+            for (const type of ['keyDown', 'keyUp'] as const) win.ui.webContents.sendInputEvent({ type, keyCode: step.key })
+            break
+          case 'page':
+            openPage(win, step.page, step.sub)
+            break
+          case 'importDetected': {
+            const sources = detectSources()
+            console.log('[harness] sources', JSON.stringify(sources))
+            const source = sources[step.index]
+            if (source) console.log('[harness] imported', JSON.stringify(await importBookmarks(win, source.id, true)))
+            break
+          }
+          case 'bookmarks': {
+            const tree = bookmarkTree()
+            const summary = (nodes: typeof tree.bar.children): unknown =>
+              nodes.map((n) => (n.type === 'url' ? n.title : { [n.title]: summary(n.children) }))
+            console.log('[harness] bookmarks', JSON.stringify({ bar: summary(tree.bar.children), other: summary(tree.other.children), counts: countNodes([tree.bar, tree.other]) }))
+            break
+          }
           case 'installExtension':
             await installExtension(step.id, { session: browsingSession() })
             console.log('[harness] installed', step.id)

@@ -1,5 +1,6 @@
 // A small external store for state pushed from the main process.
 import { useCallback, useSyncExternalStore } from 'react'
+import type { BookmarkTree } from '@shared/bookmarks'
 import type { InitialData } from '@shared/ipc'
 import { translate, type MessageKey, type Vars } from '@shared/i18n'
 import type { AppInfo, GlobalState, Settings, TabState, WindowState, WorkspaceState } from '@shared/types'
@@ -10,6 +11,7 @@ export interface Snapshot {
   global: GlobalState
   settings: Settings
   app: AppInfo
+  bookmarks: BookmarkTree
 }
 
 let snapshot: Snapshot | null = null
@@ -34,6 +36,10 @@ export async function initStore(): Promise<void> {
     if (snapshot) snapshot = { ...snapshot, settings }
     emit()
   })
+  on('bookmarks', (bookmarks) => {
+    if (snapshot) snapshot = { ...snapshot, bookmarks }
+    emit()
+  })
 }
 
 function subscribe(listener: () => void): () => void {
@@ -51,6 +57,10 @@ export function useWindow(): WindowState {
 
 export function useSettings(): Settings {
   return useSnapshot().settings
+}
+
+export function useBookmarks(): BookmarkTree {
+  return useSnapshot().bookmarks
 }
 
 export function useGlobal(): GlobalState {

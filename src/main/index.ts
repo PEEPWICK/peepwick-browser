@@ -4,6 +4,7 @@ import { existsSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { hostOf } from '@shared/url'
+import { flushBookmarks, loadBookmarks } from './bookmarks'
 import { activeDownloadCount, cancelAllDownloads, flushDownloads, loadDownloads } from './downloads'
 import { bus } from './events'
 import { initExtensions } from './extensions'
@@ -52,6 +53,7 @@ async function boot(): Promise<void> {
   loadFocus()
   loadPermissions()
   loadDownloads()
+  loadBookmarks()
   openHistory()
   configureUISession()
   installIPC()
@@ -143,6 +145,7 @@ if (!app.requestSingleInstanceLock()) {
     flushStats()
     flushPermissions()
     flushDownloads()
+    flushBookmarks()
     closeHistory()
   })
 

@@ -131,7 +131,13 @@ export function handleShortcut(win: BrowserWin, input: Input): boolean {
         toggleSplit(win)
         return true
       case 'b':
-        runCommand(win, 'toggle-sidebar')
+        runCommand(win, 'toggle-bookmarks-bar')
+        return true
+      case 'd':
+        runCommand(win, 'bookmark-tabs')
+        return true
+      case 'o':
+        runCommand(win, 'bookmarks')
         return true
     }
     return false
@@ -163,7 +169,7 @@ export function handleShortcut(win: BrowserWin, input: Input): boolean {
       if (tab?.find?.text) tab.findInPage(tab.find.text, true, true)
       return true
     case 'd':
-      if (tab && !tab.page) win.togglePin(tab)
+      runCommand(win, 'bookmark-page')
       return true
     case 'b':
       runCommand(win, 'toggle-sidebar')

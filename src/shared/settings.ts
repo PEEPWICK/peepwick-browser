@@ -1,5 +1,5 @@
 import { SEARCH_ENGINES } from './search'
-import type { Lang, SearchEngineId, Settings, ShieldLevel, ThemePref } from './types'
+import type { BookmarksBarMode, Lang, SearchEngineId, Settings, ShieldLevel, ThemePref } from './types'
 
 export const DEFAULT_FOCUS_SITES = [
   'youtube.com',
@@ -30,6 +30,7 @@ export function defaultSettings(language: Lang): Settings {
     restoreSession: true,
     askWhereToSave: false,
     sidebarCollapsed: false,
+    bookmarksBar: 'always',
     onboarded: false,
   }
 }
@@ -37,6 +38,7 @@ export function defaultSettings(language: Lang): Settings {
 const LANGS: Lang[] = ['tr', 'en']
 const THEMES: ThemePref[] = ['system', 'dark', 'light']
 const LEVELS: ShieldLevel[] = ['off', 'standard', 'strict']
+const BAR_MODES: BookmarksBarMode[] = ['always', 'newtab', 'never']
 
 /** Keeps only well-formed values from an untrusted settings patch. */
 export function sanitizeSettingsPatch(patch: unknown): Partial<Settings> {
@@ -52,6 +54,7 @@ export function sanitizeSettingsPatch(patch: unknown): Partial<Settings> {
     out.searchEngine = input.searchEngine as SearchEngineId
   }
   if (LEVELS.includes(input.shieldLevel as ShieldLevel)) out.shieldLevel = input.shieldLevel as ShieldLevel
+  if (BAR_MODES.includes(input.bookmarksBar as BookmarksBarMode)) out.bookmarksBar = input.bookmarksBar as BookmarksBarMode
   bool('searchSuggestions')
   bool('blockThirdPartyCookies')
   bool('sendGlobalPrivacyControl')

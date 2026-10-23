@@ -3,7 +3,8 @@ import { app, clipboard, Menu, MenuItem, type ContextMenuParams, type MenuItemCo
 import { searchURL } from '@shared/search'
 import { focusState, startFocus, stopFocus } from './focus'
 import { getExtensions } from './extensions'
-import { newTab, openDevTools, openPage, runCommand, savePage } from './actions'
+import { isCommandAvailable, newTab, openDevTools, openPage, runCommand, savePage } from './actions'
+import { createBookmark, exportBookmarks } from './bookmarks'
 import { settings, t } from './settings'
 import type { Tab } from './tab'
 import type { BrowserWin } from './window'
@@ -49,6 +50,9 @@ export function showPageMenu(tab: Tab, wc: WebContents, params: ContextMenuParam
       },
       { label: t('ctx.openLinkIncognito'), click: () => createWindow({ incognito: true, urls: [link] }) },
       { label: t('ctx.copyLink'), click: () => clipboard.writeText(link) },
+      ...(win.incognito || !/^(https?|ftp|file):/.test(link)
+        ? []
+        : [{ label: t('ctx.bookmarkLink'), click: () => void createBookmark({ parentId: 'bar', title: params.linkText.trim() || link, url: link }) }]),
       sep,
     )
   }
@@ -131,6 +135,9 @@ export function showTabMenu(win: BrowserWin, tab: Tab, x: number, y: number): vo
     { label: t('tabmenu.duplicate'), enabled: !tab.page, click: () => win.duplicateTab(tab) },
     { label: tab.pinned ? t('tabmenu.unpin') : t('tabmenu.pin'), click: () => win.togglePin(tab) },
     { label: tab.muted ? t('tabmenu.unmute') : t('tabmenu.mute'), click: () => tab.setMuted(!tab.muted) },
+    ...(!win.incognito && !tab.page && /^(https?|file):/.test(tab.url)
+      ? [{ label: t('tabmenu.bookmark'), click: () => void createBookmark({ parentId: 'bar', title: tab.displayTitle(), url: tab.url }) }]
+      : []),
     sep,
     ...(active && active !== tab && !inSplit
       ? [{ label: t('tabmenu.split'), click: () => win.split(active, tab) }]
@@ -171,6 +178,29 @@ export function showAppMenu(win: BrowserWin, x: number, y: number): void {
     { label: t('menu.newIncognito'), accelerator: 'Ctrl+Shift+N', click: () => createWindow({ incognito: true }) },
     sep,
     { label: t('menu.history'), accelerator: 'Ctrl+H', click: () => openPage(win, 'history') },
+    ...(!win.incognito
+      ? [
+          {
+            label: t('menu.bookmarks'),
+            submenu: [
+              { label: t('cmd.bookmark-page'), accelerator: 'Ctrl+D', enabled: isCommandAvailable(win, 'bookmark-page'), click: () => runCommand(win, 'bookmark-page') },
+              { label: t('cmd.bookmark-tabs'), accelerator: 'Ctrl+Shift+D', enabled: isCommandAvailable(win, 'bookmark-tabs'), click: () => runCommand(win, 'bookmark-tabs') },
+              { type: 'separator' as const },
+              {
+                label: t('bookmarks.showBar'),
+                type: 'checkbox' as const,
+                checked: settings().bookmarksBar !== 'never',
+                accelerator: 'Ctrl+Shift+B',
+                click: () => runCommand(win, 'toggle-bookmarks-bar'),
+              },
+              { label: t('bookmarks.manager'), accelerator: 'Ctrl+Shift+O', click: () => openPage(win, 'bookmarks') },
+              { type: 'separator' as const },
+              { label: t('import.menu'), click: () => runCommand(win, 'import-bookmarks') },
+              { label: t('bookmarks.exportMenu'), click: () => void exportBookmarks(win) },
+            ],
+          },
+        ]
+      : []),
     { label: t('menu.downloads'), accelerator: 'Ctrl+J', click: () => win.command({ type: 'downloads' }) },
     ...(!win.incognito ? [{ label: t('menu.extensions'), click: () => openPage(win, 'extensions') }] : []),
     sep,

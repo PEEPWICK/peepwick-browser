@@ -2,6 +2,7 @@
 import { app, dialog } from 'electron'
 import { NEW_TAB_URL } from '@shared/url'
 import type { CommandId, InternalPage } from '@shared/types'
+import { bookmarkPage, bookmarkTabs } from './bookmarks'
 import { focusState, startFocus, stopFocus } from './focus'
 import { settings, updateSettings } from './settings'
 import { checkForUpdates } from './updater'
@@ -10,23 +11,40 @@ import { createWindow } from './windows'
 
 export function newTab(win: BrowserWin, url = NEW_TAB_URL): void {
   win.openTab({ url })
-  if (url === NEW_TAB_URL) win.command({ type: 'focus-omnibox' })
+  // The new tab page has its own search box; typing goes straight there.
+  if (url === NEW_TAB_URL) win.command({ type: 'focus-page-search' })
 }
 
-export function openPage(win: BrowserWin, page: InternalPage, hash = ''): void {
+export function openPage(win: BrowserWin, page: InternalPage, subpage = ''): void {
   const active = win.activeTab()
   if (active?.page === page || active?.page === 'newtab') {
-    active.showPage(page, hash)
+    active.showPage(page, subpage)
     return
   }
   const existing = win.tabsInOrder().find((tab) => tab.page === page)
   if (existing) {
-    existing.showPage(page, hash)
+    existing.showPage(page, subpage)
     win.activateTab(existing)
     return
   }
   const tab = win.openTab({ url: `peepwick://${page}` })
-  tab.showPage(page, hash)
+  tab.showPage(page, subpage)
+}
+
+/** Ctrl+D: bookmarks the active page and opens the star panel to edit it. */
+export function bookmarkCurrentPage(win: BrowserWin): { id: string; created: boolean } | null {
+  const tab = win.activeTab()
+  if (!tab || tab.page || win.incognito) return null
+  const result = bookmarkPage(tab.url, tab.displayTitle())
+  if (result) win.command({ type: 'bookmark-star', created: result.created })
+  return result
+}
+
+export function bookmarkSpaceTabs(win: BrowserWin): void {
+  const workspace = win.activeWorkspace()
+  const tabs = win.tabsInOrder(workspace).filter((tab) => !tab.page).map((tab) => ({ url: tab.url, title: tab.displayTitle() }))
+  const id = bookmarkTabs(tabs, workspace.name)
+  if (id) win.command({ type: 'bookmark-edit', id })
 }
 
 export function toggleSplit(win: BrowserWin): void {
@@ -80,7 +98,12 @@ export function isCommandAvailable(win: BrowserWin, id: CommandId): boolean {
     case 'pin':
       return !!active && !active.page
     case 'extensions':
+    case 'import-bookmarks':
       return !win.incognito
+    case 'bookmark-page':
+      return !!active && !active.page && /^(https?|file):/.test(active.url) && !win.incognito
+    case 'bookmark-tabs':
+      return !win.incognito && win.tabsInOrder().some((tab) => !tab.page)
     default:
       return true
   }
@@ -136,6 +159,21 @@ export function runCommand(win: BrowserWin, id: CommandId): void {
     case 'check-updates':
       void checkForUpdates()
       openPage(win, 'settings', 'about')
+      break
+    case 'bookmark-page':
+      bookmarkCurrentPage(win)
+      break
+    case 'bookmark-tabs':
+      bookmarkSpaceTabs(win)
+      break
+    case 'bookmarks':
+      openPage(win, 'bookmarks')
+      break
+    case 'toggle-bookmarks-bar':
+      updateSettings({ bookmarksBar: settings().bookmarksBar === 'never' ? 'always' : 'never' })
+      break
+    case 'import-bookmarks':
+      win.command({ type: 'import-bookmarks' })
       break
   }
 }

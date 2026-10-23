@@ -513,3 +513,116 @@
   padding: 0 var(--s5);
   font-size: 14px;
 }
+
+/* Modal dialogs */
+
+.modal {
+  position: absolute;
+  top: 16vh;
+  left: 50%;
+  max-width: calc(100vw - 48px);
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  background: var(--raised);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  animation: rise var(--fast) var(--ease);
+}
+
+.modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--s3) var(--s3) var(--s3) var(--s5);
+  border-bottom: 1px solid var(--line);
+}
+
+.modal-head h2 {
+  margin: 0;
+  font-weight: 650;
+  font-stretch: 108%;
+  font-size: 17px;
+  letter-spacing: -0.01em;
+}
+
+.modal-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s4);
+  padding: var(--s5);
+}
+
+.modal-body .text-input,
+.popover .text-input,
+.modal-body .select,
+.popover .select {
+  width: 100%;
+}
+
+.field-error {
+  margin: 0;
+  font-size: 12px;
+  color: var(--accent);
+}
+
+.import-sources {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s1);
+  max-height: 46vh;
+  overflow-y: auto;
+}
+
+.import-source {
+  display: flex;
+  align-items: center;
+  gap: var(--s3);
+  padding: var(--s3);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  transition: border-color var(--fast) var(--ease);
+}
+
+.import-source:hover {
+  border-color: var(--line-strong);
+}
+
+.import-source.is-active {
+  border-color: var(--accent);
+}
+
+.import-source input {
+  accent-color: var(--fitil);
+  margin: 0;
+}
+
+.import-name {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.import-name .muted {
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.import-result {
+  margin: 0;
+  padding-left: var(--s5);
+  display: flex;
+  flex-direction: column;
+  gap: var(--s2);
+  line-height: 1.5;
+}
+
+.import-result li:first-child {
+  font-weight: 600;
+  list-style: none;
+  margin-left: calc(-1 * var(--s5));
+}

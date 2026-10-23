@@ -4,6 +4,7 @@
 import { lazy, Suspense, useLayoutEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
 import { Plus } from 'lucide-react'
 import type { PaneRect, TabState } from '@shared/types'
+import { internalSubpage } from '@shared/url'
 import { api } from '../api'
 import { activeWorkspace, useSnapshot, useT } from '../store'
 import { Button, Icon } from '../ui'
@@ -13,14 +14,17 @@ import { NewTab } from '../pages/NewTab'
 const Settings = lazy(() => import('../pages/Settings').then((m) => ({ default: m.Settings })))
 const HistoryPage = lazy(() => import('../pages/History').then((m) => ({ default: m.HistoryPage })))
 const Extensions = lazy(() => import('../pages/Extensions').then((m) => ({ default: m.Extensions })))
+const BookmarksPage = lazy(() => import('../pages/Bookmarks').then((m) => ({ default: m.BookmarksPage })))
 
 function PageFor({ tab }: { tab: TabState }) {
   if (tab.interstitial) return <Interstitial tab={tab} interstitial={tab.interstitial} />
   switch (tab.page) {
     case 'newtab':
-      return <NewTab />
+      return <NewTab tabId={tab.id} />
     case 'settings':
-      return <Settings hash={tab.url.split('#')[1] ?? ''} />
+      return <Settings section={internalSubpage(tab.url)} />
+    case 'bookmarks':
+      return <BookmarksPage />
     case 'history':
       return <HistoryPage />
     case 'extensions':

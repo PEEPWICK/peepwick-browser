@@ -57,6 +57,13 @@
   min-height: 0;
 }
 
+.chrome-top {
+  display: flex;
+  flex-direction: column;
+  flex: none;
+  background: var(--frame);
+}
+
 /* ── Buttons ──────────────────────────────────────────────────────────────── */
 
 .icon-button {
@@ -1068,4 +1075,91 @@ button.omni-badge:hover {
   gap: var(--s4);
   background: var(--page);
   border-radius: var(--radius);
+}
+
+/* ── Bookmarks bar ────────────────────────────────────────────────────────── */
+
+.bookmarks-bar {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  height: 32px;
+  margin: -4px var(--gutter) 4px 0;
+  padding: 0 var(--s1);
+  overflow: hidden;
+  flex: none;
+  border-radius: var(--radius);
+}
+
+.bookmarks-bar.is-drop {
+  box-shadow: inset 0 -2px 0 var(--accent);
+}
+
+.bar-item {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 180px;
+  height: 26px;
+  padding: 0 var(--s2);
+  border-radius: var(--radius);
+  color: var(--text);
+  font-size: 12.5px;
+  flex: none;
+  transition: background-color var(--fast) var(--ease);
+}
+
+.bar-item:hover {
+  background: var(--surface);
+}
+
+.bar-item svg {
+  color: var(--text-2);
+  flex: none;
+}
+
+.bar-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bar-more {
+  padding: 0 6px;
+}
+
+.bar-item.drop-before::before,
+.bar-item.drop-after::after {
+  content: '';
+  position: absolute;
+  top: 4px;
+  bottom: 4px;
+  width: 2px;
+  background: var(--accent);
+}
+
+.bar-item.drop-before::before {
+  left: -1px;
+}
+
+.bar-item.drop-after::after {
+  right: -1px;
+}
+
+.bar-item.drop-into {
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+
+.bar-empty {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s3);
+  padding: 0 var(--s2);
+  font-size: 12px;
+  color: var(--text-2);
+}
+
+.toast-bar {
+  border-left: 2px solid var(--accent);
 }

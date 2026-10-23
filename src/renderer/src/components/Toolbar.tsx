@@ -9,14 +9,13 @@ import {
   History,
   Minus,
   PanelLeftOpen,
-  Pin,
-  PinOff,
   RotateCw,
   Search,
   ShieldCheck,
   ShieldOff,
   Square,
   SquareArrowOutUpRight,
+  Star,
   Terminal,
   X,
 } from 'lucide-react'
@@ -27,7 +26,8 @@ import { displayParts } from '@shared/url'
 import { api, call } from '../api'
 import { DoubleEye } from '../brand'
 import { useUI } from '../context'
-import { activeTab, useSnapshot, useT } from '../store'
+import { activeTab, useBookmarks, useSnapshot, useT } from '../store'
+import { findLink } from './BookmarkDialogs'
 import { Favicon, Icon, IconButton, useOverlay } from '../ui'
 
 function ShieldBadge({ tab }: { tab: TabState }) {
@@ -58,10 +58,34 @@ function ShieldBadge({ tab }: { tab: TabState }) {
   )
 }
 
-const SUGGESTION_ICONS = { url: Globe, search: Search, history: History, tab: SquareArrowOutUpRight, command: Terminal }
+const SUGGESTION_ICONS = { url: Globe, search: Search, history: History, tab: SquareArrowOutUpRight, command: Terminal, bookmark: Star }
+
+/** The star: bookmarks the page on first click, then opens the editing panel. */
+function StarButton({ tab }: { tab: TabState }) {
+  const tree = useBookmarks()
+  const t = useT()
+  const { openPanel } = useUI()
+  const bookmarked = !!findLink(tree, tab.url)
+  return (
+    <button
+      type="button"
+      data-anchor="star"
+      className={`icon-button omni-action ${bookmarked ? 'is-active' : ''}`}
+      aria-label={bookmarked ? t('omnibox.bookmarked') : t('omnibox.bookmark')}
+      title={`${bookmarked ? t('omnibox.bookmarked') : t('omnibox.bookmark')} · Ctrl+D`}
+      onMouseDown={(event) => event.preventDefault()}
+      onClick={(event) => {
+        if (bookmarked) openPanel({ kind: 'star', anchor: event.currentTarget.getBoundingClientRect(), created: false })
+        else void call.bookmarkPage()
+      }}
+    >
+      <Icon icon={Star} size={16} fill={bookmarked ? 'currentColor' : 'none'} />
+    </button>
+  )
+}
 
 function Omnibox({ tab }: { tab: TabState | null }) {
-  const { settings } = useSnapshot()
+  const { settings, state } = useSnapshot()
   const t = useT()
   const { registerOmnibox } = useUI()
   const input = useRef<HTMLInputElement>(null)
@@ -203,15 +227,7 @@ function Omnibox({ tab }: { tab: TabState | null }) {
           onClick={() => api.toggleReader()}
         />
       )}
-      {tab && !editing && !tab.page && /^https?:/.test(tab.url) && (
-        <IconButton
-          icon={tab.pinned ? PinOff : Pin}
-          label={tab.pinned ? t('omnibox.unpin') : t('omnibox.pin')}
-          active={tab.pinned}
-          className="omni-action"
-          onClick={() => api.togglePin(tab.id)}
-        />
-      )}
+      {tab && !editing && !tab.page && !state.incognito && /^(https?|file):/.test(tab.url) && <StarButton tab={tab} />}
       {open && (
         <ul className="omni-list" id="omni-list" role="listbox" onMouseDown={(event) => event.preventDefault()}>
           {items.map((item, index) => (
@@ -224,7 +240,7 @@ function Omnibox({ tab }: { tab: TabState | null }) {
               onClick={(event) => go(item, event.ctrlKey || event.metaKey)}
             >
               <span className="omni-item-icon">
-                {item.favicon || item.kind === 'history' ? (
+                {item.favicon || item.kind === 'history' || item.kind === 'bookmark' ? (
                   <Favicon src={item.favicon} url={item.value} size={16} />
                 ) : (
                   <Icon icon={SUGGESTION_ICONS[item.kind]} size={15} />
@@ -235,7 +251,7 @@ function Omnibox({ tab }: { tab: TabState | null }) {
                 <span className="omni-item-meta label">{t('omnibox.searchWith', { engine: SEARCH_ENGINES[settings.searchEngine].name })}</span>
               )}
               {item.kind === 'tab' && <span className="omni-item-meta label">{t('omnibox.switchTo')}</span>}
-              {(item.kind === 'history' || item.kind === 'url') && item.title !== item.value && (
+              {(item.kind === 'history' || item.kind === 'url' || item.kind === 'bookmark') && item.title !== item.value && (
                 <span className="omni-item-meta mono">{displayParts(item.value).host}</span>
               )}
             </li>

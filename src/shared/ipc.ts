@@ -1,12 +1,15 @@
 // The contract between the UI renderer and the main process. The preload exposes
 // three generic entry points (invoke, send, on); the main process routes them by
 // method name and only accepts calls from the browser UI it created.
+import type { BookmarkTree } from './bookmarks'
 import type {
   AppInfo,
   CommandId,
   ExtensionInfo,
   GlobalState,
   HistoryEntry,
+  ImportResult,
+  ImportSource,
   InternalPage,
   PaneRect,
   PermissionKind,
@@ -25,6 +28,17 @@ export interface InitialData {
   global: GlobalState
   settings: Settings
   app: AppInfo
+  bookmarks: BookmarkTree
+}
+
+export type BookmarkOpen = 'current' | 'tab' | 'background' | 'window' | 'incognito'
+
+export interface BookmarkInput {
+  parentId: string
+  index?: number
+  title: string
+  /** Absent for folders. */
+  url?: string
 }
 
 export interface ClearDataOptions {
@@ -46,6 +60,11 @@ export interface InvokeMethods {
   appInfo(): AppInfo
   setDefaultBrowser(): boolean
   shieldReport(): { host: string; count: number }[]
+  bookmarkCreate(input: BookmarkInput): string | null
+  bookmarkPage(): { id: string; created: boolean } | null
+  importSources(): ImportSource[]
+  importBookmarks(sourceId: string, skipDuplicates: boolean): ImportResult | null
+  exportBookmarks(): boolean
 }
 
 export interface SendMethods {
@@ -96,6 +115,15 @@ export interface SendMethods {
   extensionOptions(id: string): void
   permissionRemove(origin: string, kind: PermissionKind): void
   onboardingDone(): void
+  bookmarkUpdate(id: string, patch: { title?: string; url?: string }): void
+  bookmarkMove(ids: string[], parentId: string, index: number): void
+  bookmarkRemove(ids: string[]): void
+  bookmarkUndo(): void
+  bookmarkSort(folderId: string): void
+  bookmarkOpen(ids: string[], how: BookmarkOpen): void
+  bookmarkMenu(id: string, x: number, y: number): void
+  bookmarkFolderMenu(folderId: string, x: number, y: number, fromIndex?: number): void
+  bookmarkTabs(): void
 }
 
 export interface EventMap {
@@ -103,6 +131,7 @@ export interface EventMap {
   global: GlobalState
   settings: Settings
   command: UICommand
+  bookmarks: BookmarkTree
 }
 
 export type InvokeName = keyof InvokeMethods

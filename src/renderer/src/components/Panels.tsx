@@ -9,7 +9,7 @@ import { useUI } from '../context'
 import { activeTab, useSnapshot, useT } from '../store'
 import { Button, Icon, IconButton, Segmented, Toggle, WORKSPACE_GLYPHS, remaining, useNow, useOverlay } from '../ui'
 
-function Popover({ anchor, width = 320, label, children }: { anchor: DOMRect; width?: number; label: string; children: ReactNode }) {
+export function Popover({ anchor, width = 320, label, children }: { anchor: DOMRect; width?: number; label: string; children: ReactNode }) {
   useOverlay(true)
   const { closePanel } = useUI()
   const ref = useRef<HTMLDivElement>(null)

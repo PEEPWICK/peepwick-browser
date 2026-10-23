@@ -52,6 +52,7 @@ const PAGE_TITLES: Record<InternalPage, MessageKey> = {
   settings: 'settings.title',
   history: 'history.title',
   extensions: 'ext.title',
+  bookmarks: 'bookmarks.title',
 }
 const certificateExceptions = new Set<string>()
 /** Views we closed on purpose (sleep, close), as opposed to pages closing themselves. */
@@ -568,7 +569,7 @@ export class Tab {
   serialize(): SavedTab {
     const history = this.page ? undefined : this.captureHistory()
     return {
-      url: this.page ? internalURL(this.page) : this.url,
+      url: this.url,
       title: this.title,
       pinned: this.pinned,
       muted: this.muted,

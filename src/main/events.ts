@@ -8,6 +8,7 @@ export const bus = new EventEmitter<{
   /** Focus, update or download state changed. */
   global: []
   settings: []
+  bookmarks: []
   /** A tab's state changed; windows coalesce these into one UI update. */
   'window-dirty': [windowId: number]
 }>()

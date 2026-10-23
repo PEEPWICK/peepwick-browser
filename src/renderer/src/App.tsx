@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { on } from './api'
+import { api, on } from './api'
 import { Content } from './components/Content'
 import { DownloadsPanel, FocusPanel, ShieldPanel, WorkspacePanel } from './components/Panels'
 import { Onboarding } from './components/Onboarding'
@@ -7,8 +7,10 @@ import { Palette } from './components/Palette'
 import { Sidebar } from './components/Sidebar'
 import { Toolbar } from './components/Toolbar'
 import { FindBar, PermissionBar } from './components/Bars'
-import { UIContext, type Panel, type UIContextValue } from './context'
-import { activeTab, useSnapshot } from './store'
+import { BookmarksBar } from './components/BookmarksBar'
+import { EditDialog, ImportDialog, StarPanel, ToastBar } from './components/BookmarkDialogs'
+import { UIContext, type Panel, type Toast, type UIContextValue } from './context'
+import { activeTab, useSnapshot, useT } from './store'
 
 function useTheme(): void {
   const { settings, state } = useSnapshot()
@@ -31,8 +33,15 @@ export function App() {
   const { state, settings } = useSnapshot()
   const [panel, setPanel] = useState<Panel | null>(null)
   const [findOpen, setFindOpen] = useState(false)
+  const [toast, setToast] = useState<Toast | null>(null)
+  const closeToast = useCallback(() => setToast(null), [])
+  const t = useT()
+  const tRef = useRef(t)
+  tRef.current = t
   const omnibox = useRef<(text?: string) => void>(() => {})
   const tab = activeTab(state)
+  const activeTabRef = useRef(tab)
+  activeTabRef.current = tab
 
   const value = useMemo<UIContextValue>(
     () => ({
@@ -46,6 +55,7 @@ export function App() {
       },
       findOpen,
       setFindOpen,
+      showToast: setToast,
     }),
     [panel, findOpen],
   )
@@ -83,6 +93,23 @@ export function App() {
           case 'escape':
             setFindOpen(false)
             break
+          case 'focus-page-search':
+            setPanel(null)
+            if (activeTabRef.current?.page === 'newtab') window.dispatchEvent(new Event('pw-page-search'))
+            else omnibox.current()
+            break
+          case 'bookmark-star':
+            setPanel({ kind: 'star', anchor: anchorFor('[data-anchor="star"]'), created: command.created === true })
+            break
+          case 'bookmark-edit':
+            setPanel({ kind: 'bookmark-edit', id: command.id, parentId: command.parentId, folder: command.folder })
+            break
+          case 'import-bookmarks':
+            setPanel({ kind: 'import' })
+            break
+          case 'bookmarks-removed':
+            setToast({ text: tRef.current('bookmarks.removed', { n: command.count }), action: { label: tRef.current('bookmarks.undo'), run: () => api.bookmarkUndo() } })
+            break
         }
       }),
     [anchorFor],
@@ -90,6 +117,9 @@ export function App() {
 
   // The find bar belongs to the page it was opened on.
   useEffect(() => setFindOpen(false), [tab?.id])
+
+  const showBar =
+    !state.incognito && !state.fullscreen && (settings.bookmarksBar === 'always' || (settings.bookmarksBar === 'newtab' && tab?.page === 'newtab'))
 
   const classes = [
     'app',
@@ -103,9 +133,14 @@ export function App() {
       <div className={classes}>
         <Sidebar />
         <main className="main">
-          <Toolbar />
-          {state.permission && <PermissionBar prompt={state.permission} />}
-          {findOpen && tab && !tab.page && <FindBar tab={tab} onClose={() => setFindOpen(false)} />}
+          {/* Everything above the pages is painted here, so no gap shows the window behind. */}
+          <div className="chrome-top">
+            <Toolbar />
+            {showBar && <BookmarksBar />}
+            {toast && <ToastBar toast={toast} onClose={closeToast} />}
+            {state.permission && <PermissionBar prompt={state.permission} />}
+            {findOpen && tab && !tab.page && <FindBar tab={tab} onClose={() => setFindOpen(false)} />}
+          </div>
           <Content />
         </main>
       </div>
@@ -114,6 +149,9 @@ export function App() {
       {panel?.kind === 'downloads' && <DownloadsPanel anchor={panel.anchor} />}
       {panel?.kind === 'workspace' && <WorkspacePanel id={panel.id} anchor={panel.anchor} />}
       {panel?.kind === 'palette' && <Palette />}
+      {panel?.kind === 'star' && <StarPanel anchor={panel.anchor} created={panel.created} />}
+      {panel?.kind === 'bookmark-edit' && <EditDialog id={panel.id} parentId={panel.parentId} folder={panel.folder} />}
+      {panel?.kind === 'import' && <ImportDialog />}
       {!settings.onboarded && !state.incognito && <Onboarding />}
     </UIContext.Provider>
   )

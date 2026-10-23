@@ -6,6 +6,9 @@ export type Panel =
   | { kind: 'downloads'; anchor: DOMRect }
   | { kind: 'workspace'; id: string | null; anchor: DOMRect }
   | { kind: 'palette' }
+  | { kind: 'star'; anchor: DOMRect; created: boolean }
+  | { kind: 'bookmark-edit'; id?: string; parentId?: string; folder?: boolean }
+  | { kind: 'import' }
 
 export interface UIContextValue {
   panel: Panel | null
@@ -16,6 +19,12 @@ export interface UIContextValue {
   registerOmnibox: (focus: (text?: string) => void) => void
   findOpen: boolean
   setFindOpen: (open: boolean) => void
+  showToast: (toast: Toast) => void
+}
+
+export interface Toast {
+  text: string
+  action?: { label: string; run: () => void }
 }
 
 export const UIContext = createContext<UIContextValue>(null as unknown as UIContextValue)

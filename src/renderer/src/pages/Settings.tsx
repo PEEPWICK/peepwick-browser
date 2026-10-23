@@ -1,16 +1,26 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react'
-import { ExternalLink, X } from 'lucide-react'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { BookMarked, Download, ExternalLink, Upload, X } from 'lucide-react'
+import { walk } from '@shared/bookmarks'
 import type { MessageKey } from '@shared/i18n'
 import { SEARCH_ENGINES } from '@shared/search'
 import { normalizeDomain } from '@shared/settings'
-import type { AppInfo, PermissionKind, SearchEngineId, ShieldLevel, SitePermission, ThemePref } from '@shared/types'
+import {
+  SETTINGS_SECTIONS,
+  type AppInfo,
+  type BookmarksBarMode,
+  type PermissionKind,
+  type SearchEngineId,
+  type SettingsSection,
+  type ShieldLevel,
+  type SitePermission,
+  type ThemePref,
+} from '@shared/types'
 import { api, call } from '../api'
 import { DoubleEye, LookMark } from '../brand'
-import { useSnapshot, useT } from '../store'
+import { useUI } from '../context'
+import { useBookmarks, useSnapshot, useT } from '../store'
 import { Button, Icon, IconButton, Segmented, Toggle } from '../ui'
 
-const SECTIONS = ['general', 'search', 'privacy', 'focus', 'tabs', 'downloads', 'permissions', 'about'] as const
-type Section = (typeof SECTIONS)[number]
 
 function Row({ title, hint, children }: { title: string; hint?: string; children: ReactNode }) {
   return (
@@ -221,224 +231,235 @@ function DefaultBrowser() {
   )
 }
 
-export function Settings({ hash }: { hash: string }) {
+function BookmarksSection() {
+  const tree = useBookmarks()
+  const { openPanel, showToast } = useUI()
+  const t = useT()
+  const counts = useMemo(() => {
+    let links = 0
+    walk(tree, (node) => node.type === 'url' && links++)
+    return links
+  }, [tree])
+  return (
+    <>
+      <Row title={t('settings.bookmarksCount')} hint={t('import.links', { n: counts })}>
+        <Button onClick={() => api.openPage('bookmarks')}>
+          <Icon icon={BookMarked} size={15} /> {t('settings.manager')}
+        </Button>
+      </Row>
+      <Row title={t('import.title')} hint={t('settings.importHint')}>
+        <Button onClick={() => openPanel({ kind: 'import' })}>
+          <Icon icon={Download} size={15} /> {t('import.run')}
+        </Button>
+      </Row>
+      <Row title={t('bookmarks.export')} hint={t('settings.exportHint')}>
+        <Button onClick={() => void call.exportBookmarks().then((ok) => ok && showToast({ text: t('bookmarks.exported') }))}>
+          <Icon icon={Upload} size={15} /> {t('bookmarks.exportMenu')}
+        </Button>
+      </Row>
+    </>
+  )
+}
+
+export function Settings({ section }: { section: string }) {
   const { settings: s, state } = useSnapshot()
   const t = useT()
+  const current: SettingsSection = (SETTINGS_SECTIONS as readonly string[]).includes(section) ? (section as SettingsSection) : 'general'
   const scroller = useRef<HTMLDivElement>(null)
-  const [current, setCurrent] = useState<Section>((SECTIONS as readonly string[]).includes(hash) ? (hash as Section) : 'general')
 
-  // Scroll only the settings column: scrollIntoView would also scroll the clipped
-  // ancestors (the pane) and push the whole page out of view.
-  const scrollTo = (section: string, behavior: ScrollBehavior) => {
-    const root = scroller.current
-    const el = root?.querySelector<HTMLElement>(`#settings-${section}`)
-    if (!root || !el) return
-    const top = el.getBoundingClientRect().top - root.getBoundingClientRect().top + root.scrollTop - 32
-    root.scrollTo({ top: Math.max(0, top), behavior })
-  }
-
-  const go = (section: Section) => {
-    setCurrent(section)
-    scrollTo(section, 'smooth')
-  }
-
+  // Each section is its own page: start at the top when switching.
   useEffect(() => {
-    if ((SECTIONS as readonly string[]).includes(hash)) requestAnimationFrame(() => scrollTo(hash, 'auto'))
-  }, [hash])
-
-  const onScroll = () => {
-    const root = scroller.current
-    if (!root) return
-    const top = root.getBoundingClientRect().top
-    let active: Section = 'general'
-    for (const section of SECTIONS) {
-      const el = root.querySelector(`#settings-${section}`)
-      if (el && el.getBoundingClientRect().top - top < 120) active = section
-    }
-    // The last sections are short; at the bottom, the last one is the one being read.
-    if (root.scrollTop + root.clientHeight >= root.scrollHeight - 4) active = SECTIONS[SECTIONS.length - 1]
-    setCurrent(active)
-  }
+    scroller.current?.scrollTo({ top: 0 })
+  }, [current])
 
   const sleepOptions = [0, 30, 60, 240, 720]
   const sleepLabel = (n: number) =>
     n === 0 ? t('settings.sleep.never') : n < 60 ? t('settings.sleep.minutes', { n }) : t('settings.sleep.hours', { n: n / 60 })
 
+  const sections: Record<SettingsSection, ReactNode> = {
+    general: (
+      <>
+        <Row title={t('settings.language')}>
+          <Segmented
+            label={t('settings.language')}
+            value={s.language}
+            options={[
+              { value: 'tr', label: 'Türkçe' },
+              { value: 'en', label: 'English' },
+            ]}
+            onChange={(language) => api.setSettings({ language })}
+          />
+        </Row>
+        <Row title={t('settings.restore')} hint={t('settings.restoreHint')}>
+          <Toggle checked={s.restoreSession} label={t('settings.restore')} onChange={(restoreSession) => api.setSettings({ restoreSession })} />
+        </Row>
+        {!state.incognito && <DefaultBrowser />}
+      </>
+    ),
+    appearance: (
+      <>
+        <Row title={t('settings.theme')}>
+          <Segmented<ThemePref>
+            label={t('settings.theme')}
+            value={s.theme}
+            options={[
+              { value: 'dark', label: t('settings.theme.dark') },
+              { value: 'light', label: t('settings.theme.light') },
+              { value: 'system', label: t('settings.theme.system') },
+            ]}
+            onChange={(theme) => api.setSettings({ theme })}
+          />
+        </Row>
+        <Row title={t('settings.bookmarksBar')}>
+          <Segmented<BookmarksBarMode>
+            label={t('settings.bookmarksBar')}
+            value={s.bookmarksBar}
+            options={[
+              { value: 'always', label: t('settings.bookmarksBar.always') },
+              { value: 'newtab', label: t('settings.bookmarksBar.newtab') },
+              { value: 'never', label: t('settings.bookmarksBar.never') },
+            ]}
+            onChange={(bookmarksBar) => api.setSettings({ bookmarksBar })}
+          />
+        </Row>
+        <Row title={t('settings.sidebarCollapsed')} hint={t('settings.sidebarHint')}>
+          <Toggle
+            checked={s.sidebarCollapsed}
+            label={t('settings.sidebarCollapsed')}
+            onChange={(sidebarCollapsed) => api.setSettings({ sidebarCollapsed })}
+          />
+        </Row>
+      </>
+    ),
+    search: (
+      <>
+        <Row title={t('settings.engine')}>
+          <select className="select" value={s.searchEngine} onChange={(event) => api.setSettings({ searchEngine: event.target.value as SearchEngineId })}>
+            {(Object.keys(SEARCH_ENGINES) as SearchEngineId[]).map((id) => (
+              <option key={id} value={id}>
+                {SEARCH_ENGINES[id].name}
+              </option>
+            ))}
+          </select>
+        </Row>
+        <Row title={t('settings.suggestions')} hint={t('settings.suggestionsHint')}>
+          <Toggle checked={s.searchSuggestions} label={t('settings.suggestions')} onChange={(searchSuggestions) => api.setSettings({ searchSuggestions })} />
+        </Row>
+      </>
+    ),
+    tabs: (
+      <Row title={t('settings.sleep')} hint={t('settings.sleepHint')}>
+        <select className="select" value={s.sleepAfterMinutes} onChange={(event) => api.setSettings({ sleepAfterMinutes: Number(event.target.value) })}>
+          {[...new Set([...sleepOptions, s.sleepAfterMinutes])].sort((a, b) => a - b).map((n) => (
+            <option key={n} value={n}>
+              {sleepLabel(n)}
+            </option>
+          ))}
+        </select>
+      </Row>
+    ),
+    bookmarks: <BookmarksSection />,
+    privacy: (
+      <>
+        <Row
+          title={t('settings.shieldLevel')}
+          hint={t(s.shieldLevel === 'strict' ? 'settings.shield.strictHint' : s.shieldLevel === 'off' ? 'settings.shield.offHint' : 'settings.shield.standardHint')}
+        >
+          <Segmented<ShieldLevel>
+            label={t('settings.shieldLevel')}
+            value={s.shieldLevel}
+            options={[
+              { value: 'off', label: t('settings.shield.off') },
+              { value: 'standard', label: t('settings.shield.standard') },
+              { value: 'strict', label: t('settings.shield.strict') },
+            ]}
+            onChange={(shieldLevel) => api.setSettings({ shieldLevel })}
+          />
+        </Row>
+        <Row title={t('settings.thirdPartyCookies')} hint={t('settings.thirdPartyCookiesHint')}>
+          <Toggle
+            checked={s.blockThirdPartyCookies}
+            label={t('settings.thirdPartyCookies')}
+            onChange={(blockThirdPartyCookies) => api.setSettings({ blockThirdPartyCookies })}
+          />
+        </Row>
+        <Row title={t('settings.gpc')} hint={t('settings.gpcHint')}>
+          <Toggle
+            checked={s.sendGlobalPrivacyControl}
+            label={t('settings.gpc')}
+            onChange={(sendGlobalPrivacyControl) => api.setSettings({ sendGlobalPrivacyControl })}
+          />
+        </Row>
+        <div className="setting-block">
+          <div className="setting-title">{t('settings.allowlist')}</div>
+          <DomainList
+            items={s.shieldAllowlist}
+            placeholder="example.com"
+            empty={t('settings.allowlistEmpty')}
+            onChange={(shieldAllowlist) => api.setSettings({ shieldAllowlist })}
+          />
+        </div>
+        <div className="setting-block">
+          <div className="setting-title">{t('settings.clearData')}</div>
+          <div className="setting-hint">{t('settings.clearDataHint')}</div>
+          <ClearData />
+        </div>
+      </>
+    ),
+    permissions: <Permissions />,
+    focus: (
+      <>
+        <Row title={t('settings.focusMinutes')}>
+          <Segmented
+            label={t('settings.focusMinutes')}
+            value={s.focusMinutes}
+            options={[25, 50, 90].map((n) => ({ value: n, label: <span className="mono">{t('focus.minutes', { n })}</span> }))}
+            onChange={(focusMinutes) => api.setSettings({ focusMinutes })}
+          />
+        </Row>
+        <Row title={t('settings.focusSilence')}>
+          <Toggle
+            checked={s.focusSilenceNotifications}
+            label={t('settings.focusSilence')}
+            onChange={(focusSilenceNotifications) => api.setSettings({ focusSilenceNotifications })}
+          />
+        </Row>
+        <div className="setting-block">
+          <div className="setting-title">{t('settings.focusSites')}</div>
+          <div className="setting-hint">{t('settings.focusSitesHint')}</div>
+          <DomainList items={s.focusSites} placeholder="youtube.com" empty="—" onChange={(focusSites) => api.setSettings({ focusSites })} />
+        </div>
+      </>
+    ),
+    downloads: (
+      <Row title={t('settings.askSave')} hint={t('settings.downloadsFolder')}>
+        <Toggle checked={s.askWhereToSave} label={t('settings.askSave')} onChange={(askWhereToSave) => api.setSettings({ askWhereToSave })} />
+      </Row>
+    ),
+    about: <About />,
+  }
+
   return (
     <div className="page settings">
       <nav className="settings-nav">
         <h1 className="settings-heading">{t('settings.title')}</h1>
-        {SECTIONS.map((section) => (
-          <button key={section} type="button" className={current === section ? 'is-active' : ''} onClick={() => go(section)}>
-            {t(`settings.${section}` as MessageKey)}
+        {SETTINGS_SECTIONS.filter((id) => !(state.incognito && id === 'bookmarks')).map((id) => (
+          <button
+            key={id}
+            type="button"
+            className={current === id ? 'is-active' : ''}
+            aria-current={current === id ? 'page' : undefined}
+            onClick={() => api.openPage('settings', id)}
+          >
+            {t(`settings.${id}` as MessageKey)}
           </button>
         ))}
       </nav>
-      <div className="settings-scroll" ref={scroller} onScroll={onScroll}>
+      <div className="settings-scroll" ref={scroller}>
         <div className="settings-body">
-          <section id="settings-general">
-            <h2>{t('settings.general')}</h2>
-            <Row title={t('settings.language')}>
-              <Segmented
-                label={t('settings.language')}
-                value={s.language}
-                options={[
-                  { value: 'tr', label: 'Türkçe' },
-                  { value: 'en', label: 'English' },
-                ]}
-                onChange={(language) => api.setSettings({ language })}
-              />
-            </Row>
-            <Row title={t('settings.theme')}>
-              <Segmented<ThemePref>
-                label={t('settings.theme')}
-                value={s.theme}
-                options={[
-                  { value: 'dark', label: t('settings.theme.dark') },
-                  { value: 'light', label: t('settings.theme.light') },
-                  { value: 'system', label: t('settings.theme.system') },
-                ]}
-                onChange={(theme) => api.setSettings({ theme })}
-              />
-            </Row>
-            <Row title={t('settings.restore')} hint={t('settings.restoreHint')}>
-              <Toggle checked={s.restoreSession} label={t('settings.restore')} onChange={(restoreSession) => api.setSettings({ restoreSession })} />
-            </Row>
-            {!state.incognito && <DefaultBrowser />}
-          </section>
-
-          <section id="settings-search">
-            <h2>{t('settings.search')}</h2>
-            <Row title={t('settings.engine')}>
-              <select
-                className="select"
-                value={s.searchEngine}
-                onChange={(event) => api.setSettings({ searchEngine: event.target.value as SearchEngineId })}
-              >
-                {(Object.keys(SEARCH_ENGINES) as SearchEngineId[]).map((id) => (
-                  <option key={id} value={id}>
-                    {SEARCH_ENGINES[id].name}
-                  </option>
-                ))}
-              </select>
-            </Row>
-            <Row title={t('settings.suggestions')} hint={t('settings.suggestionsHint')}>
-              <Toggle
-                checked={s.searchSuggestions}
-                label={t('settings.suggestions')}
-                onChange={(searchSuggestions) => api.setSettings({ searchSuggestions })}
-              />
-            </Row>
-          </section>
-
-          <section id="settings-privacy">
-            <h2>{t('settings.privacy')}</h2>
-            <Row
-              title={t('settings.shieldLevel')}
-              hint={t(s.shieldLevel === 'strict' ? 'settings.shield.strictHint' : s.shieldLevel === 'off' ? 'settings.shield.offHint' : 'settings.shield.standardHint')}
-            >
-              <Segmented<ShieldLevel>
-                label={t('settings.shieldLevel')}
-                value={s.shieldLevel}
-                options={[
-                  { value: 'off', label: t('settings.shield.off') },
-                  { value: 'standard', label: t('settings.shield.standard') },
-                  { value: 'strict', label: t('settings.shield.strict') },
-                ]}
-                onChange={(shieldLevel) => api.setSettings({ shieldLevel })}
-              />
-            </Row>
-            <Row title={t('settings.thirdPartyCookies')} hint={t('settings.thirdPartyCookiesHint')}>
-              <Toggle
-                checked={s.blockThirdPartyCookies}
-                label={t('settings.thirdPartyCookies')}
-                onChange={(blockThirdPartyCookies) => api.setSettings({ blockThirdPartyCookies })}
-              />
-            </Row>
-            <Row title={t('settings.gpc')} hint={t('settings.gpcHint')}>
-              <Toggle
-                checked={s.sendGlobalPrivacyControl}
-                label={t('settings.gpc')}
-                onChange={(sendGlobalPrivacyControl) => api.setSettings({ sendGlobalPrivacyControl })}
-              />
-            </Row>
-            <div className="setting-block">
-              <div className="setting-title">{t('settings.allowlist')}</div>
-              <DomainList
-                items={s.shieldAllowlist}
-                placeholder="example.com"
-                empty={t('settings.allowlistEmpty')}
-                onChange={(shieldAllowlist) => api.setSettings({ shieldAllowlist })}
-              />
-            </div>
-            <div className="setting-block">
-              <div className="setting-title">{t('settings.clearData')}</div>
-              <div className="setting-hint">{t('settings.clearDataHint')}</div>
-              <ClearData />
-            </div>
-          </section>
-
-          <section id="settings-focus">
-            <h2>{t('settings.focus')}</h2>
-            <Row title={t('settings.focusMinutes')}>
-              <Segmented
-                label={t('settings.focusMinutes')}
-                value={s.focusMinutes}
-                options={[25, 50, 90].map((n) => ({ value: n, label: <span className="mono">{t('focus.minutes', { n })}</span> }))}
-                onChange={(focusMinutes) => api.setSettings({ focusMinutes })}
-              />
-            </Row>
-            <Row title={t('settings.focusSilence')}>
-              <Toggle
-                checked={s.focusSilenceNotifications}
-                label={t('settings.focusSilence')}
-                onChange={(focusSilenceNotifications) => api.setSettings({ focusSilenceNotifications })}
-              />
-            </Row>
-            <div className="setting-block">
-              <div className="setting-title">{t('settings.focusSites')}</div>
-              <div className="setting-hint">{t('settings.focusSitesHint')}</div>
-              <DomainList
-                items={s.focusSites}
-                placeholder="youtube.com"
-                empty="—"
-                onChange={(focusSites) => api.setSettings({ focusSites })}
-              />
-            </div>
-          </section>
-
-          <section id="settings-tabs">
-            <h2>{t('settings.tabs')}</h2>
-            <Row title={t('settings.sleep')} hint={t('settings.sleepHint')}>
-              <select
-                className="select"
-                value={s.sleepAfterMinutes}
-                onChange={(event) => api.setSettings({ sleepAfterMinutes: Number(event.target.value) })}
-              >
-                {[...new Set([...sleepOptions, s.sleepAfterMinutes])].sort((a, b) => a - b).map((n) => (
-                  <option key={n} value={n}>
-                    {sleepLabel(n)}
-                  </option>
-                ))}
-              </select>
-            </Row>
-          </section>
-
-          <section id="settings-downloads">
-            <h2>{t('settings.downloads')}</h2>
-            <Row title={t('settings.askSave')} hint={t('settings.downloadsFolder')}>
-              <Toggle checked={s.askWhereToSave} label={t('settings.askSave')} onChange={(askWhereToSave) => api.setSettings({ askWhereToSave })} />
-            </Row>
-          </section>
-
-          <section id="settings-permissions">
-            <h2>{t('settings.permissions')}</h2>
-            <Permissions />
-          </section>
-
-          <section id="settings-about">
-            <h2>{t('settings.about')}</h2>
-            <About />
+          <section key={current} className="settings-section">
+            <h2>{t(`settings.${current}` as MessageKey)}</h2>
+            {sections[current]}
           </section>
         </div>
       </div>

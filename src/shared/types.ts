@@ -5,6 +5,7 @@ export type ThemePref = 'system' | 'dark' | 'light'
 export type SearchEngineId = 'duckduckgo' | 'brave' | 'startpage' | 'google' | 'ecosia' | 'bing'
 /** standard: ads and trackers · strict: also cookie notices and other annoyances */
 export type ShieldLevel = 'off' | 'standard' | 'strict'
+export type BookmarksBarMode = 'always' | 'newtab' | 'never'
 
 export const WORKSPACE_ICONS = [
   'circle',
@@ -41,6 +42,7 @@ export interface Settings {
   restoreSession: boolean
   askWhereToSave: boolean
   sidebarCollapsed: boolean
+  bookmarksBar: BookmarksBarMode
   onboarded: boolean
 }
 
@@ -52,7 +54,21 @@ export type Interstitial =
   | { kind: 'crashed' }
   | { kind: 'focus'; url: string; host: string }
 
-export type InternalPage = 'newtab' | 'settings' | 'history' | 'extensions'
+export type InternalPage = 'newtab' | 'settings' | 'history' | 'extensions' | 'bookmarks'
+
+export const SETTINGS_SECTIONS = [
+  'general',
+  'appearance',
+  'search',
+  'tabs',
+  'bookmarks',
+  'privacy',
+  'permissions',
+  'focus',
+  'downloads',
+  'about',
+] as const
+export type SettingsSection = (typeof SETTINGS_SECTIONS)[number]
 
 export interface TabState {
   id: number
@@ -186,7 +202,7 @@ export interface PaneRect {
   height: number
 }
 
-export type SuggestionKind = 'url' | 'search' | 'history' | 'tab' | 'command'
+export type SuggestionKind = 'url' | 'search' | 'history' | 'tab' | 'command' | 'bookmark'
 
 export interface Suggestion {
   kind: SuggestionKind
@@ -215,6 +231,11 @@ export type CommandId =
   | 'pin'
   | 'clear-data'
   | 'check-updates'
+  | 'bookmark-page'
+  | 'bookmark-tabs'
+  | 'bookmarks'
+  | 'toggle-bookmarks-bar'
+  | 'import-bookmarks'
 
 export interface HistoryEntry {
   id: number
@@ -279,3 +300,25 @@ export type UICommand =
   | { type: 'shield' }
   | { type: 'focus-panel' }
   | { type: 'escape' }
+  | { type: 'focus-page-search' }
+  | { type: 'bookmark-star'; created?: boolean }
+  | { type: 'bookmark-edit'; id?: string; parentId?: string; folder?: boolean }
+  | { type: 'bookmarks-removed'; count: number }
+  | { type: 'import-bookmarks' }
+
+export interface ImportSource {
+  id: string
+  /** Browser name as people know it: Google Chrome, Firefox… */
+  browser: string
+  profile: string
+  kind: 'chromium' | 'firefox'
+  links: number
+}
+
+export interface ImportResult {
+  links: number
+  folders: number
+  duplicates: number
+  skipped: number
+  favicons: number
+}

@@ -27,7 +27,12 @@ lets the pages you visit keep their own colour.
   Pin tabs, drag them between spaces, open two side by side, and let unused tabs sleep.
 - **Reader view.** One click turns an article into clean type set in Newsreader, shown with
   scripts disabled.
-- **Command bar.** <kbd>Ctrl</kbd>+<kbd>K</kbd> finds open tabs, history and commands.
+- **Bookmarks.** A bookmarks bar with folders, a full bookmark manager (folder tree, search,
+  drag and drop, multi-select, undo) and the star in the address bar. Import from Chrome,
+  Chromium, Brave, Edge, Vivaldi, Opera, Firefox, LibreWolf, Zen and Floorp (Snap and Flatpak
+  installs included), or from an HTML file; export to HTML. Imports read the other browser's
+  files on this computer and bring the site icons along.
+- **Command bar.** <kbd>Ctrl</kbd>+<kbd>K</kbd> finds open tabs, bookmarks, history and commands.
 - **Chrome extensions.** Install extensions from the Chrome Web Store. Most popular extensions
   work; some APIs are not available yet (see limitations).
 - **Private windows** keep nothing after they close.
@@ -69,7 +74,10 @@ your password through the system dialog.
 | <kbd>Ctrl</kbd>+<kbd>1</kbd>…<kbd>9</kbd> | Go to tab |
 | <kbd>Alt</kbd>+<kbd>1</kbd>…<kbd>9</kbd> | Go to space |
 | <kbd>Ctrl</kbd>+<kbd>B</kbd> | Show or hide the sidebar |
-| <kbd>Ctrl</kbd>+<kbd>D</kbd> | Pin tab |
+| <kbd>Ctrl</kbd>+<kbd>D</kbd> | Bookmark this page |
+| <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>D</kbd> | Bookmark all tabs of the space |
+| <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>B</kbd> | Show or hide the bookmarks bar |
+| <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>O</kbd> | Bookmark manager |
 | <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>S</kbd> | Side by side with the previous tab |
 | <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>R</kbd> | Reader view |
 | <kbd>Ctrl</kbd>+<kbd>F</kbd> | Find on page |
@@ -88,6 +96,7 @@ PEEPWICK Browser has no telemetry and no account. It talks to these services on 
 | Chrome Web Store | Installing and updating extensions | Only if you install extensions |
 
 Pages you visit load as in any browser. Favicons are fetched once by the browser and kept locally.
+Importing bookmarks reads the other browser's files on this computer; nothing leaves it.
 
 ## Build from source
 
@@ -168,7 +177,12 @@ sayfalar kendi renkleriyle kalır.
 - **Alanlar ve dikey sekmeler:** Sekmeler kenar çubuğunda, iş ve kişisel gibi alanlarda durur.
   Sabitleme, alanlar arası sürükleme, yan yana görünüm ve kullanılmayan sekmeleri uyutma.
 - **Okuma modu:** Makaleyi Newsreader ile dizilmiş, betikleri kapalı temiz bir sayfaya çevirir.
-- **Komut çubuğu:** <kbd>Ctrl</kbd>+<kbd>K</kbd> ile açık sekmeler, geçmiş ve komutlar.
+- **Yer imleri:** Klasörlü yer imi çubuğu, tam bir yer imi yöneticisi (klasör ağacı, arama,
+  sürükle-bırak, çoklu seçim, geri alma) ve adres çubuğundaki yıldız (<kbd>Ctrl</kbd>+<kbd>D</kbd>).
+  Chrome, Chromium, Brave, Edge, Vivaldi, Opera, Firefox, LibreWolf, Zen ve Floorp'tan (Snap ve
+  Flatpak kurulumları dahil) ya da bir HTML dosyasından içe aktarma; HTML olarak dışa aktarma.
+  İçe aktarma yalnızca bu bilgisayardaki dosyaları okur, site simgelerini de getirir.
+- **Komut çubuğu:** <kbd>Ctrl</kbd>+<kbd>K</kbd> ile açık sekmeler, yer imleri, geçmiş ve komutlar.
 - **Chrome eklentileri:** Chrome Web Mağazası'ndan eklenti kurabilirsiniz.
 - **Gizli pencere** kapanınca hiçbir şey bırakmaz.
 - **Otomatik güncelleme** (GitHub Releases üzerinden).

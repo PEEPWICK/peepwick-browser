@@ -5,6 +5,7 @@ import { app, protocol, session, type Session } from 'electron'
 import { readFile } from 'node:fs/promises'
 import { extname, normalize, sep } from 'node:path'
 import { installDownloads } from './downloads'
+import { getFavicon } from './history'
 import { installNetwork } from './network'
 import { devServerURL, rendererPath } from './paths'
 import { installPermissions } from './permissions'
@@ -53,7 +54,7 @@ const UI_CSP = [
   "default-src 'self'",
   "script-src 'self'",
   "style-src 'self' 'unsafe-inline'",
-  "img-src 'self' data: crx:",
+  "img-src 'self' data: crx: peepwick:",
   "font-src 'self'",
   "connect-src 'self'",
   "object-src 'none'",
@@ -62,15 +63,25 @@ const UI_CSP = [
   "form-action 'none'",
 ].join('; ')
 
+/** peepwick://favicon/<host>: the stored icon for a site, so lists can load icons lazily. */
+function faviconResponse(host: string): Response {
+  const data = getFavicon(host)
+  const match = data ? /^data:([^;,]+)(;base64)?,(.*)$/s.exec(data) : null
+  if (!match) return new Response('Not found', { status: 404 })
+  const body = match[2] ? Buffer.from(match[3], 'base64') : Buffer.from(decodeURIComponent(match[3]))
+  return new Response(body, { headers: { 'content-type': match[1], 'cache-control': 'max-age=3600' } })
+}
+
 export function configureUISession(): void {
   const ses = uiSession()
   ses.setPermissionRequestHandler((_wc, _permission, callback) => callback(false))
   ses.setPermissionCheckHandler(() => false)
-  if (devServerURL()) return
+  const dev = !!devServerURL()
   const root = rendererPath()
   ses.protocol.handle('peepwick', async (request) => {
     const url = new URL(request.url)
-    if (url.host !== 'ui') return new Response('Not found', { status: 404 })
+    if (url.host === 'favicon') return faviconResponse(decodeURIComponent(url.pathname.slice(1)).toLowerCase())
+    if (url.host !== 'ui' || dev) return new Response('Not found', { status: 404 })
     const relative = decodeURIComponent(url.pathname === '/' ? '/index.html' : url.pathname)
     const file = normalize(root + relative)
     if (!file.startsWith(root + sep)) return new Response('Not found', { status: 404 })

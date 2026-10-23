@@ -17,7 +17,7 @@ import {
   type LucideProps,
 } from 'lucide-react'
 import type { WorkspaceIcon } from '@shared/types'
-import { displayHost, isImageDataURL } from '@shared/url'
+import { displayHost, hostOf, isImageDataURL } from '@shared/url'
 import { api } from './api'
 
 /** Lucide icons at the brand's 1.5 px stroke. */
@@ -64,7 +64,7 @@ export const WORKSPACE_GLYPHS: Record<WorkspaceIcon, LucideIcon> = {
 export function Favicon({ src, url, size = 16 }: { src: string | null | undefined; url?: string; size?: number }) {
   const [broken, setBroken] = useState(false)
   useEffect(() => setBroken(false), [src])
-  if (src && isImageDataURL(src) && !broken) {
+  if (src && (isImageDataURL(src) || src.startsWith('peepwick://favicon/')) && !broken) {
     return <img className="favicon" src={src} width={size} height={size} alt="" draggable={false} onError={() => setBroken(true)} />
   }
   const letter = (url ? displayHost(url) : '').charAt(0).toLocaleUpperCase('tr') || '·'
@@ -73,6 +73,12 @@ export function Favicon({ src, url, size = 16 }: { src: string | null | undefine
       {letter}
     </span>
   )
+}
+
+/** The stored icon for a site, loaded lazily from the browser (peepwick://favicon/host). */
+export function faviconFor(url: string): string | null {
+  const host = hostOf(url)
+  return host ? `peepwick://favicon/${encodeURIComponent(host)}` : null
 }
 
 export function Toggle({ checked, onChange, label }: { checked: boolean; onChange: (value: boolean) => void; label: string }) {

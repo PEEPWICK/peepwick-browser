@@ -4,7 +4,7 @@ import type { InternalPage, TabSecurity } from './types'
 export const INTERNAL_SCHEME = 'peepwick'
 export const NEW_TAB_URL = 'peepwick://newtab'
 
-const INTERNAL_PAGES: InternalPage[] = ['newtab', 'settings', 'history', 'extensions']
+const INTERNAL_PAGES: InternalPage[] = ['newtab', 'settings', 'history', 'extensions', 'bookmarks']
 
 export function internalPage(url: string): InternalPage | null {
   const match = /^peepwick:\/\/([a-z]+)\/?/i.exec(url.trim())
@@ -13,8 +13,14 @@ export function internalPage(url: string): InternalPage | null {
   return INTERNAL_PAGES.includes(page) ? page : null
 }
 
-export function internalURL(page: InternalPage, hash = ''): string {
-  return `peepwick://${page}${hash ? `#${hash}` : ''}`
+/** peepwick://settings/privacy: the part after the page, or the old #privacy form. */
+export function internalSubpage(url: string): string {
+  const match = /^peepwick:\/\/[a-z]+\/?([a-z-]*)(?:#([a-z-]+))?/i.exec(url.trim())
+  return (match?.[1] || match?.[2] || '').toLowerCase()
+}
+
+export function internalURL(page: InternalPage, subpage = ''): string {
+  return `peepwick://${page}${subpage ? `/${subpage}` : ''}`
 }
 
 export function securityOf(url: string): TabSecurity {

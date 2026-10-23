@@ -11,6 +11,7 @@ export interface SuggestContext {
   engine: SearchEngineId
   remoteSuggestions: boolean
   tabs: { id: number; title: string; url: string; favicon: string | null }[]
+  bookmarks: { title: string; url: string; favicon: string | null }[]
   pages: { url: string; title: string; visits: number; lastVisit: number; favicon: string | null }[]
 }
 
@@ -40,6 +41,12 @@ export async function suggest(input: string, context: SuggestContext): Promise<S
     })
   } else if (!hostMatch || hostMatch.url !== resolved) {
     out.push({ kind: 'url', title: resolved, value: resolved })
+  }
+
+  for (const bookmark of context.bookmarks) {
+    if (out.length >= 6) break
+    if (out.some((s) => s.value === bookmark.url)) continue
+    out.push({ kind: 'bookmark', title: bookmark.title, value: bookmark.url, favicon: bookmark.favicon })
   }
 
   for (const tab of context.tabs) {
@@ -110,6 +117,11 @@ export const COMMANDS: CommandId[] = [
   'history',
   'extensions',
   'settings',
+  'bookmark-page',
+  'bookmark-tabs',
+  'bookmarks',
+  'toggle-bookmarks-bar',
+  'import-bookmarks',
   'clear-data',
   'check-updates',
 ]

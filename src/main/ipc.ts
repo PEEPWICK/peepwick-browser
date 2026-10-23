@@ -2,9 +2,24 @@
 // in; web pages have no bridge at all.
 import { app, ipcMain, type IpcMainEvent, type IpcMainInvokeEvent } from 'electron'
 import { execFile } from 'node:child_process'
-import { IPC_INVOKE, IPC_SEND, type ClearDataOptions, type InvokeMethods, type SendMethods } from '@shared/ipc'
+import { IPC_INVOKE, IPC_SEND, type BookmarkOpen, type ClearDataOptions, type InvokeMethods, type SendMethods } from '@shared/ipc'
 import { WORKSPACE_ICONS, type AppInfo, type CommandId, type InternalPage, type PaneRect, type PermissionKind, type WorkspaceIcon } from '@shared/types'
-import { isCommandAvailable, newTab, openPage, runCommand } from './actions'
+import { bookmarkCurrentPage, bookmarkSpaceTabs, isCommandAvailable, newTab, openPage, runCommand } from './actions'
+import {
+  bookmarkTree,
+  createBookmark,
+  exportBookmarks,
+  moveBookmarks,
+  openBookmarks,
+  removeAndTell,
+  showBookmarkMenu,
+  showFolderMenu,
+  sortFolder,
+  undoRemove,
+  updateBookmark,
+} from './bookmarks'
+import { detectSources, importBookmarks } from './importers'
+import { links } from '@shared/bookmarks'
 import { clearDownloads, downloadAction } from './downloads'
 import { listExtensions, removeExtension } from './extensions'
 import { startFocus, stopFocus } from './focus'
@@ -23,7 +38,28 @@ import { BrowserWin } from './window'
 import { globalState } from './windows'
 import { hostOf } from '@shared/url'
 
-const PAGES: InternalPage[] = ['newtab', 'settings', 'history', 'extensions']
+const PAGES: InternalPage[] = ['newtab', 'settings', 'history', 'extensions', 'bookmarks']
+const OPEN_MODES: BookmarkOpen[] = ['current', 'tab', 'background', 'window', 'incognito']
+
+const ids = (value: unknown): string[] =>
+  Array.isArray(value) ? value.filter((id): id is string => typeof id === 'string').slice(0, 5000) : []
+
+/** Bookmarks whose title or address contains the text, closest matches first. */
+function matchBookmarks(text: string, limit: number): { title: string; url: string; favicon: string | null }[] {
+  const needle = text.trim().toLocaleLowerCase('tr').replace(/^https?:\/\/(www\.)?/, '')
+  if (!needle) return []
+  const scored: { title: string; url: string; score: number }[] = []
+  for (const link of links(bookmarkTree())) {
+    const title = link.title.toLocaleLowerCase('tr')
+    const url = link.url.toLowerCase().replace(/^https?:\/\/(www\.)?/, '')
+    const score = url.startsWith(needle) ? 3 : title.startsWith(needle) ? 2 : title.includes(needle) || url.includes(needle) ? 1 : 0
+    if (score > 0) scored.push({ title: link.title, url: link.url, score })
+  }
+  return scored
+    .sort((a, b) => b.score - a.score)
+    .slice(0, limit)
+    .map(({ title, url }) => ({ title, url, favicon: getFavicon(hostOf(url)) }))
+}
 
 function windowFor(event: IpcMainEvent | IpcMainInvokeEvent): BrowserWin {
   for (const win of BrowserWin.all.values()) {
@@ -66,7 +102,7 @@ const invoke: { [K in keyof InvokeMethods]: (win: BrowserWin, ...args: unknown[]
   ready(win) {
     win.markUIReady()
     win.updateTitle()
-    return { state: win.toState(), global: globalState(), settings: settings(), app: appInfo() }
+    return { state: win.toState(), global: globalState(), settings: settings(), app: appInfo(), bookmarks: bookmarkTree() }
   },
   async suggest(win, input) {
     const text = str(input, 500)
@@ -80,6 +116,7 @@ const invoke: { [K in keyof InvokeMethods]: (win: BrowserWin, ...args: unknown[]
         : [...win.tabs.values()]
             .filter((tab) => tab !== win.activeTab() && !tab.page)
             .map((tab) => ({ id: tab.id, title: tab.displayTitle(), url: tab.url, favicon: tab.favicon })),
+      bookmarks: win.incognito ? [] : matchBookmarks(text, 4),
       pages: win.incognito
         ? []
         : matchPages(text).map((page) => ({ ...page, favicon: getFavicon(hostOf(page.url)) })),
@@ -103,7 +140,11 @@ const invoke: { [K in keyof InvokeMethods]: (win: BrowserWin, ...args: unknown[]
             favicon: getFavicon(hostOf(page.url)),
           }))
         : []
-    return [...commands.slice(0, needle ? 6 : 8), ...tabs, ...pages]
+    const marks =
+      needle && !win.incognito
+        ? matchBookmarks(text, 6).map((b) => ({ kind: 'bookmark' as const, title: b.title, value: b.url, favicon: b.favicon }))
+        : []
+    return [...commands.slice(0, needle ? 6 : 8), ...tabs, ...marks, ...pages.filter((p) => !marks.some((m) => m.value === p.value))]
   },
   historyQuery(win, query) {
     if (win.incognito) return []
@@ -140,6 +181,28 @@ const invoke: { [K in keyof InvokeMethods]: (win: BrowserWin, ...args: unknown[]
   },
   async setDefaultBrowser() {
     return makeDefaultBrowser()
+  },
+  bookmarkCreate(_win, input) {
+    const i = (input ?? {}) as { parentId?: unknown; index?: unknown; title?: unknown; url?: unknown }
+    const index = num(i.index)
+    return createBookmark({
+      parentId: str(i.parentId, 64),
+      index: Number.isNaN(index) ? undefined : index,
+      title: str(i.title, 500),
+      url: typeof i.url === 'string' ? i.url.slice(0, 8192) : undefined,
+    })
+  },
+  bookmarkPage(win) {
+    return bookmarkCurrentPage(win)
+  },
+  importSources(win) {
+    return win.incognito ? [] : detectSources()
+  },
+  async importBookmarks(win, sourceId, skipDuplicates) {
+    return importBookmarks(win, str(sourceId, 64), skipDuplicates !== false)
+  },
+  async exportBookmarks(win) {
+    return exportBookmarks(win)
   },
   shieldReport(win) {
     const tab = win.activeTab()
@@ -342,6 +405,37 @@ const send: { [K in keyof SendMethods]: (win: BrowserWin, ...args: unknown[]) =>
   },
   permissionRemove(_win, origin, kind) {
     removePermission(str(origin, 500), kind as PermissionKind)
+  },
+  bookmarkUpdate(_win, id, patch) {
+    const p = (patch ?? {}) as { title?: unknown; url?: unknown }
+    updateBookmark(str(id, 64), {
+      title: typeof p.title === 'string' ? p.title : undefined,
+      url: typeof p.url === 'string' ? p.url.slice(0, 8192) : undefined,
+    })
+  },
+  bookmarkMove(_win, list, parentId, index) {
+    moveBookmarks(ids(list), str(parentId, 64), num(index) || 0)
+  },
+  bookmarkRemove(win, list) {
+    removeAndTell(win, ids(list))
+  },
+  bookmarkUndo() {
+    undoRemove()
+  },
+  bookmarkSort(_win, folderId) {
+    sortFolder(str(folderId, 64))
+  },
+  bookmarkOpen(win, list, how) {
+    if (OPEN_MODES.includes(how as BookmarkOpen)) void openBookmarks(win, ids(list), how as BookmarkOpen)
+  },
+  bookmarkMenu(win, id, x, y) {
+    showBookmarkMenu(win, str(id, 64), num(x) || 0, num(y) || 0)
+  },
+  bookmarkFolderMenu(win, folderId, x, y, fromIndex) {
+    showFolderMenu(win, str(folderId, 64), num(x) || 0, num(y) || 0, num(fromIndex) || 0)
+  },
+  bookmarkTabs(win) {
+    bookmarkSpaceTabs(win)
   },
   onboardingDone() {
     updateSettings({ onboarded: true })
