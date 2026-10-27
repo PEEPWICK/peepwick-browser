@@ -1,7 +1,7 @@
 {
   "name": "peepwick-browser",
   "productName": "PEEPWICK Browser",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "releaseStage": "alpha",
   "private": true,
   "description": "PEEPWICK Browser — a calm, private browser that guards your attention. First, we look.",
