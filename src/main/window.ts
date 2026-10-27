@@ -23,6 +23,7 @@ import { settings, t } from './settings'
 import { shieldActiveFor } from './shield'
 import { handleShortcut } from './shortcuts'
 import { watchInterface } from './diagnostics'
+import { hideAutofill } from './autofill'
 import { Tab, type SavedTab, type TabOptions } from './tab'
 
 export interface SavedWorkspace {
@@ -81,6 +82,8 @@ export class BrowserWin {
   private panes: PaneRect[] = []
   private overlay = false
   private raised = false
+  /** The autofill popup, above the pages while it shows. */
+  private popup: { view: WebContentsView; bounds: Rectangle } | null = null
   private fullscreenTab: Tab | null = null
   private closedTabs: ClosedTab[] = []
   private dirty = false
@@ -160,6 +163,7 @@ export class BrowserWin {
     this.base.on('focus', () => {
       BrowserWin.lastFocused = this
     })
+    this.base.on('blur', () => hideAutofill(this))
     this.base.on('closed', () => this.dispose())
     const onTheme = () => this.base.setBackgroundColor(this.isDark() ? GECE : SIS)
     nativeTheme.on('updated', onTheme)
@@ -323,6 +327,7 @@ export class BrowserWin {
     const workspace = this.workspaceOf(tab)
     if (!workspace) return
     const previous = this.activeTab()
+    if (previous !== tab) hideAutofill(this)
     this.activeWorkspaceId = workspace.id
     this.setActiveInWorkspace(workspace, tab)
     tab.lastActive = Date.now()
@@ -501,6 +506,17 @@ export class BrowserWin {
     else this.focusActive()
   }
 
+  showPopup(view: WebContentsView, bounds: Rectangle): void {
+    this.popup = { view, bounds }
+    this.layout()
+  }
+
+  hidePopup(): void {
+    if (!this.popup) return
+    this.popup = null
+    this.layout()
+  }
+
   /** Raises the UI over the pages without moving focus, for tooltips. */
   setRaised(raised: boolean): void {
     if (this.raised === raised) return
@@ -546,6 +562,11 @@ export class BrowserWin {
     }
 
     const desired = this.overlay || this.raised ? [...placed.map((p) => p.view), this.ui] : [this.ui, ...placed.map((p) => p.view)]
+    // The autofill popup sits on top, except while the UI's own menus and dialogs are up.
+    if (this.popup && !this.overlay) {
+      desired.push(this.popup.view)
+      this.popup.view.setBounds(this.popup.bounds)
+    }
     const container = this.base.contentView
     const current = container.children
     for (const child of current) if (!desired.includes(child as WebContentsView)) container.removeChildView(child)

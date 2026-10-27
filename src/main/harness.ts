@@ -10,7 +10,7 @@ import type { CommandId, InternalPage, UICommand, WorkspaceIcon } from '@shared/
 import { installExtension } from 'electron-chrome-web-store'
 import { openPage, runCommand } from './actions'
 import { bookmarkTree } from './bookmarks'
-import { detectSources, importBookmarks } from './importers'
+import { detectSources, importBookmarks, importFrom } from './importers'
 import { lifecycle } from './lifecycle'
 import { BACKUP_CATEGORIES } from '@shared/types'
 import { collectBackup, holdBackup, restoreBackup, unlockBackup } from './backup'
@@ -42,6 +42,8 @@ type Step =
   | { do: 'mouse'; target?: 'ui' | 'tab'; x: number; y: number; button?: 'left' | 'right' | 'middle'; move?: boolean }
   | { do: 'confirm'; title: string; body?: string; lines?: string[]; danger?: boolean }
   | { do: 'download'; url: string }
+  | { do: 'importAll'; index: number; primaryPassword?: string }
+  | { do: 'tabKey'; key: string }
   | { do: 'backup'; password: string; restore?: boolean; dialog?: boolean }
   | { do: 'quit' }
 
@@ -118,9 +120,23 @@ export function startHarness(): void {
             await capture([...BrowserWin.all.values()][step.window ?? 0] ?? win, dir, step.name)
             console.log('[harness] captured', step.name)
             break
-          case 'evalTab':
-            await win.activeTab()?.webContents?.executeJavaScript(step.js, true).catch(() => {})
+          case 'evalTab': {
+            const result: unknown = await win.activeTab()?.webContents?.executeJavaScript(step.js, true).catch(() => undefined)
+            if (result !== undefined) console.log('[harness] evalTab', JSON.stringify(result))
             break
+          }
+          case 'tabKey': {
+            const wc = win.activeTab()?.webContents
+            if (wc) for (const type of ['keyDown', 'char', 'keyUp'] as const) wc.sendInputEvent({ type, keyCode: step.key })
+            break
+          }
+          case 'importAll': {
+            const sources = detectSources()
+            console.log('[harness] sources', JSON.stringify(sources.map((s) => [s.browser, s.available])))
+            const source = sources[step.index]
+            if (source) console.log('[harness] importAll', JSON.stringify(await importFrom(win, source.id, { kinds: source.available, skipDuplicates: true, primaryPassword: step.primaryPassword })))
+            break
+          }
           case 'workspace':
             win.createWorkspace(step.name, step.icon)
             break

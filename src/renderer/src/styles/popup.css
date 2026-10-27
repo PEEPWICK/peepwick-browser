@@ -1,0 +1,89 @@
+/* The autofill popup (popup.html): one list, sized by the main process. */
+
+html,
+body.autofill-body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  background: transparent;
+}
+
+body.autofill-body {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  color: var(--text);
+  user-select: none;
+  cursor: default;
+}
+
+.autofill {
+  box-sizing: border-box;
+  height: 100%;
+  margin: 0;
+  padding: var(--s1);
+  list-style: none;
+  background: var(--raised);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.autofill-item {
+  display: flex;
+  align-items: center;
+  gap: var(--s3);
+  height: 40px;
+  padding: 0 var(--s3);
+  border-radius: 3px;
+}
+
+.autofill-item.is-manage {
+  height: 32px;
+  margin-top: var(--s1);
+  border-top: 1px solid var(--line);
+  border-radius: 0 0 3px 3px;
+  color: var(--text-2);
+}
+
+.autofill-item.is-active {
+  background: var(--surface-hover);
+}
+
+:root[data-theme='light'] .autofill-item.is-active {
+  background: var(--sis);
+}
+
+.autofill-icon {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: var(--text-2);
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.autofill-item.is-generate .autofill-icon {
+  stroke: var(--accent);
+}
+
+.autofill-text {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.autofill-label,
+.autofill-detail {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.autofill-detail {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-2);
+}

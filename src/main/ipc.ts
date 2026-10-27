@@ -1,14 +1,19 @@
 // Routes calls from the browser UI. Only the UI views this process created may call
 // in; web pages have no bridge at all.
 import { app, clipboard, dialog, ipcMain, type IpcMainEvent, type IpcMainInvokeEvent } from 'electron'
+import { answerSaveLogin, popupMessage } from './autofill'
+import { clearFormEntries, countFormEntries, listAddresses, removeAddress, saveAddress } from './formdata'
+import { addLogin, copyPassword, exportPasswords, listLogins, passwordStatus, removeLogins, removeNever, revealPassword, undoRemoveLogins, updateLogin } from './passwords'
 import { cancelRestore, exportBackup, localCounts, openBackup, restoreBackup, unlockBackup } from './backup'
+import { isDefaultBrowser, makeDefaultBrowser } from './defaultbrowser'
 import { buildReport, clearErrorLog, issueURL } from './diagnostics'
-import { execFile } from 'node:child_process'
 import { IPC_INVOKE, IPC_SEND, type BookmarkOpen, type DownloadAction, type InvokeMethods, type SendMethods } from '@shared/ipc'
 import { clearBrowsingData, clearCounts, sanitizeClearRequest } from './cleardata'
 import {
   BACKUP_CATEGORIES,
+  IMPORT_KINDS,
   WORKSPACE_ICONS,
+  type Address,
   type AppInfo,
   type BackupCategory,
   type CommandId,
@@ -31,7 +36,7 @@ import {
   undoRemove,
   updateBookmark,
 } from './bookmarks'
-import { detectSources, importBookmarks } from './importers'
+import { detectSources, importBookmarks, importFrom, importPasswordCsv } from './importers'
 import { links } from '@shared/bookmarks'
 import { allDownloads, clearDownloads, downloadAction, downloadFolder, openDownloadFolder } from './downloads'
 import { listExtensions, removeExtension } from './extensions'
@@ -52,7 +57,7 @@ import { globalState } from './windows'
 import { hostOf, originOf } from '@shared/url'
 import { certificateInfo, clearSiteData, revokeCertificateException, siteInfo, verificationFor } from './security'
 
-const PAGES: InternalPage[] = ['newtab', 'settings', 'history', 'extensions', 'bookmarks', 'downloads']
+const PAGES: InternalPage[] = ['newtab', 'settings', 'history', 'extensions', 'bookmarks', 'downloads', 'passwords']
 const OPEN_MODES: BookmarkOpen[] = ['current', 'tab', 'background', 'window', 'incognito']
 const DOWNLOAD_ACTIONS: DownloadAction[] = ['open', 'show', 'cancel', 'pause', 'resume', 'remove', 'retry', 'copy', 'trash']
 
@@ -88,20 +93,6 @@ function windowFor(event: IpcMainEvent | IpcMainInvokeEvent): BrowserWin {
 
 const num = (value: unknown): number => (typeof value === 'number' && Number.isFinite(value) ? value : NaN)
 const str = (value: unknown, max = 4096): string => (typeof value === 'string' ? value.slice(0, max) : '')
-
-function isDefaultBrowser(): boolean {
-  return app.isDefaultProtocolClient('https') && app.isDefaultProtocolClient('http')
-}
-
-async function makeDefaultBrowser(): Promise<boolean> {
-  const desktop = 'peepwick-browser.desktop'
-  await new Promise<void>((resolve) => {
-    execFile('xdg-settings', ['set', 'default-web-browser', desktop], () => resolve())
-  })
-  app.setAsDefaultProtocolClient('http')
-  app.setAsDefaultProtocolClient('https')
-  return isDefaultBrowser()
-}
 
 export function appInfo(): AppInfo {
   return {
@@ -250,6 +241,49 @@ const invoke: { [K in keyof InvokeMethods]: (win: BrowserWin, ...args: unknown[]
   },
   resetSettings() {
     resetSettings()
+  },
+  async importFrom(win, sourceId, kinds, skipDuplicates, primaryPassword) {
+    if (win.incognito) return null
+    return importFrom(win, str(sourceId, 64), {
+      kinds: Array.isArray(kinds) ? IMPORT_KINDS.filter((k) => (kinds as unknown[]).includes(k)) : [],
+      skipDuplicates: skipDuplicates !== false,
+      primaryPassword: typeof primaryPassword === 'string' ? primaryPassword.slice(0, 1024) : undefined,
+    })
+  },
+  passwordsList() {
+    return listLogins()
+  },
+  passwordsStatus() {
+    return passwordStatus()
+  },
+  passwordReveal(_win, id) {
+    return revealPassword(str(id, 64))
+  },
+  passwordAdd(win, login) {
+    if (win.incognito) return null
+    const l = (login ?? {}) as Record<string, unknown>
+    return addLogin({ origin: str(l.origin, 2000), username: str(l.username, 500), password: str(l.password, 1000), note: str(l.note, 2000) })
+  },
+  passwordUpdate(_win, id, patch) {
+    const p = (patch ?? {}) as Record<string, unknown>
+    const clean: Record<string, string> = {}
+    for (const key of ['origin', 'username', 'password', 'note'] as const) if (typeof p[key] === 'string') clean[key] = (p[key] as string).slice(0, 2000)
+    return updateLogin(str(id, 64), clean)
+  },
+  async passwordsExport(win) {
+    return exportPasswords(win)
+  },
+  async passwordsImportCsv(win) {
+    return win.incognito ? null : importPasswordCsv(win)
+  },
+  addressesList() {
+    return listAddresses()
+  },
+  addressSave(win, address) {
+    return win.incognito ? null : saveAddress((address ?? {}) as Partial<Address>)
+  },
+  formEntryCount() {
+    return countFormEntries()
   },
   report() {
     return buildReport(listExtensions().length)
@@ -491,6 +525,27 @@ const send: { [K in keyof SendMethods]: (win: BrowserWin, ...args: unknown[]) =>
   errorLogClear() {
     clearErrorLog()
   },
+  passwordCopy(_win, id) {
+    copyPassword(str(id, 64))
+  },
+  passwordsRemove(_win, list) {
+    removeLogins(ids(list))
+  },
+  passwordsUndo() {
+    undoRemoveLogins()
+  },
+  passwordNeverRemove(_win, origin) {
+    removeNever(str(origin, 2000))
+  },
+  saveLoginAnswer(_win, id, answer) {
+    if (answer === 'save' || answer === 'never' || answer === 'dismiss') answerSaveLogin(num(id), answer)
+  },
+  addressRemove(_win, id) {
+    removeAddress(str(id, 64))
+  },
+  formEntriesClear() {
+    clearFormEntries()
+  },
   restart() {
     app.relaunch()
     app.quit()
@@ -579,6 +634,8 @@ export function installIPC(): void {
     return handler(win, ...args)
   })
   ipcMain.on(IPC_SEND, (event, method: unknown, ...args: unknown[]) => {
+    // The autofill popup is a view of its own and may only pick or hover.
+    if (typeof method === 'string' && popupMessage(event.sender.id, method, args)) return
     let win: BrowserWin
     try {
       win = windowFor(event)

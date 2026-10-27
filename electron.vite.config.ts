@@ -20,7 +20,7 @@ export default defineConfig({
       // into a single CommonJS file.
       externalizeDeps: false,
       rollupOptions: {
-        input: { ui: resolve(__dirname, 'src/preload/ui.ts') },
+        input: { ui: resolve(__dirname, 'src/preload/ui.ts'), page: resolve(__dirname, 'src/preload/page.ts') },
         output: { format: 'cjs', entryFileNames: '[name].cjs' },
       },
     },
@@ -31,7 +31,7 @@ export default defineConfig({
     plugins: [react()],
     build: {
       rollupOptions: {
-        input: { index: resolve(__dirname, 'src/renderer/index.html') },
+        input: { index: resolve(__dirname, 'src/renderer/index.html'), popup: resolve(__dirname, 'src/renderer/popup.html') },
       },
     },
   },

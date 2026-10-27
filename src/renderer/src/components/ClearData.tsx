@@ -12,7 +12,7 @@ import { Modal } from './BookmarkDialogs'
 
 const RANGES: ClearRange[] = [1, 24, 168, 672, 0]
 /** Cleared for all time whatever the range says (Electron has no range for them). */
-const ALL_TIME: ClearKind[] = ['cookies', 'cache', 'permissions']
+const ALL_TIME: ClearKind[] = ['cookies', 'cache', 'permissions', 'passwords']
 
 // Remembered while the browser runs, like Chrome's dialog.
 let lastRange: ClearRange = 0
@@ -45,6 +45,10 @@ export function ClearDataDialog() {
         return t('clear.cacheHint') + allTime
       case 'permissions':
         return counts ? t('clear.permissionsHint', { n: counts.permissions }) + allTime : ''
+      case 'forms':
+        return counts ? t('clear.formsHint', { n: counts.forms }) : ''
+      case 'passwords':
+        return counts ? t('clear.passwordsHint', { n: counts.passwords }) + allTime : ''
     }
   }
 
@@ -58,7 +62,7 @@ export function ClearDataDialog() {
     showToast({ text: t('clear.done') })
   }
 
-  const order: ClearKind[] = ['history', 'downloads', 'cookies', 'cache', 'permissions']
+  const order: ClearKind[] = ['history', 'downloads', 'cookies', 'cache', 'forms', 'permissions', 'passwords']
   return (
     <Modal label={t('clear.title')} width={480} onClose={closePanel}>
       <div className="modal-head">

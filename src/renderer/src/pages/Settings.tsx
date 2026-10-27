@@ -20,22 +20,12 @@ import {
 } from '@shared/types'
 import { api, call } from '../api'
 import { DoubleEye, LookMark } from '../brand'
+import { AutofillSection } from '../components/Autofill'
 import { useUI } from '../context'
 import { useBookmarks, useSnapshot, useT } from '../store'
-import { Button, Icon, IconButton, Segmented, Toggle } from '../ui'
+import { Button, Icon, IconButton, Segmented, SettingRow as Row, Toggle } from '../ui'
 
 
-function Row({ title, hint, children }: { title: string; hint?: string; children: ReactNode }) {
-  return (
-    <div className="setting-row">
-      <div className="setting-text">
-        <div className="setting-title">{title}</div>
-        {hint && <div className="setting-hint">{hint}</div>}
-      </div>
-      <div className="setting-control">{children}</div>
-    </div>
-  )
-}
 
 function DomainList({ items, onChange, empty, placeholder }: { items: string[]; onChange: (items: string[]) => void; empty: string; placeholder: string }) {
   const t = useT()
@@ -379,14 +369,33 @@ function About() {
 function DefaultBrowser() {
   const t = useT()
   const [info, setInfo] = useState<AppInfo | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [problem, setProblem] = useState<'development' | 'failed' | null>(null)
   useEffect(() => {
     void call.appInfo().then(setInfo)
   }, [])
   if (!info) return null
+  const hint = info.isDefaultBrowser
+    ? t('settings.defaultBrowser.is')
+    : problem === 'failed'
+      ? t('settings.defaultBrowser.failed')
+      : problem === 'development'
+        ? t('settings.defaultBrowser.dev')
+        : t('settings.defaultBrowser.not')
   return (
-    <Row title={t('settings.defaultBrowser')} hint={info.isDefaultBrowser ? t('settings.defaultBrowser.is') : t('settings.defaultBrowser.not')}>
+    <Row title={t('settings.defaultBrowser')} hint={hint}>
       {!info.isDefaultBrowser && (
-        <Button onClick={() => void call.setDefaultBrowser().then((ok) => setInfo({ ...info, isDefaultBrowser: ok }))}>
+        <Button
+          disabled={busy}
+          onClick={() => {
+            setBusy(true)
+            void call.setDefaultBrowser().then((result) => {
+              setBusy(false)
+              setProblem(result === 'done' ? null : result)
+              setInfo({ ...info, isDefaultBrowser: result === 'done' })
+            })
+          }}
+        >
           {t('settings.defaultBrowser.make')}
         </Button>
       )}
@@ -609,6 +618,7 @@ export function Settings({ section }: { section: string }) {
         </Row>
       </>
     ),
+    autofill: <AutofillSection />,
     backup: <BackupSection />,
     report: <ReportSection />,
     about: <About />,
@@ -618,7 +628,7 @@ export function Settings({ section }: { section: string }) {
     <div className="page settings">
       <nav className="settings-nav">
         <h1 className="settings-heading">{t('settings.title')}</h1>
-        {SETTINGS_SECTIONS.filter((id) => !(state.incognito && (id === 'bookmarks' || id === 'backup'))).map((id) => (
+        {SETTINGS_SECTIONS.filter((id) => !(state.incognito && (id === 'bookmarks' || id === 'backup' || id === 'autofill'))).map((id) => (
           <button
             key={id}
             type="button"

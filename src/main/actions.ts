@@ -100,6 +100,7 @@ export function isCommandAvailable(win: BrowserWin, id: CommandId): boolean {
     case 'extensions':
     case 'import-bookmarks':
     case 'backup':
+    case 'passwords':
       return !win.incognito
     case 'bookmark-page':
       return !!active && !active.page && /^(https?|file):/.test(active.url) && !win.incognito
@@ -162,6 +163,9 @@ export function runCommand(win: BrowserWin, id: CommandId): void {
       break
     case 'backup':
       openPage(win, 'settings', 'backup')
+      break
+    case 'passwords':
+      openPage(win, 'passwords')
       break
     case 'check-updates':
       void checkForUpdates()

@@ -32,6 +32,15 @@ lets the pages you visit keep their own colour.
   Chromium, Brave, Edge, Vivaldi, Opera, Firefox, LibreWolf, Zen and Floorp (Snap and Flatpak
   installs included), or from an HTML file; export to HTML. Imports read the other browser's
   files on this computer and bring the site icons along.
+- **Passwords.** A built-in password manager: it offers to save or update a password after you
+  sign in, suggests saved logins in sign-in forms (only on the same site, filled only when you pick
+  one), suggests a strong password on sign-up forms, and has a passwords page with a local check for
+  weak and reused passwords. Passwords are encrypted with your system keyring (GNOME Keyring,
+  KWallet). Addresses and form entries are remembered and suggested too; card numbers never are.
+- **Import from other browsers:** bookmarks, passwords, history, cookies (stay signed in) and form
+  data from Chrome, Chromium, Brave, Edge, Vivaldi, Opera, Firefox, LibreWolf, Zen and Floorp
+  (Snap and Flatpak too), including Firefox profiles with a primary password; passwords also from
+  a CSV export (Chrome, Firefox, Bitwarden, 1Password, LastPass, KeePassXC).
 - **Site security.** The button at the left of the address bar shows whether the connection is
   secure, based on Chromium's own certificate check rather than the `https` in the address. Open
   it to see the certificate (who issued it, the domains it covers, validity, fingerprints, chain),
@@ -112,7 +121,8 @@ PEEPWICK Browser has no telemetry and no account. It talks to these services on 
 | Your secure DNS provider | Looking up site addresses | Only if you pick one (automatic uses your system's provider) |
 
 Pages you visit load as in any browser. Favicons are fetched once by the browser and kept locally.
-Importing bookmarks reads the other browser's files on this computer; nothing leaves it.
+Importing reads the other browser's files on this computer; nothing leaves it. For Chromium-based
+browsers, the key their passwords and cookies are encrypted with is read from your system keyring.
 The error log behind "Report a bug" stays on this computer (in a file only if you turn that on);
 it reaches GitHub only when you send a report yourself. Backups are files you keep; no cloud.
 
@@ -157,7 +167,8 @@ social preview card in `docs/`.
 ## Known limitations
 
 - Linux only for now.
-- Netflix, Spotify and other DRM-protected video don't play (Widevine is not available in Electron).
+- Netflix, Spotify and other DRM-protected video don't play yet. Widevine needs castlabs' Electron
+  build, which has no stable release for Electron 45 yet; it comes when that does.
 - Extensions that rely on `chrome.webRequest` don't receive events, because the shield owns the
   request pipeline. Extensions run in normal windows only.
 
@@ -215,6 +226,15 @@ sayfalar kendi renkleriyle kalır.
 - **Güvenli DNS** (DNS over HTTPS): otomatik ya da Cloudflare, Quad9, Mullvad veya Google ile.
 - **Hata bildir:** Ayarlar › Hata bildir, kısa bir rapor gösterir (sürüm, sistem, hata kodları;
   adresler ve dosya adları asla girmez). Tek tıkla kopyalayın ya da GitHub'daki hata formuna gönderin.
+- **Parolalar:** Yerleşik parola yöneticisi. Oturum açınca parolayı kaydetmeyi ya da güncellemeyi
+  önerir, giriş formlarında kayıtlı parolaları önerir (yalnızca aynı sitede, siz seçince doldurur),
+  kayıt formlarında güçlü parola önerir. Parolalar sayfasında zayıf ve tekrarlanan parolalar yerel
+  olarak denetlenir. Parolalar sistem anahtarlığıyla (GNOME Anahtarlık, KWallet) şifrelenir. Adresler
+  ve form girdileri de hatırlanıp önerilir; kart numaraları asla kaydedilmez.
+- **Başka tarayıcılardan aktarma:** Chrome, Chromium, Brave, Edge, Vivaldi, Opera, Firefox, LibreWolf,
+  Zen ve Floorp'tan (Snap ve Flatpak dahil) yer imleri, parolalar, geçmiş, çerezler (oturumlar açık
+  kalır) ve form bilgileri; ana parolalı Firefox profilleri de. Parolalar ayrıca CSV'den (Chrome,
+  Firefox, Bitwarden, 1Password, LastPass, KeePassXC).
 - **Komut çubuğu:** <kbd>Ctrl</kbd>+<kbd>K</kbd> ile açık sekmeler, yer imleri, geçmiş ve komutlar.
 - **Chrome eklentileri:** Chrome Web Mağazası'ndan eklenti kurabilirsiniz.
 - **Gizli pencere** kapanınca hiçbir şey bırakmaz.

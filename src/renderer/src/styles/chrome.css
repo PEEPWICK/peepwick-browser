@@ -1175,3 +1175,18 @@ button.omni-badge:hover {
 .toast-bar {
   border-left: 2px solid var(--accent);
 }
+
+/* "Save password?" after a sign-in */
+.save-login-bar .bar-text {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s2);
+  min-width: 0;
+}
+
+.save-login-bar .bar-text .muted {
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

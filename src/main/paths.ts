@@ -19,6 +19,11 @@ export function preloadPath(): string {
   return join(app.getAppPath(), 'out', 'preload', 'ui.cjs')
 }
 
+/** The script that runs in web pages for autofill (src/preload/page.ts). */
+export function pagePreloadPath(): string {
+  return join(app.getAppPath(), 'out', 'preload', 'page.cjs')
+}
+
 export function userPath(...parts: string[]): string {
   return join(app.getPath('userData'), ...parts)
 }

@@ -1,6 +1,7 @@
 // Encrypted local backup: settings, bookmarks, spaces (and optionally their tabs),
-// focus history, site permissions, the extension list and optionally browsing
-// history, in one password-protected file the person keeps wherever they like.
+// focus history, site permissions, the extension list, addresses and form entries,
+// and optionally saved passwords and browsing history, in one password-protected
+// file the person keeps wherever they like.
 // No cloud: moving it to another computer is up to them. Restoring merges into
 // what is already there and never deletes anything.
 import { dialog } from 'electron'
@@ -26,6 +27,8 @@ import { BACKUP_EXTENSION, BackupError, decryptBackup, encryptBackup, looksLikeB
 import { listExtensions } from './extensions'
 import { countVisits, exportVisits, importVisits, type VisitRow } from './history'
 import { shownVersion } from './paths'
+import { countFormEntries, formEntries, importAddresses, importEntries, listAddresses, type FormEntry } from './formdata'
+import { importLogins, passwordStatus, plainLogins, type PlainLogin } from './passwords'
 import { exportPermissions, listPermissions, mergePermissions } from './permissions'
 import { browsingSession } from './sessions'
 import { settings, t, updateSettings } from './settings'
@@ -50,6 +53,8 @@ interface Payload {
   permissions?: unknown
   extensions?: { id: string; name: string }[]
   history?: VisitRow[]
+  passwords?: { logins: PlainLogin[]; never: string[] }
+  autofill?: { addresses: Partial<import('@shared/types').Address>[]; entries: FormEntry[] }
 }
 
 /** Settings that belong to one computer and never travel. */
@@ -81,6 +86,8 @@ export function localCounts(): BackupCounts {
     focus: Object.values(stats.days).filter((d) => d.focus > 0 || d.blocked > 0).length,
     permissions: listPermissions().length,
     extensions: listExtensions().length,
+    autofill: listAddresses().length + countFormEntries(),
+    passwords: passwordStatus().count,
     history: countVisits(0),
   }
 }
@@ -100,6 +107,8 @@ export function collectBackup(categories: BackupCategory[]): Payload {
     ...(has('permissions') ? { permissions: exportPermissions() } : {}),
     ...(has('extensions') ? { extensions: listExtensions().map(({ id, name }) => ({ id, name })) } : {}),
     ...(has('history') ? { history: exportVisits() } : {}),
+    ...(has('passwords') ? { passwords: { logins: plainLogins(), never: passwordStatus().never } } : {}),
+    ...(has('autofill') ? { autofill: { addresses: listAddresses(), entries: formEntries() } } : {}),
   }
 }
 
@@ -178,6 +187,8 @@ function counts(payload: Payload): BackupCounts {
   }
   if (Array.isArray(payload.extensions)) out.extensions = payload.extensions.length
   if (Array.isArray(payload.history)) out.history = payload.history.length
+  if (Array.isArray(payload.passwords?.logins)) out.passwords = payload.passwords.logins.length
+  if (payload.autofill) out.autofill = (payload.autofill.addresses?.length ?? 0) + (payload.autofill.entries?.length ?? 0)
   return out
 }
 
@@ -272,7 +283,7 @@ export async function restoreBackup(win: BrowserWin, token: string, categories: 
   if (!payload) return null
   forget(token)
   const has = (c: BackupCategory) => categories.includes(c)
-  const result: RestoreResult = { settings: false, bookmarks: 0, workspaces: 0, tabs: 0, focusDays: 0, permissions: 0, extensions: 0, history: 0 }
+  const result: RestoreResult = { settings: false, bookmarks: 0, workspaces: 0, tabs: 0, focusDays: 0, permissions: 0, extensions: 0, history: 0, passwords: 0, autofill: 0 }
   if (has('settings') && payload.settings && typeof payload.settings === 'object') result.settings = restoreSettings(payload.settings)
   if (has('bookmarks') && isDraftTree(payload.bookmarks)) result.bookmarks = mergeBookmarks(payload.bookmarks)
   if (has('workspaces') && Array.isArray(payload.workspaces) && !win.incognito) {
@@ -286,6 +297,17 @@ export async function restoreBackup(win: BrowserWin, token: string, categories: 
     result.history = importVisits(
       payload.history.filter((v) => typeof v?.url === 'string' && typeof v.visitedAt === 'number').map((v) => ({ url: v.url, title: String(v.title ?? ''), visitedAt: v.visitedAt })),
     )
+  }
+  if (has('passwords') && Array.isArray(payload.passwords?.logins)) {
+    const logins = payload.passwords.logins.filter((l) => typeof l?.origin === 'string' && typeof l.password === 'string' && typeof l.username === 'string')
+    result.passwords = importLogins(logins, Array.isArray(payload.passwords.never) ? payload.passwords.never.filter((o) => typeof o === 'string') : []).added
+  }
+  if (has('autofill') && payload.autofill) {
+    const addresses = Array.isArray(payload.autofill.addresses) ? importAddresses(payload.autofill.addresses) : 0
+    const entries = Array.isArray(payload.autofill.entries)
+      ? importEntries(payload.autofill.entries.filter((e) => typeof e?.key === 'string' && typeof e.value === 'string'))
+      : 0
+    result.autofill = addresses + entries
   }
   if (has('extensions')) result.extensions = await restoreExtensions(extensionIds)
   return result

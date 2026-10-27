@@ -3,7 +3,9 @@
 // method name and only accepts calls from the browser UI it created.
 import type { BookmarkTree } from './bookmarks'
 import type {
+  Address,
   AppInfo,
+  AutofillPopupState,
   BackupCategory,
   BackupCounts,
   BackupSummary,
@@ -16,8 +18,11 @@ import type {
   ExtensionInfo,
   GlobalState,
   HistoryEntry,
+  ImportKind,
   ImportResult,
   ImportSource,
+  LoginEntry,
+  PasswordStatus,
   InternalPage,
   MenuClickEvent,
   PaneRect,
@@ -67,7 +72,7 @@ export interface InvokeMethods {
   clearData(request: ClearRequest): boolean
   clearDataCounts(range: ClearRange): ClearCounts
   appInfo(): AppInfo
-  setDefaultBrowser(): boolean
+  setDefaultBrowser(): 'done' | 'development' | 'failed'
   shieldReport(): { host: string; count: number }[]
   bookmarkCreate(input: BookmarkInput): string | null
   bookmarkPage(): { id: string; created: boolean } | null
@@ -87,6 +92,17 @@ export interface InvokeMethods {
   backupRestore(token: string, categories: BackupCategory[], extensionIds: string[]): RestoreResult | null
   chooseDownloadFolder(): string | null
   resetSettings(): void
+  importFrom(sourceId: string, kinds: ImportKind[], skipDuplicates: boolean, primaryPassword?: string): ImportResult | null
+  passwordsList(): LoginEntry[]
+  passwordsStatus(): PasswordStatus
+  passwordReveal(id: string): string | null
+  passwordAdd(login: { origin: string; username: string; password: string; note?: string }): string | null
+  passwordUpdate(id: string, patch: { origin?: string; username?: string; password?: string; note?: string }): boolean
+  passwordsExport(): boolean
+  passwordsImportCsv(): ImportResult | null
+  addressesList(): Address[]
+  addressSave(address: Partial<Address>): string | null
+  formEntryCount(): number
 }
 
 export interface CertificateDetails {
@@ -154,6 +170,13 @@ export interface SendMethods {
   errorLogClear(): void
   backupCancel(token: string): void
   restart(): void
+  passwordCopy(id: string): void
+  passwordsRemove(ids: string[]): void
+  passwordsUndo(): void
+  passwordNeverRemove(origin: string): void
+  saveLoginAnswer(id: number, answer: 'save' | 'never' | 'dismiss'): void
+  addressRemove(id: string): void
+  formEntriesClear(): void
   updateCheck(): void
   updateInstall(): void
   setSettings(patch: Partial<Settings>): void
@@ -180,6 +203,8 @@ export interface EventMap {
   settings: Settings
   command: UICommand
   bookmarks: BookmarkTree
+  /** To the autofill popup view only. */
+  autofill: AutofillPopupState
 }
 
 export type InvokeName = keyof InvokeMethods

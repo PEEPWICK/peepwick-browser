@@ -9,8 +9,8 @@ export type BookmarksBarMode = 'always' | 'newtab' | 'never'
 /** DNS over HTTPS: 'automatic' upgrades when the system's resolver supports it. */
 export type SecureDns = 'off' | 'automatic' | 'cloudflare' | 'quad9' | 'mullvad' | 'google'
 /** What can be cleared, now or when the browser closes. */
-export type ClearKind = 'history' | 'downloads' | 'cookies' | 'cache' | 'permissions'
-export const CLEAR_KINDS: ClearKind[] = ['history', 'downloads', 'cookies', 'cache', 'permissions']
+export type ClearKind = 'history' | 'downloads' | 'cookies' | 'cache' | 'permissions' | 'forms' | 'passwords'
+export const CLEAR_KINDS: ClearKind[] = ['history', 'downloads', 'cookies', 'cache', 'permissions', 'forms', 'passwords']
 /** How far back clearing goes, in hours; 0 is all time. */
 export type ClearRange = 1 | 24 | 168 | 672 | 0
 
@@ -60,6 +60,12 @@ export interface Settings {
   downloadDir: string
   /** Takes effect after a restart. */
   hardwareAcceleration: boolean
+  /** Offer to save passwords after signing in. */
+  passwordSave: boolean
+  /** Suggest saved passwords in sign-in forms. */
+  passwordFill: boolean
+  /** Suggest and remember form entries and addresses. */
+  formFill: boolean
 }
 
 /**
@@ -75,7 +81,7 @@ export type Interstitial =
   | { kind: 'crashed' }
   | { kind: 'focus'; url: string; host: string }
 
-export type InternalPage = 'newtab' | 'settings' | 'history' | 'extensions' | 'bookmarks' | 'downloads'
+export type InternalPage = 'newtab' | 'settings' | 'history' | 'extensions' | 'bookmarks' | 'downloads' | 'passwords'
 
 export const SETTINGS_SECTIONS = [
   'general',
@@ -84,6 +90,7 @@ export const SETTINGS_SECTIONS = [
   'tabs',
   'bookmarks',
   'privacy',
+  'autofill',
   'permissions',
   'focus',
   'downloads',
@@ -268,6 +275,7 @@ export type CommandId =
   | 'import-bookmarks'
   | 'report'
   | 'backup'
+  | 'passwords'
 
 export interface HistoryEntry {
   id: number
@@ -347,6 +355,8 @@ export type UICommand =
   | { type: 'certificate'; host: string }
   | { type: 'bookmark-rename'; id: string }
   | { type: 'backup-restore'; token: string; name: string }
+  | { type: 'save-login'; prompt: SaveLoginPrompt | null }
+  | { type: 'passwords-changed' }
 
 /**
  * A menu the UI draws. Native menus and message boxes take their colours from the
@@ -403,6 +413,10 @@ export interface MenuClickEvent {
   metaKey: boolean
 }
 
+/** What can be brought over from another browser. */
+export type ImportKind = 'bookmarks' | 'passwords' | 'history' | 'cookies' | 'autofill'
+export const IMPORT_KINDS: ImportKind[] = ['bookmarks', 'passwords', 'history', 'cookies', 'autofill']
+
 export interface ImportSource {
   id: string
   /** Browser name as people know it: Google Chrome, Firefox… */
@@ -410,6 +424,8 @@ export interface ImportSource {
   profile: string
   kind: 'chromium' | 'firefox'
   links: number
+  /** The kinds of data this profile has. */
+  available: ImportKind[]
 }
 
 export interface ImportResult {
@@ -418,6 +434,74 @@ export interface ImportResult {
   duplicates: number
   skipped: number
   favicons: number
+  passwords?: number
+  passwordDuplicates?: number
+  history?: number
+  cookies?: number
+  formEntries?: number
+  addresses?: number
+  /** Kinds that couldn't be read (a locked keyring, a database in an unknown format). */
+  failed?: ImportKind[]
+  /** Firefox protects its passwords with a primary password: ask for it and try again. */
+  needsPrimaryPassword?: boolean
+}
+
+// ── Passwords and autofill ───────────────────────────────────────────────────
+
+export interface LoginEntry {
+  id: string
+  origin: string
+  username: string
+  created: number
+  updated: number
+  lastUsed: number
+  timesUsed: number
+  note: string
+  weak: boolean
+  /** The same password is saved for another site. */
+  reused: boolean
+}
+
+export interface PasswordStatus {
+  count: number
+  /** 'gnome_libsecret', 'kwallet'…, or 'basic_text' when there is no keyring to protect them. */
+  backend: string
+  never: string[]
+}
+
+export interface SaveLoginPrompt {
+  id: number
+  host: string
+  username: string
+  /** A password is already saved for this username: offer to update it. */
+  update: boolean
+}
+
+export interface Address {
+  id: string
+  name: string
+  organization: string
+  street: string
+  city: string
+  state: string
+  postalCode: string
+  country: string
+  phone: string
+  email: string
+}
+
+/** The suggestions shown under a form field (drawn by the autofill popup). */
+export interface AutofillItem {
+  label: string
+  detail?: string
+  kind: 'login' | 'generate' | 'value' | 'address' | 'manage'
+}
+
+export interface AutofillPopupState {
+  items: AutofillItem[]
+  selected: number
+  dark: boolean
+  lang: Lang
 }
 
 // ── Site security ────────────────────────────────────────────────────────────
@@ -469,6 +553,8 @@ export interface ClearCounts {
   downloads: number
   cookies: number
   permissions: number
+  forms: number
+  passwords: number
 }
 
 // ── Error report ─────────────────────────────────────────────────────────────
@@ -494,10 +580,31 @@ export interface Report {
 
 // ── Backup ───────────────────────────────────────────────────────────────────
 
-export type BackupCategory = 'settings' | 'bookmarks' | 'workspaces' | 'tabs' | 'focus' | 'permissions' | 'extensions' | 'history'
-export const BACKUP_CATEGORIES: BackupCategory[] = ['settings', 'bookmarks', 'workspaces', 'tabs', 'focus', 'permissions', 'extensions', 'history']
+export type BackupCategory =
+  | 'settings'
+  | 'bookmarks'
+  | 'workspaces'
+  | 'tabs'
+  | 'focus'
+  | 'permissions'
+  | 'extensions'
+  | 'autofill'
+  | 'passwords'
+  | 'history'
+export const BACKUP_CATEGORIES: BackupCategory[] = [
+  'settings',
+  'bookmarks',
+  'workspaces',
+  'tabs',
+  'focus',
+  'permissions',
+  'extensions',
+  'autofill',
+  'passwords',
+  'history',
+]
 /** Ticked when exporting, unless the person changes it. */
-export const BACKUP_DEFAULTS: BackupCategory[] = ['settings', 'bookmarks', 'workspaces', 'focus', 'permissions', 'extensions']
+export const BACKUP_DEFAULTS: BackupCategory[] = ['settings', 'bookmarks', 'workspaces', 'focus', 'permissions', 'extensions', 'autofill']
 
 /** How much of each category there is (on this computer, or in a backup file). */
 export type BackupCounts = Partial<Record<BackupCategory, number>>
@@ -519,4 +626,6 @@ export interface RestoreResult {
   permissions: number
   extensions: number
   history: number
+  passwords: number
+  autofill: number
 }

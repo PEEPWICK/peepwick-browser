@@ -192,6 +192,7 @@ export function showAppMenu(win: BrowserWin, x: number, y: number): void {
           },
         ]
       : []),
+    ...(!win.incognito ? [{ label: t('menu.passwords'), click: () => openPage(win, 'passwords') }] : []),
     { label: t('menu.downloads'), accelerator: 'Ctrl+J', click: () => openPage(win, 'downloads') },
     ...(!win.incognito ? [{ label: t('menu.extensions'), click: () => openPage(win, 'extensions') }] : []),
     sep,

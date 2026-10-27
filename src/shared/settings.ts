@@ -37,6 +37,9 @@ export function defaultSettings(language: Lang): Settings {
     secureDns: 'automatic',
     downloadDir: '',
     hardwareAcceleration: true,
+    passwordSave: true,
+    passwordFill: true,
+    formFill: true,
   }
 }
 
@@ -79,9 +82,13 @@ export function sanitizeSettingsPatch(patch: unknown): Partial<Settings> {
   bool('onboarded')
   bool('errorLog')
   bool('hardwareAcceleration')
+  bool('passwordSave')
+  bool('passwordFill')
+  bool('formFill')
   if (DNS.includes(input.secureDns as SecureDns)) out.secureDns = input.secureDns as SecureDns
+  // Saved passwords are never wiped on exit.
   if (Array.isArray(input.clearOnExit)) {
-    out.clearOnExit = CLEAR_KINDS.filter((kind) => (input.clearOnExit as unknown[]).includes(kind)) as ClearKind[]
+    out.clearOnExit = CLEAR_KINDS.filter((kind) => kind !== 'passwords' && (input.clearOnExit as unknown[]).includes(kind)) as ClearKind[]
   }
   // An absolute folder path, or empty for the system default.
   if (typeof input.downloadDir === 'string' && (input.downloadDir === '' || (input.downloadDir.startsWith('/') && input.downloadDir.length < 4096))) {

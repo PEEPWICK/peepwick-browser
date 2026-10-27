@@ -10,6 +10,7 @@ import { resolveFavicon, storedFavicon } from './favicons'
 import { grantPass, shouldGate } from './focus'
 import { addVisit, updateTitle } from './history'
 import { showPageMenu } from './menus'
+import { hideAutofill } from './autofill'
 import { recordLoadError } from './diagnostics'
 import { denyPendingFor } from './permissions'
 import { ReaderView, extractArticle, isReaderable, renderArticle } from './reader'
@@ -56,6 +57,7 @@ const PAGE_TITLES: Record<InternalPage, MessageKey> = {
   extensions: 'ext.title',
   bookmarks: 'bookmarks.title',
   downloads: 'downloads.title',
+  passwords: 'passwords.title',
 }
 /** Views we closed on purpose (sleep, close), as opposed to pages closing themselves. */
 const closedByUs = new WeakSet<WebContents>()
@@ -80,6 +82,8 @@ export class Tab {
   find: FindState | null = null
   lastActive = Date.now()
   openerId: number | null = null
+  /** Between a new page starting to load and it replacing the old one. */
+  navigating = false
   private savedHistory: SavedHistory | null
   private readerToken = 0
 
@@ -161,12 +165,15 @@ export class Tab {
       this.changed()
     })
     wc.on('did-stop-loading', () => {
+      this.navigating = false
       this.loading = false
       this.changed()
       void this.checkReader(wc)
     })
     wc.on('did-start-navigation', (details) => {
       if (!details.isMainFrame || details.isSameDocument) return
+      this.navigating = true
+      if (this.win.activeTab() === this) hideAutofill(this.win)
       if (this.interstitial && this.interstitial.kind !== 'focus') this.interstitial = null
       if (this.find) this.stopFind()
       this.closeReader()
@@ -175,6 +182,8 @@ export class Tab {
       this.changed()
     })
     wc.on('did-navigate', (_event, url) => {
+      this.navigating = false
+      if (this.win.activeTab() === this) hideAutofill(this.win)
       if (this.interstitial) return
       const hostChanged = hostOf(url) !== hostOf(this.url)
       this.url = url

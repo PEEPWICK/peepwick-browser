@@ -3,7 +3,8 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { FileUp, X } from 'lucide-react'
 import { folderList, isBookmarkableURL, isInside, locate, urlKey, type BookmarkLink, type BookmarkTree } from '@shared/bookmarks'
-import type { ImportResult, ImportSource } from '@shared/types'
+import type { MessageKey } from '@shared/i18n'
+import { IMPORT_KINDS, type ImportKind, type ImportResult, type ImportSource } from '@shared/types'
 import { api, call } from '../api'
 import { useUI, type Toast } from '../context'
 import { activeTab, useBookmarks, useSnapshot, useT } from '../store'
@@ -239,31 +240,44 @@ export function EditDialog({ id, parentId, folder, rename = false }: { id?: stri
   )
 }
 
-// ── Import dialog ────────────────────────────────────────────────────────────
+// ── Import dialog: bookmarks, passwords, history, cookies and form data ───────
 
-export function ImportDialog() {
+export function ImportDialog({ focus }: { focus?: ImportKind }) {
   const { closePanel } = useUI()
   const t = useT()
   const [sources, setSources] = useState<ImportSource[] | null>(null)
-  const [choice, setChoice] = useState('html')
+  const [choice, setChoice] = useState(focus === 'passwords' ? 'csv' : 'html')
+  const [kinds, setKinds] = useState<ImportKind[]>([])
   const [skip, setSkip] = useState(true)
   const [busy, setBusy] = useState(false)
   const [result, setResult] = useState<ImportResult | null>(null)
   const [failed, setFailed] = useState(false)
+  const [primary, setPrimary] = useState('')
+
+  const source = sources?.find((s) => s.id === choice)
+  const choose = (id: string, list = sources) => {
+    setChoice(id)
+    const found = list?.find((s) => s.id === id)
+    if (found) setKinds(focus && found.available.includes(focus) ? [focus] : found.available)
+  }
 
   useEffect(() => {
     void call.importSources().then((list) => {
       setSources(list)
-      if (list[0]) setChoice(list[0].id)
+      const first = focus ? list.find((s) => s.available.includes(focus)) : list[0]
+      if (first) choose(first.id, list)
     })
   }, [])
 
-  const run = async () => {
+  const run = async (retryPasswords = false) => {
     setBusy(true)
     setFailed(false)
     try {
-      const outcome = await call.importBookmarks(choice, skip)
-      if (outcome) setResult(outcome)
+      let outcome: ImportResult | null
+      if (choice === 'html') outcome = await call.importBookmarks('html', skip)
+      else if (choice === 'csv') outcome = await call.passwordsImportCsv()
+      else outcome = await call.importFrom(choice, retryPasswords ? ['passwords'] : kinds, skip, primary || undefined)
+      if (outcome) setResult(retryPasswords && result ? { ...result, ...outcome, needsPrimaryPassword: outcome.needsPrimaryPassword } : outcome)
     } catch {
       setFailed(true)
     } finally {
@@ -274,76 +288,156 @@ export function ImportDialog() {
   const lines = useMemo(() => {
     if (!result) return []
     const out: string[] = []
-    if (result.links + result.folders === 0) out.push(t('import.nothing'))
-    else out.push(t('import.done', { n: result.links }))
+    if (result.links + result.folders > 0) out.push(t('import.done', { n: result.links }))
     if (result.folders > 0) out.push(t('import.folders', { n: result.folders }))
     if (result.duplicates > 0) out.push(t('import.duplicates', { n: result.duplicates }))
     if (result.skipped > 0) out.push(t('import.skipped', { n: result.skipped }))
     if (result.favicons > 0) out.push(t('import.favicons', { n: result.favicons }))
+    const counted: [keyof ImportResult, MessageKey][] = [
+      ['passwords', 'import.result.passwords'],
+      ['passwordDuplicates', 'import.result.passwordDuplicates'],
+      ['history', 'import.result.history'],
+      ['cookies', 'import.result.cookies'],
+      ['formEntries', 'import.result.formEntries'],
+      ['addresses', 'import.result.addresses'],
+    ]
+    for (const [key, label] of counted) {
+      const n = result[key]
+      if (typeof n === 'number' && n > 0) out.push(t(label, { n }))
+    }
+    if (result.failed && result.failed.length > 0) {
+      out.push(t('import.result.failed', { kinds: result.failed.map((k) => t(`import.kind.${k}` as MessageKey)).join(', ') }))
+    }
+    if (out.length === 0) out.push(t('import.nothing'))
     return out
   }, [result, t])
 
+  const kindsFor = choice === 'html' ? (['bookmarks'] as ImportKind[]) : choice === 'csv' ? (['passwords'] as ImportKind[]) : (source?.available ?? [])
+  const chromiumSecrets = source?.kind === 'chromium' && kinds.some((k) => k === 'passwords' || k === 'cookies')
+
   return (
-    <Modal label={t('import.title')} width={520} onClose={closePanel}>
+    <Modal label={t('import.title')} width={540} onClose={closePanel}>
       <div className="modal-head">
-        <h2>{t('import.title')}</h2>
+        <h2>{result ? t('import.result.title') : t('import.title')}</h2>
         <IconButton icon={X} label={t('common.close')} onClick={closePanel} />
       </div>
       {result ? (
         <div className="modal-body">
-          <ul className="import-result">
+          <ul className="restore-result">
             {lines.map((line) => (
               <li key={line}>{line}</li>
             ))}
           </ul>
+          {result.needsPrimaryPassword && (
+            <form
+              className="field"
+              onSubmit={(event) => {
+                event.preventDefault()
+                void run(true)
+              }}
+            >
+              <span className="label">{t('import.primaryPassword')}</span>
+              <span className="setting-hint">{t('import.primaryPasswordHint')}</span>
+              <div className="domain-add">
+                <input className="text-input" type="password" autoFocus value={primary} onChange={(event) => setPrimary(event.target.value)} />
+                <Button type="submit" disabled={busy || !primary}>
+                  {t('import.retryPasswords')}
+                </Button>
+              </div>
+            </form>
+          )}
           <div className="panel-actions">
             <Button variant="quiet" onClick={closePanel}>
               {t('common.close')}
             </Button>
-            <Button
-              variant="primary"
-              onClick={() => {
-                closePanel()
-                api.openPage('bookmarks')
-              }}
-            >
-              {t('import.show')}
-            </Button>
+            {(result.passwords ?? 0) > 0 ? (
+              <Button
+                variant="primary"
+                onClick={() => {
+                  closePanel()
+                  api.openPage('passwords')
+                }}
+              >
+                {t('import.showPasswords')}
+              </Button>
+            ) : (
+              result.links > 0 && (
+                <Button
+                  variant="primary"
+                  onClick={() => {
+                    closePanel()
+                    api.openPage('bookmarks')
+                  }}
+                >
+                  {t('import.show')}
+                </Button>
+              )
+            )}
           </div>
         </div>
       ) : (
         <div className="modal-body">
           <p className="setting-hint">{sources === null ? t('import.searching') : sources.length > 0 ? t('import.lead') : t('import.none')}</p>
           <div className="import-sources" role="radiogroup" aria-label={t('import.title')}>
-            {sources?.map((source) => (
-              <label key={source.id} className={`import-source ${choice === source.id ? 'is-active' : ''}`}>
-                <input type="radio" name="source" checked={choice === source.id} onChange={() => setChoice(source.id)} />
+            {sources?.map((s) => (
+              <label key={s.id} className={`import-source ${choice === s.id ? 'is-active' : ''}`}>
+                <input type="radio" name="source" checked={choice === s.id} onChange={() => choose(s.id)} />
                 <span className="import-name">
-                  <strong>{source.browser}</strong>
-                  <span className="muted">{source.profile}</span>
+                  <strong>{s.browser}</strong>
+                  <span className="muted">{s.profile}</span>
                 </span>
-                <span className="mono muted">{t('import.links', { n: source.links })}</span>
+                <span className="mono muted">{s.links > 0 ? t('import.links', { n: s.links }) : ''}</span>
               </label>
             ))}
-            <label className={`import-source ${choice === 'html' ? 'is-active' : ''}`}>
-              <input type="radio" name="source" checked={choice === 'html'} onChange={() => setChoice('html')} />
+            {(!focus || focus === 'bookmarks') && (
+              <label className={`import-source ${choice === 'html' ? 'is-active' : ''}`}>
+                <input type="radio" name="source" checked={choice === 'html'} onChange={() => setChoice('html')} />
+                <span className="import-name">
+                  <strong>{t('import.html')}</strong>
+                  <span className="muted">{t('import.htmlHint')}</span>
+                </span>
+                <Icon icon={FileUp} size={16} className="muted" />
+              </label>
+            )}
+            <label className={`import-source ${choice === 'csv' ? 'is-active' : ''}`}>
+              <input type="radio" name="source" checked={choice === 'csv'} onChange={() => setChoice('csv')} />
               <span className="import-name">
-                <strong>{t('import.html')}</strong>
-                <span className="muted">{t('import.htmlHint')}</span>
+                <strong>{t('passwords.fromCsv')}</strong>
+                <span className="muted">{t('passwords.fromCsvHint')}</span>
               </span>
               <Icon icon={FileUp} size={16} className="muted" />
             </label>
           </div>
-          <label className="check">
-            <input type="checkbox" checked={skip} onChange={(event) => setSkip(event.target.checked)} />
-            <span>{t('import.skipDuplicates')}</span>
-          </label>
+          {source && (
+            <div className="field">
+              <span className="label">{t('import.what')}</span>
+              <div className="clear-kinds backup-categories">
+                {IMPORT_KINDS.filter((k) => kindsFor.includes(k)).map((kind) => (
+                  <label key={kind} className="check">
+                    <input
+                      type="checkbox"
+                      checked={kinds.includes(kind)}
+                      onChange={(event) => setKinds((current) => (event.target.checked ? [...current, kind] : current.filter((k) => k !== kind)))}
+                    />
+                    <span>{t(`import.kind.${kind}` as MessageKey)}</span>
+                  </label>
+                ))}
+              </div>
+              {chromiumSecrets && <span className="setting-hint">{t('import.keyringNote')}</span>}
+            </div>
+          )}
+          {(choice === 'html' || kinds.includes('bookmarks')) && (
+            <label className="check">
+              <input type="checkbox" checked={skip} onChange={(event) => setSkip(event.target.checked)} />
+              <span>{t('import.skipDuplicates')}</span>
+            </label>
+          )}
           {failed && <p className="field-error">{t('import.failed')}</p>}
           <div className="panel-actions">
             <Button variant="quiet" onClick={closePanel}>
               {t('common.cancel')}
             </Button>
-            <Button variant="primary" disabled={busy || sources === null} onClick={() => void run()}>
+            <Button variant="primary" disabled={busy || sources === null || (!!source && kinds.length === 0)} onClick={() => void run()}>
               {busy ? t('import.running') : t('import.run')}
             </Button>
           </div>

@@ -4,6 +4,8 @@
 import type { ClearCounts, ClearKind, ClearRange, ClearRequest } from '@shared/types'
 import { CLEAR_KINDS } from '@shared/types'
 import { clearDownloads, countDownloads } from './downloads'
+import { clearFormEntries, countFormEntries } from './formdata'
+import { clearPasswords, passwordStatus } from './passwords'
 import { countVisits, deleteVisitsSince } from './history'
 import { clearPermissions, listPermissions } from './permissions'
 import { browsingSession } from './sessions'
@@ -31,7 +33,14 @@ export async function clearCounts(range: ClearRange): Promise<ClearCounts> {
   } catch {
     cookies = 0
   }
-  return { history: countVisits(since), downloads: countDownloads(since), cookies, permissions: listPermissions().length }
+  return {
+    history: countVisits(since),
+    downloads: countDownloads(since),
+    cookies,
+    permissions: listPermissions().length,
+    forms: countFormEntries(since),
+    passwords: passwordStatus().count,
+  }
 }
 
 export async function clearBrowsingData({ range, kinds }: ClearRequest): Promise<void> {
@@ -41,13 +50,16 @@ export async function clearBrowsingData({ range, kinds }: ClearRequest): Promise
   if (has('history')) deleteVisitsSince(since)
   if (has('downloads')) clearDownloads(since)
   if (has('permissions')) clearPermissions()
+  if (has('forms')) clearFormEntries(since)
+  if (has('passwords')) clearPasswords()
   if (has('cookies')) await session.clearStorageData()
   if (has('cache')) await session.clearCache()
 }
 
 /** Runs the "clear when the browser closes" choices, giving up after a few seconds. */
 export async function clearOnExit(): Promise<void> {
-  const kinds = settings().clearOnExit
+  // Passwords are never wiped on exit, whatever a hand-edited settings file says.
+  const kinds = settings().clearOnExit.filter((kind) => kind !== 'passwords')
   if (kinds.length === 0) return
   await Promise.race([clearBrowsingData({ range: 0, kinds }).catch(() => {}), new Promise((resolve) => setTimeout(resolve, 4000))])
 }

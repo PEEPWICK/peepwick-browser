@@ -172,3 +172,16 @@ export function useOverlay(open: boolean): void {
     }
   }, [open])
 }
+
+/** One row of a settings page: title and hint on the left, the control on the right. */
+export function SettingRow({ title, hint, children }: { title: string; hint?: string; children: ReactNode }) {
+  return (
+    <div className="setting-row">
+      <div className="setting-text">
+        <div className="setting-title">{title}</div>
+        {hint && <div className="setting-hint">{hint}</div>}
+      </div>
+      <div className="setting-control">{children}</div>
+    </div>
+  )
+}

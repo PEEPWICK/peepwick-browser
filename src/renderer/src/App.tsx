@@ -13,9 +13,12 @@ import { BackupExportDialog, BackupRestoreDialog } from './components/Backup'
 import { ClearDataDialog } from './components/ClearData'
 import { ConfirmDialog } from './components/Confirm'
 import { MenuPopup } from './components/Menu'
+import { AddressDialog, PasswordDialog } from './components/Autofill'
 import { CertificateDialog, SitePanel } from './components/SiteInfo'
+import { SaveLoginBar } from './components/SaveLogin'
 import { Tooltips } from './components/Tooltips'
 import { UIContext, type Panel, type Question, type Toast, type UIContextValue } from './context'
+import type { SaveLoginPrompt } from '@shared/types'
 import { activeTab, useSnapshot, useT } from './store'
 
 function useTheme(): void {
@@ -40,6 +43,7 @@ export function App() {
   const [panel, setPanel] = useState<Panel | null>(null)
   const [findOpen, setFindOpen] = useState(false)
   const [toast, setToast] = useState<Toast | null>(null)
+  const [saveLogin, setSaveLogin] = useState<SaveLoginPrompt | null>(null)
   const closeToast = useCallback(() => setToast(null), [])
   const t = useT()
   const tRef = useRef(t)
@@ -139,6 +143,12 @@ export function App() {
             )
             break
           }
+          case 'save-login':
+            setSaveLogin(command.prompt)
+            break
+          case 'passwords-changed':
+            window.dispatchEvent(new Event('pw-passwords-changed'))
+            break
           case 'clear-data':
             setPanel({ kind: 'clear-data' })
             break
@@ -190,6 +200,7 @@ export function App() {
           <div className="chrome-top">
             <Toolbar />
             {showBar && <BookmarksBar />}
+            {saveLogin && <SaveLoginBar prompt={saveLogin} onDone={() => setSaveLogin(null)} />}
             {toast && <ToastBar toast={toast} onClose={closeToast} />}
             {state.permission && <PermissionBar prompt={state.permission} />}
             {findOpen && tab && !tab.page && <FindBar tab={tab} onClose={() => setFindOpen(false)} />}
@@ -204,9 +215,11 @@ export function App() {
       {panel?.kind === 'palette' && <Palette />}
       {panel?.kind === 'star' && <StarPanel anchor={panel.anchor} created={panel.created} />}
       {panel?.kind === 'bookmark-edit' && <EditDialog id={panel.id} parentId={panel.parentId} folder={panel.folder} rename={panel.rename} />}
-      {panel?.kind === 'import' && <ImportDialog />}
+      {panel?.kind === 'import' && <ImportDialog focus={panel.focus} />}
       {panel?.kind === 'site' && <SitePanel anchor={panel.anchor} />}
       {panel?.kind === 'clear-data' && <ClearDataDialog />}
+      {panel?.kind === 'password-edit' && <PasswordDialog key={panel.id ?? 'new'} id={panel.id} />}
+      {panel?.kind === 'address-edit' && <AddressDialog key={panel.id ?? 'new'} id={panel.id} />}
       {panel?.kind === 'backup-export' && <BackupExportDialog />}
       {panel?.kind === 'backup-restore' && <BackupRestoreDialog key={panel.token} token={panel.token} name={panel.name} />}
       {panel?.kind === 'certificate' && <CertificateDialog host={panel.host} />}

@@ -1,5 +1,5 @@
 import { createContext, useContext } from 'react'
-import type { ConfirmModel, MenuModel } from '@shared/types'
+import type { ConfirmModel, ImportKind, MenuModel } from '@shared/types'
 
 export type Panel =
   | { kind: 'shield'; anchor: DOMRect }
@@ -9,7 +9,9 @@ export type Panel =
   | { kind: 'palette' }
   | { kind: 'star'; anchor: DOMRect; created: boolean }
   | { kind: 'bookmark-edit'; id?: string; parentId?: string; folder?: boolean; rename?: boolean }
-  | { kind: 'import' }
+  | { kind: 'import'; focus?: ImportKind }
+  | { kind: 'password-edit'; id?: string }
+  | { kind: 'address-edit'; id?: string }
   | { kind: 'menu'; menu: MenuModel; context?: MenuModel }
   | { kind: 'confirm'; dialog: ConfirmModel }
   | { kind: 'site'; anchor: DOMRect }

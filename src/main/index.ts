@@ -7,7 +7,11 @@ import { SECURE_DNS_SERVERS } from '@shared/settings'
 import { hostOf } from '@shared/url'
 import { flushBookmarks, loadBookmarks } from './bookmarks'
 import { activeDownloadCount, cancelAllDownloads, flushDownloads, loadDownloads } from './downloads'
+import { startAutofill } from './autofill'
 import { clearOnExit } from './cleardata'
+import { flushFormData, loadFormData } from './formdata'
+import { flushPasswords, loadPasswords } from './passwords'
+import { syncAppImageDesktopFile } from './defaultbrowser'
 import { startDiagnostics } from './diagnostics'
 import { bus } from './events'
 import { initExtensions } from './extensions'
@@ -56,6 +60,8 @@ async function boot(): Promise<void> {
   if (gtkThemeSet) delete process.env['GTK_THEME']
   loadSettings()
   startDiagnostics()
+  // An AppImage that was made the default browser and then moved or updated.
+  syncAppImageDesktopFile()
   // Pages (prefers-color-scheme), scrollbars and form controls follow the browser's
   // theme, as in Chrome, not only the desktop's.
   const applyTheme = () => {
@@ -81,7 +87,10 @@ async function boot(): Promise<void> {
   loadPermissions()
   loadDownloads()
   loadBookmarks()
+  loadPasswords()
+  loadFormData()
   openHistory()
+  startAutofill()
   configureUISession()
   installIPC()
   wireBroadcasts()
@@ -186,6 +195,8 @@ if (!app.requestSingleInstanceLock()) {
     flushPermissions()
     flushDownloads()
     flushBookmarks()
+    flushPasswords()
+    flushFormData()
     closeHistory()
   })
 

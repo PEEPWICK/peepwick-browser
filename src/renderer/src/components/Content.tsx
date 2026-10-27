@@ -16,6 +16,7 @@ const HistoryPage = lazy(() => import('../pages/History').then((m) => ({ default
 const Extensions = lazy(() => import('../pages/Extensions').then((m) => ({ default: m.Extensions })))
 const BookmarksPage = lazy(() => import('../pages/Bookmarks').then((m) => ({ default: m.BookmarksPage })))
 const DownloadsPage = lazy(() => import('../pages/Downloads').then((m) => ({ default: m.DownloadsPage })))
+const PasswordsPage = lazy(() => import('../pages/Passwords').then((m) => ({ default: m.PasswordsPage })))
 
 function PageFor({ tab }: { tab: TabState }) {
   if (tab.interstitial) return <Interstitial tab={tab} interstitial={tab.interstitial} />
@@ -32,6 +33,8 @@ function PageFor({ tab }: { tab: TabState }) {
       return <Extensions />
     case 'downloads':
       return <DownloadsPage />
+    case 'passwords':
+      return <PasswordsPage />
     default:
       return null
   }

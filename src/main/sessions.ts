@@ -4,6 +4,7 @@
 import { app, protocol, session, type Session } from 'electron'
 import { readFile } from 'node:fs/promises'
 import { extname, normalize, sep } from 'node:path'
+import { installAutofill } from './autofill'
 import { installDownloads } from './downloads'
 import { getFavicon } from './history'
 import { installNetwork } from './network'
@@ -103,6 +104,7 @@ function configureBrowsingSession(ses: Session, kind: 'browsing' | 'incognito'):
   installPermissions(ses, kind === 'incognito')
   installDownloads(ses, kind === 'incognito')
   watchCertificates(ses)
+  installAutofill(ses)
   const wanted = ['tr', 'en-US']
   const languages = wanted.filter((lang) => ses.availableSpellCheckerLanguages.includes(lang))
   if (languages.length > 0) ses.setSpellCheckerLanguages(languages)
