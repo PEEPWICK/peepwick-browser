@@ -3,9 +3,12 @@ import { app, Menu, nativeTheme } from 'electron'
 import { existsSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
+import { SECURE_DNS_SERVERS } from '@shared/settings'
 import { hostOf } from '@shared/url'
 import { flushBookmarks, loadBookmarks } from './bookmarks'
 import { activeDownloadCount, cancelAllDownloads, flushDownloads, loadDownloads } from './downloads'
+import { clearOnExit } from './cleardata'
+import { startDiagnostics } from './diagnostics'
 import { bus } from './events'
 import { initExtensions } from './extensions'
 import { loadFocus } from './focus'
@@ -16,11 +19,11 @@ import { lifecycle } from './lifecycle'
 import { flushPermissions, loadPermissions } from './permissions'
 import { confirm } from './popup'
 import { tabForContents } from './registry'
+import { certificateAllowed } from './security'
 import { browsingSession, configureUISession, registerSchemes, setUserAgent, uiSession } from './sessions'
 import { flushSettings, loadSettings, settings, t } from './settings'
 import { ensureShield, installCosmeticHandlers } from './shield'
 import { flushStats, loadStats } from './stats'
-import { certificateAllowed } from './tab'
 import { BrowserWin } from './window'
 import { startUpdater } from './updater'
 import { anyWindow, createWindow, markQuitting, restoreSession, wireBroadcasts } from './windows'
@@ -52,13 +55,27 @@ async function boot(): Promise<void> {
   Menu.setApplicationMenu(null)
   if (gtkThemeSet) delete process.env['GTK_THEME']
   loadSettings()
+  startDiagnostics()
   // Pages (prefers-color-scheme), scrollbars and form controls follow the browser's
   // theme, as in Chrome, not only the desktop's.
   const applyTheme = () => {
     if (nativeTheme.themeSource !== settings().theme) nativeTheme.themeSource = settings().theme
   }
+  // DNS over HTTPS (Settings › Privacy › Secure DNS).
+  let dns = ''
+  const applySecureDns = () => {
+    const choice = settings().secureDns
+    if (choice === dns) return
+    dns = choice
+    if (choice === 'off' || choice === 'automatic') app.configureHostResolver({ secureDnsMode: choice })
+    else app.configureHostResolver({ secureDnsMode: 'secure', secureDnsServers: [SECURE_DNS_SERVERS[choice].template] })
+  }
   applyTheme()
-  bus.on('settings', applyTheme)
+  applySecureDns()
+  bus.on('settings', () => {
+    applyTheme()
+    applySecureDns()
+  })
   loadStats()
   loadFocus()
   loadPermissions()
@@ -132,6 +149,7 @@ if (!app.requestSingleInstanceLock()) {
   }
 
   let quitConfirmed = false
+  let exitCleared = false
   let askingToQuit = false
   app.on('before-quit', (event) => {
     const active = activeDownloadCount()
@@ -154,6 +172,12 @@ if (!app.requestSingleInstanceLock()) {
     }
     if (active > 0) cancelAllDownloads()
     markQuitting()
+    // "Clear when the browser closes": hold the quit until it's done (a few seconds at most).
+    if (settings().clearOnExit.length > 0 && !exitCleared) {
+      event.preventDefault()
+      exitCleared = true
+      void clearOnExit().finally(() => app.quit())
+    }
   })
 
   app.on('will-quit', () => {

@@ -48,6 +48,7 @@ function Level({
   openIndex,
   onHover,
   onActivate,
+  onContext,
   levelRef,
 }: {
   items: MenuNode[]
@@ -56,6 +57,7 @@ function Level({
   openIndex: number | null
   onHover: (index: number | null) => void
   onActivate: (index: number, event: MouseEvent) => void
+  onContext: (index: number, event: MouseEvent) => void
   levelRef: (el: HTMLDivElement | null) => void
 }) {
   const ref = useRef<HTMLDivElement>(null)
@@ -118,6 +120,11 @@ function Level({
             onMouseEnter={() => onHover(index)}
             onClick={(event) => item.enabled && onActivate(index, event)}
             onAuxClick={(event) => item.enabled && event.button === 1 && item.favicon && onActivate(index, event)}
+            onContextMenu={(event) => {
+              event.preventDefault()
+              event.stopPropagation()
+              if (item.context) onContext(index, event)
+            }}
           >
             {withIcons && (
               <span className="menu-icon">
@@ -142,7 +149,11 @@ function Level({
   )
 }
 
-export function MenuPopup({ menu }: { menu: MenuModel }) {
+/**
+ * A menu, or a right-click menu stacked on a folder menu: then `onDismiss` (Esc)
+ * closes only it, and the folder menu below stays `inactive` until it does.
+ */
+export function MenuPopup({ menu, inactive = false, onDismiss }: { menu: MenuModel; inactive?: boolean; onDismiss?: () => void }) {
   useOverlay(true)
   const { closePanel } = useUI()
   const root = useRef<HTMLDivElement>(null)
@@ -169,8 +180,20 @@ export function MenuPopup({ menu }: { menu: MenuModel }) {
     closePanel()
   }
 
+  const dismiss = () => {
+    if (!onDismiss) return close()
+    done.current = true
+    api.menuClosed(menu.id)
+    onDismiss()
+  }
+
+  // Keys go to the top menu; the folder menu takes them back when its right-click
+  // menu closes.
   useEffect(() => {
-    root.current?.focus()
+    if (!inactive) root.current?.focus()
+  }, [inactive])
+
+  useEffect(() => {
     const onBlur = () => close()
     window.addEventListener('blur', onBlur)
     window.addEventListener('resize', onBlur)
@@ -235,6 +258,7 @@ export function MenuPopup({ menu }: { menu: MenuModel }) {
   }
 
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (inactive) return
     const level = shown.length - 1
     const items = shown[level]
     const current = active[level] ?? null
@@ -261,7 +285,7 @@ export function MenuPopup({ menu }: { menu: MenuModel }) {
         break
       case 'Escape':
         if (level > 0) closeTo(level - 1)
-        else close()
+        else dismiss()
         break
       case 'Enter':
       case ' ':
@@ -316,6 +340,10 @@ export function MenuPopup({ menu }: { menu: MenuModel }) {
           openIndex={opened[level] ?? null}
           onHover={(index) => hover(level, index)}
           onActivate={(index, event) => select(level, index, event)}
+          onContext={(index, event) => {
+            const item = items[index]
+            if (isEntry(item)) api.menuContext(menu.id, item.id, event.clientX, event.clientY)
+          }}
           levelRef={(el) => {
             levels.current[level] = el
           }}

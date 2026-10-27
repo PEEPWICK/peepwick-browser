@@ -99,6 +99,7 @@ export function isCommandAvailable(win: BrowserWin, id: CommandId): boolean {
       return !!active && !active.page
     case 'extensions':
     case 'import-bookmarks':
+    case 'backup':
       return !win.incognito
     case 'bookmark-page':
       return !!active && !active.page && /^(https?|file):/.test(active.url) && !win.incognito
@@ -139,7 +140,7 @@ export function runCommand(win: BrowserWin, id: CommandId): void {
       openPage(win, 'extensions')
       break
     case 'downloads':
-      win.command({ type: 'downloads' })
+      openPage(win, 'downloads')
       break
     case 'toggle-sidebar':
       updateSettings({ sidebarCollapsed: !settings().sidebarCollapsed })
@@ -154,7 +155,13 @@ export function runCommand(win: BrowserWin, id: CommandId): void {
       break
     }
     case 'clear-data':
-      openPage(win, 'settings', 'privacy')
+      win.command({ type: 'clear-data' })
+      break
+    case 'report':
+      openPage(win, 'settings', 'report')
+      break
+    case 'backup':
+      openPage(win, 'settings', 'backup')
       break
     case 'check-updates':
       void checkForUpdates()

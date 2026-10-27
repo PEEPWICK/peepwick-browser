@@ -1,16 +1,16 @@
-// Questions the main process asks (adding an extension, opening many bookmarks,
-// quitting during downloads). Drawn here instead of system message boxes so they
-// follow the browser's theme.
+// Every yes/no question in the browser: ones the main process asks (adding an
+// extension, quitting during downloads) and the UI's own (clearing history,
+// deleting a space). Drawn here instead of system message boxes so they follow the
+// browser's theme.
 import { useEffect, useRef } from 'react'
 import { X } from 'lucide-react'
 import type { ConfirmModel } from '@shared/types'
-import { api } from '../api'
 import { useUI } from '../context'
 import { useT } from '../store'
 import { Button, IconButton } from '../ui'
 import { Modal } from './BookmarkDialogs'
 
-export function ConfirmDialog({ dialog }: { dialog: ConfirmModel }) {
+export function ConfirmDialog({ dialog, onAnswer }: { dialog: ConfirmModel; onAnswer: (ok: boolean) => void }) {
   const { closePanel } = useUI()
   const t = useT()
   const answered = useRef(false)
@@ -18,7 +18,7 @@ export function ConfirmDialog({ dialog }: { dialog: ConfirmModel }) {
   const reply = (ok: boolean) => {
     if (!answered.current) {
       answered.current = true
-      api.confirmReply(dialog.id, ok)
+      onAnswer(ok)
     }
     closePanel()
   }
@@ -26,7 +26,7 @@ export function ConfirmDialog({ dialog }: { dialog: ConfirmModel }) {
   // Replaced by another panel or the window closing: that is a no.
   useEffect(
     () => () => {
-      if (!answered.current) api.confirmReply(dialog.id, false)
+      if (!answered.current) onAnswer(false)
     },
     [dialog.id],
   )

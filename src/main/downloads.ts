@@ -1,7 +1,10 @@
-import { app, BaseWindow, Notification, shell, type DownloadItem, type Session } from 'electron'
+// Downloads: the list (saved for normal windows, kept in memory for private ones),
+// progress with a smoothed speed, and the actions the downloads page and panel offer.
+import { app, BaseWindow, clipboard, Notification, shell, type DownloadItem, type Session } from 'electron'
 import { randomUUID } from 'node:crypto'
-import { existsSync } from 'node:fs'
+import { existsSync, mkdirSync } from 'node:fs'
 import { basename, extname, join } from 'node:path'
+import type { DownloadAction } from '@shared/ipc'
 import type { DownloadState } from '@shared/types'
 import { bus } from './events'
 import { resourcePath, userPath } from './paths'
@@ -10,21 +13,41 @@ import { settings, t } from './settings'
 import { JsonFile } from './store'
 
 const file = new JsonFile<DownloadState[]>(userPath('downloads.json'), 1000)
+const KEEP = 500
+/** How many the panel and every window's state carry; the page asks for the rest. */
+const RECENT = 30
 let list: DownloadState[] = []
 const items = new Map<string, DownloadItem>()
-/** Downloads from private windows are listed while the browser runs but never saved. */
-const privateIds = new Set<string>()
+const sessions = new Map<string, Session>()
+let normalSession: Session | null = null
 let broadcastTimer: NodeJS.Timeout | null = null
 
 export function loadDownloads(): void {
   const saved = file.read()
   if (Array.isArray(saved)) {
-    list = saved.map((d) => (d.status === 'progressing' || d.status === 'paused' ? { ...d, status: 'interrupted' } : d))
+    list = saved.map((d) => (d.status === 'progressing' || d.status === 'paused' ? { ...d, status: 'interrupted', speed: 0 } : d))
   }
 }
 
+/** The most recent downloads, for the panel. */
 export function downloads(): DownloadState[] {
-  return list
+  return list.slice(0, RECENT).map(withFileCheck)
+}
+
+/** Every download, newest first; `text` matches the file name or address. */
+export function allDownloads(text = ''): DownloadState[] {
+  const needle = text.trim().toLocaleLowerCase()
+  const matching = needle ? list.filter((d) => d.filename.toLocaleLowerCase().includes(needle) || d.url.toLowerCase().includes(needle)) : list
+  return matching.map(withFileCheck)
+}
+
+function withFileCheck(entry: DownloadState): DownloadState {
+  return entry.status === 'completed' ? { ...entry, missing: !existsSync(entry.path) } : entry
+}
+
+export function downloadFolder(): string {
+  const chosen = settings().downloadDir
+  return chosen && existsSync(chosen) ? chosen : app.getPath('downloads')
 }
 
 export function activeDownloadCount(): number {
@@ -32,7 +55,7 @@ export function activeDownloadCount(): number {
 }
 
 function changed(immediate = false): void {
-  file.schedule(list.filter((d) => !privateIds.has(d.id)).slice(0, 50))
+  file.schedule(list.filter((d) => !d.incognito).slice(0, KEEP))
   if (immediate) {
     if (broadcastTimer) clearTimeout(broadcastTimer)
     broadcastTimer = null
@@ -56,9 +79,9 @@ function uniquePath(dir: string, name: string): string {
 }
 
 export function installDownloads(session: Session, incognito: boolean): void {
+  if (!incognito) normalSession = session
   session.on('will-download', (_event, item, contents) => {
     const id = randomUUID()
-    if (incognito) privateIds.add(id)
     // A tab that never showed a page (a link opened just to download) goes away, as in Chrome.
     const tab = contents ? tabForContents(contents.id) : undefined
     if (tab && contents && !contents.getURL()) {
@@ -67,7 +90,8 @@ export function installDownloads(session: Session, incognito: boolean): void {
         else tab.showPage('newtab')
       })
     }
-    const dir = app.getPath('downloads')
+    const dir = downloadFolder()
+    mkdirSync(dir, { recursive: true })
     if (settings().askWhereToSave) item.setSaveDialogOptions({ defaultPath: join(dir, item.getFilename()) })
     else item.setSavePath(uniquePath(dir, item.getFilename()))
 
@@ -80,13 +104,28 @@ export function installDownloads(session: Session, incognito: boolean): void {
       total: item.getTotalBytes(),
       status: 'progressing',
       startedAt: Date.now(),
+      speed: 0,
+      ...(incognito ? { incognito: true } : {}),
     }
-    list = [entry, ...list].slice(0, 100)
+    list = [entry, ...list].slice(0, KEEP)
     items.set(id, item)
+    sessions.set(id, session)
     changed(true)
 
+    // Speed from the bytes received between samples, smoothed so the time left doesn't jump.
+    let sampleAt = Date.now()
+    let sampleBytes = 0
     item.on('updated', (_e, state) => {
-      entry.received = item.getReceivedBytes()
+      const now = Date.now()
+      const received = item.getReceivedBytes()
+      if (item.isPaused() || state === 'interrupted') entry.speed = 0
+      else if (now - sampleAt >= 500) {
+        const current = ((received - sampleBytes) * 1000) / (now - sampleAt)
+        entry.speed = entry.speed ? entry.speed * 0.7 + current * 0.3 : current
+        sampleAt = now
+        sampleBytes = received
+      }
+      entry.received = received
       entry.total = item.getTotalBytes()
       entry.path = item.getSavePath() || entry.path
       entry.filename = basename(entry.path) || entry.filename
@@ -99,6 +138,8 @@ export function installDownloads(session: Session, incognito: boolean): void {
       entry.path = item.getSavePath() || entry.path
       entry.filename = basename(entry.path) || entry.filename
       entry.status = state === 'completed' ? 'completed' : state === 'cancelled' ? 'cancelled' : 'interrupted'
+      entry.speed = 0
+      entry.endedAt = Date.now()
       if (state === 'cancelled' && !item.getSavePath()) list = list.filter((d) => d !== entry)
       changed(true)
       if (state === 'completed' && !BaseWindow.getFocusedWindow() && Notification.isSupported()) {
@@ -108,7 +149,7 @@ export function installDownloads(session: Session, incognito: boolean): void {
   })
 }
 
-export function downloadAction(id: string, action: 'open' | 'show' | 'cancel' | 'pause' | 'resume' | 'remove'): void {
+export function downloadAction(id: string, action: DownloadAction): void {
   const entry = list.find((d) => d.id === id)
   if (!entry) return
   const item = items.get(id)
@@ -118,7 +159,7 @@ export function downloadAction(id: string, action: 'open' | 'show' | 'cancel' | 
       break
     case 'show':
       if (existsSync(entry.path)) shell.showItemInFolder(entry.path)
-      else void shell.openPath(app.getPath('downloads'))
+      else void shell.openPath(downloadFolder())
       break
     case 'cancel':
       item?.cancel()
@@ -129,6 +170,33 @@ export function downloadAction(id: string, action: 'open' | 'show' | 'cancel' | 
     case 'resume':
       if (item?.canResume()) item.resume()
       break
+    case 'retry': {
+      // A download that stopped but can carry on resumes; anything else starts over.
+      if (item?.canResume()) {
+        item.resume()
+        break
+      }
+      const session = sessions.get(id) ?? (entry.incognito ? null : normalSession)
+      if (!session) break
+      item?.cancel()
+      list = list.filter((d) => d !== entry)
+      changed(true)
+      session.downloadURL(entry.url)
+      break
+    }
+    case 'copy':
+      clipboard.writeText(entry.url)
+      break
+    case 'trash':
+      if (entry.status !== 'completed' || !existsSync(entry.path)) break
+      void shell
+        .trashItem(entry.path)
+        .then(() => {
+          list = list.filter((d) => d !== entry)
+          changed(true)
+        })
+        .catch(() => {})
+      break
     case 'remove':
       if (item) item.cancel()
       list = list.filter((d) => d !== entry)
@@ -137,9 +205,20 @@ export function downloadAction(id: string, action: 'open' | 'show' | 'cancel' | 
   }
 }
 
-export function clearDownloads(): void {
-  list = list.filter((d) => d.status === 'progressing' || d.status === 'paused')
+export function openDownloadFolder(): void {
+  void shell.openPath(downloadFolder())
+}
+
+/** Clears finished downloads from the list (files stay), all of them or those since `since`. */
+export function clearDownloads(since = 0): number {
+  const before = list.length
+  list = list.filter((d) => d.status === 'progressing' || d.status === 'paused' || d.startedAt < since)
   changed(true)
+  return before - list.length
+}
+
+export function countDownloads(since = 0): number {
+  return list.filter((d) => d.status !== 'progressing' && d.status !== 'paused' && d.startedAt >= since && !d.incognito).length
 }
 
 export function cancelAllDownloads(): void {

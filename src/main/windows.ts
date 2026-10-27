@@ -75,8 +75,10 @@ export function markQuitting(): void {
   quitting = true
 }
 
-export function globalState(): GlobalState {
-  return { focus: focusState(), update: updateState(), downloads: downloads(), version: shownVersion() }
+/** App-wide state for one window; downloads from private windows only reach private windows. */
+export function globalState(incognito: boolean): GlobalState {
+  const list = downloads()
+  return { focus: focusState(), update: updateState(), downloads: incognito ? list : list.filter((d) => !d.incognito), version: shownVersion() }
 }
 
 let globalTimer: NodeJS.Timeout | null = null
@@ -86,8 +88,9 @@ export function wireBroadcasts(): void {
     if (globalTimer) return
     globalTimer = setTimeout(() => {
       globalTimer = null
-      const state = globalState()
-      for (const win of BrowserWin.all.values()) win.send('global', state)
+      const normal = globalState(false)
+      const all = globalState(true)
+      for (const win of BrowserWin.all.values()) win.send('global', win.incognito ? all : normal)
     }, 30)
   })
   bus.on('settings', () => {
@@ -100,6 +103,9 @@ export function wireBroadcasts(): void {
   bus.on('bookmarks', () => {
     const tree = bookmarkTree()
     for (const win of BrowserWin.all.values()) win.send('bookmarks', tree)
+  })
+  bus.on('security', () => {
+    for (const win of BrowserWin.all.values()) win.markDirty()
   })
   bus.on('window-dirty', (id) => {
     if (!BrowserWin.all.get(id)?.incognito) scheduleSave()

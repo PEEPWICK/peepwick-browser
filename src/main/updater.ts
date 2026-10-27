@@ -7,6 +7,7 @@ import { dirname } from 'node:path'
 import updaterPackage from 'electron-updater'
 import type { UpdateState } from '@shared/types'
 import { bus } from './events'
+import { recordError } from './diagnostics'
 import { shownVersion, userPath } from './paths'
 
 const { autoUpdater } = updaterPackage
@@ -66,7 +67,10 @@ export function startUpdater(): void {
   autoUpdater.on('update-not-available', () => set({ status: 'latest', progress: 0 }))
   autoUpdater.on('download-progress', (progress) => set({ status: 'downloading', progress: Math.round(progress.percent) }))
   autoUpdater.on('update-downloaded', (info) => set({ status: 'ready', version: shownVersion(info.version), progress: 100 }))
-  autoUpdater.on('error', (error) => set({ status: 'error', error: error?.message ?? String(error) }))
+  autoUpdater.on('error', (error) => {
+    set({ status: 'error', error: error?.message ?? String(error) })
+    recordError('update', error?.message ?? String(error))
+  })
 
   setTimeout(() => void checkForUpdates(), 15_000)
   setInterval(() => void checkForUpdates(), CHECK_EVERY)

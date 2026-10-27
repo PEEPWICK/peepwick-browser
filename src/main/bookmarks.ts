@@ -6,9 +6,11 @@ import { writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import {
   emptyTree,
+  folderList,
   isBookmarkableURL,
   isInside,
   locate,
+  mergeTrees,
   toNetscape,
   urlKey,
   walk,
@@ -24,7 +26,7 @@ import { bus } from './events'
 import { userPath } from './paths'
 import { openPage } from './actions'
 import { confirm, popupMenu, separator, type MenuSpec } from './popup'
-import { settings, t } from './settings'
+import { settings, t, updateSettings } from './settings'
 import { JsonFile } from './store'
 import type { BrowserWin } from './window'
 import { createWindow } from './windows'
@@ -194,6 +196,13 @@ export function bookmarkTabs(tabs: { url: string; title: string }[], folderTitle
 }
 
 /** Adds imported bookmarks, following Chromium: straight into empty roots, else into one folder in the bar. */
+/** Restoring a backup: merges into the tree rather than adding a separate folder. */
+export function mergeBookmarks(draft: DraftTree): number {
+  const added = mergeTrees(tree, draft, randomUUID)
+  if (added > 0) changed()
+  return added
+}
+
 export function insertDraft(draft: DraftTree, folderTitle: string): void {
   const materialize = (nodes: DraftNode[]): BookmarkNode[] =>
     nodes.map((node) =>
@@ -270,8 +279,9 @@ function folderItems(win: BrowserWin, folder: BookmarkFolder, fromIndex = 0): Me
           favicon: node.url,
           click: (event) =>
             void openBookmarks(win, [node.id], event.ctrlKey || event.metaKey ? 'background' : event.shiftKey ? 'window' : 'current'),
+          context: () => bookmarkMenuItems(win, node.id),
         }
-      : { label: shortLabel(node.title), folder: true, submenu: folderItems(win, node) },
+      : { label: shortLabel(node.title), folder: true, submenu: folderItems(win, node), context: () => bookmarkMenuItems(win, node.id) },
   )
   if (items.length === 0) items.push({ label: t('bookmarks.empty'), enabled: false })
   const linkCount = folder.children.slice(fromIndex).filter((node) => node.type === 'url').length
@@ -290,15 +300,37 @@ export function showFolderMenu(win: BrowserWin, folderId: string, x: number, y: 
   popupMenu(win, folderItems(win, folder, fromIndex), x, y)
 }
 
-export function showBookmarkMenu(win: BrowserWin, id: string, x: number, y: number): void {
+/** "Move to": every folder the node may go into, indented by depth. */
+function moveTargets(node: BookmarkNode, parentId: string): MenuSpec[] {
+  return folderList(tree)
+    .filter(({ folder }) => node.type === 'url' || !isInside(tree, folder.id, node.id))
+    .map(({ folder, depth }) => ({
+      label: `${'\u00a0\u00a0\u00a0'.repeat(depth)}${folder.id === 'bar' ? t('bookmarks.bar') : folder.id === 'other' ? t('bookmarks.other') : shortLabel(folder.title)}`,
+      folder: folder.id !== parentId,
+      type: folder.id === parentId ? ('checkbox' as const) : ('normal' as const),
+      checked: folder.id === parentId,
+      enabled: folder.id !== parentId,
+      click: () => {
+        moveBookmarks([node.id], folder.id, folder.children.length)
+        lastFolderId = folder.id
+      },
+    }))
+}
+
+/** The right-click menu of a bookmark or folder, wherever it shows. */
+function bookmarkMenuItems(win: BrowserWin, id: string): MenuSpec[] {
   const found = locate(tree, id)
-  if (!found) return
+  if (!found) return []
   const node = found.node
-  const parentId = node.type === 'folder' ? node.id : (found.parent?.id ?? 'bar')
+  const parentId = found.parent?.id ?? 'bar'
+  const addTo = node.type === 'folder' ? node.id : parentId
   const isRoot = !found.parent
   const add: MenuSpec[] = [
-    { label: t('bookmarks.addPage'), click: () => win.command({ type: 'bookmark-edit', parentId }) },
-    { label: t('bookmarks.addFolder'), click: () => win.command({ type: 'bookmark-edit', parentId, folder: true }) },
+    { label: node.type === 'folder' ? t('bookmarks.addPageHere') : t('bookmarks.addPage'), click: () => win.command({ type: 'bookmark-edit', parentId: addTo }) },
+    {
+      label: node.type === 'folder' ? t('bookmarks.addSubfolder') : t('bookmarks.addFolder'),
+      click: () => win.command({ type: 'bookmark-edit', parentId: addTo, folder: true }),
+    },
   ]
   let items: MenuSpec[]
   if (node.type === 'url') {
@@ -309,7 +341,9 @@ export function showBookmarkMenu(win: BrowserWin, id: string, x: number, y: numb
       { label: t('bookmarks.openIncognito'), click: () => void openBookmarks(win, [id], 'incognito') },
       separator,
       { label: t('bookmarks.edit'), click: () => win.command({ type: 'bookmark-edit', id }) },
+      { label: t('bookmarks.rename'), click: () => win.command({ type: 'bookmark-rename', id }) },
       { label: t('ctx.copyLink'), click: () => clipboard.writeText(node.url) },
+      { label: t('bookmarks.moveTo'), submenu: moveTargets(node, parentId) },
       { label: t('bookmarks.delete'), click: () => removeAndTell(win, [id]) },
       separator,
       ...add,
@@ -321,15 +355,33 @@ export function showBookmarkMenu(win: BrowserWin, id: string, x: number, y: numb
       { label: t('bookmarks.openAllWindow'), enabled: count > 0, click: () => void openBookmarks(win, [id], 'window') },
       { label: t('bookmarks.openAllIncognito'), enabled: count > 0, click: () => void openBookmarks(win, [id], 'incognito') },
       separator,
-      ...(isRoot ? [] : [{ label: t('bookmarks.rename'), click: () => win.command({ type: 'bookmark-edit', id }) }]),
-      { label: t('bookmarks.sort'), enabled: node.children.length > 1, click: () => sortFolder(id) },
-      ...(isRoot ? [] : [{ label: t('bookmarks.delete'), click: () => removeAndTell(win, [id]) }]),
-      separator,
       ...add,
+      separator,
+      ...(isRoot
+        ? []
+        : [
+            { label: t('bookmarks.rename'), click: () => win.command({ type: 'bookmark-rename', id }) },
+            { label: t('bookmarks.moveTo'), submenu: moveTargets(node, parentId) },
+          ]),
+      { label: t('bookmarks.sort'), enabled: node.children.length > 1, click: () => sortFolder(id) },
+      ...(isRoot ? [] : [{ label: t('bookmarks.deleteFolder'), click: () => removeAndTell(win, [id]) }]),
     ]
+    if (id === 'bar') {
+      items.push(separator, {
+        label: t('bookmarks.showBar'),
+        type: 'checkbox',
+        checked: settings().bookmarksBar !== 'never',
+        accelerator: 'Ctrl+Shift+B',
+        click: () => updateSettings({ bookmarksBar: settings().bookmarksBar === 'never' ? 'always' : 'never' }),
+      })
+    }
   }
-  items.push(separator, { label: t('bookmarks.manager'), click: () => openPage(win, 'bookmarks') })
-  popupMenu(win, items, x, y)
+  items.push(separator, { label: t('bookmarks.manager'), accelerator: 'Ctrl+Shift+O', click: () => openPage(win, 'bookmarks') })
+  return items
+}
+
+export function showBookmarkMenu(win: BrowserWin, id: string, x: number, y: number): void {
+  popupMenu(win, bookmarkMenuItems(win, id), x, y)
 }
 
 export function removeAndTell(win: BrowserWin, ids: string[]): void {

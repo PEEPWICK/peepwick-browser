@@ -905,3 +905,217 @@
   width: 28px;
   height: 28px;
 }
+
+/* Downloads page */
+
+.list-head-actions {
+  display: flex;
+  gap: var(--s2);
+}
+
+.dl-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s1);
+}
+
+.dl-row {
+  display: flex;
+  align-items: center;
+  gap: var(--s4);
+  padding: var(--s3) var(--s2) var(--s3) var(--s3);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+
+.dl-row:hover {
+  background: var(--surface);
+}
+
+.dl-icon {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 36px;
+  height: 36px;
+  color: var(--text-2);
+}
+
+.dl-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.dl-name {
+  align-self: flex-start;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 550;
+  text-align: left;
+}
+
+button.dl-name:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.dl-name.is-struck {
+  text-decoration: line-through;
+  color: var(--text-2);
+}
+
+.dl-meta {
+  display: flex;
+  align-items: center;
+  gap: var(--s1);
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  font-size: 12px;
+  color: var(--text-2);
+}
+
+.dl-host {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.dl-private {
+  margin-left: var(--s2);
+}
+
+.dl-row .download-bar {
+  margin-top: var(--s1);
+}
+
+.dl-row.is-dim .dl-icon {
+  opacity: 0.5;
+}
+
+.dl-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--s1);
+  flex: none;
+}
+
+.dl-row .dl-remove {
+  opacity: 0;
+}
+
+.dl-row:hover .dl-remove,
+.dl-row:focus-within .dl-remove {
+  opacity: 1;
+}
+
+/* History: selection */
+
+.selection-bar {
+  position: sticky;
+  top: var(--s3);
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  padding: var(--s2) var(--s2) var(--s2) var(--s4);
+  background: var(--raised);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+}
+
+.history-check {
+  flex: none;
+  margin: 0;
+  opacity: 0;
+  accent-color: var(--accent);
+}
+
+.history-row:hover .history-check,
+.history-row.is-selecting .history-check,
+.history-check:focus-visible {
+  opacity: 1;
+}
+
+.history-row.is-selected {
+  background: var(--surface);
+}
+
+/* Settings: grouped buttons, subheadings, the report and backup sections */
+
+.setting-buttons {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+}
+
+.settings-subhead {
+  margin: var(--s6) 0 var(--s1);
+}
+
+.section-lead {
+  margin: 0 0 var(--s4);
+  max-width: 60ch;
+  line-height: 1.55;
+}
+
+.report-facts {
+  display: grid;
+  grid-template-columns: 170px minmax(0, 1fr);
+  gap: var(--s2) var(--s4);
+  margin: 0 0 var(--s4);
+  padding: var(--s4);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+}
+
+.report-facts dd {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-size: 12px;
+}
+
+.report-facts dt {
+  padding-top: 1px;
+}
+
+.report-actions {
+  margin-bottom: var(--s2);
+}
+
+.report-details {
+  margin: var(--s3) 0 var(--s5);
+}
+
+.report-details summary {
+  cursor: pointer;
+}
+
+.report-text {
+  max-height: 320px;
+  overflow: auto;
+  margin: var(--s3) 0 0;
+  padding: var(--s3) var(--s4);
+  background: var(--surface);
+  border-radius: var(--radius);
+  font-size: 11.5px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+
+.backup-unlock {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s4);
+}
+
+.backup-unlock .setting-hint {
+  margin: 0;
+}

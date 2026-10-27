@@ -5,6 +5,8 @@ import type { MessageKey } from '@shared/i18n'
 import type { Interstitial as InterstitialState, TabState } from '@shared/types'
 import { hostOf } from '@shared/url'
 import { api } from '../api'
+import { certificateReason } from '../components/SiteInfo'
+import { useUI } from '../context'
 import { DoubleEye, LookMark } from '../brand'
 import { useGlobal, useT } from '../store'
 import { Button, remaining, useNow } from '../ui'
@@ -55,6 +57,7 @@ function FocusGate({ tab, host }: { tab: TabState; host: string }) {
 
 export function Interstitial({ tab, interstitial }: { tab: TabState; interstitial: InterstitialState }) {
   const t = useT()
+  const { openPanel } = useUI()
 
   if (interstitial.kind === 'focus') return <FocusGate tab={tab} host={interstitial.host} />
 
@@ -86,9 +89,13 @@ export function Interstitial({ tab, interstitial }: { tab: TabState; interstitia
           </span>
           <h1 className="display small">{t('error.cert.title')}</h1>
           <p className="lead">{t('error.cert.body', { host })}</p>
+          <p className="lead">{t('error.cert.reason', { reason: t(certificateReason(interstitial.description)) })}</p>
           <div className="interstitial-actions">
             <Button variant="primary" onClick={() => api.interstitial(tab.id, 'back')}>
               {t('focus.gate.back')}
+            </Button>
+            <Button variant="quiet" onClick={() => openPanel({ kind: 'certificate', host })}>
+              {t('cert.view')}
             </Button>
             <Button variant="quiet" onClick={() => api.interstitial(tab.id, 'proceed')}>
               {t('error.cert.proceed')}

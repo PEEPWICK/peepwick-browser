@@ -77,3 +77,28 @@ function prune(): void {
 export function flushStats(): void {
   file.flush()
 }
+
+export interface StatsData {
+  days: Record<string, { blocked: number; focus: number }>
+  blockedTotal: number
+}
+
+export function exportStats(): StatsData {
+  return JSON.parse(JSON.stringify(data)) as StatsData
+}
+
+/** Restoring a backup: keeps the larger count for each day, so restoring twice adds nothing. */
+export function mergeStats(incoming: StatsData): number {
+  let days = 0
+  for (const [key, day] of Object.entries(incoming.days ?? {})) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(key) || typeof day?.blocked !== 'number' || typeof day?.focus !== 'number') continue
+    const current = (data.days[key] ??= { blocked: 0, focus: 0 })
+    if (day.blocked > current.blocked || day.focus > current.focus) days++
+    current.blocked = Math.max(current.blocked, day.blocked)
+    current.focus = Math.max(current.focus, day.focus)
+  }
+  if (typeof incoming.blockedTotal === 'number') data.blockedTotal = Math.max(data.blockedTotal, incoming.blockedTotal)
+  prune()
+  file.schedule(data)
+  return days
+}

@@ -24,23 +24,17 @@ import { SEARCH_ENGINES, searchURL } from '@shared/search'
 import type { Suggestion, TabState } from '@shared/types'
 import { displayParts } from '@shared/url'
 import { api, call } from '../api'
-import { DoubleEye } from '../brand'
 import { useUI } from '../context'
 import { activeTab, useBookmarks, useSnapshot, useT } from '../store'
 import { findLink } from './BookmarkDialogs'
+import { SiteButton } from './SiteInfo'
 import { Favicon, Icon, IconButton, useOverlay } from '../ui'
 
 function ShieldBadge({ tab }: { tab: TabState }) {
   const { state, settings } = useSnapshot()
   const t = useT()
   const { togglePanel } = useUI()
-  if (tab.page || !/^https?:/.test(tab.url)) {
-    return (
-      <span className="omni-badge is-internal" aria-hidden>
-        <DoubleEye height={10} />
-      </span>
-    )
-  }
+  if (tab.page || !/^https?:/.test(tab.url)) return null
   const off = settings.shieldLevel === 'off' || state.shieldPaused
   return (
     <button
@@ -184,7 +178,7 @@ function Omnibox({ tab }: { tab: TabState | null }) {
 
   return (
     <div className={`omnibox ${editing ? 'is-editing' : ''} no-drag`}>
-      {tab && <ShieldBadge tab={tab} />}
+      {tab && <SiteButton tab={tab} />}
       <div className="omni-field" onMouseDown={() => !editing && startEditing()}>
         <input
           ref={input}
@@ -206,7 +200,6 @@ function Omnibox({ tab }: { tab: TabState | null }) {
         />
         {showDisplay && (
           <div className="omni-display" aria-hidden>
-            {tab.security === 'insecure' && <span className="omni-insecure label">{t('omnibox.insecure')}</span>}
             {parts.prefix && <span className="omni-rest">{parts.prefix}</span>}
             <span className="omni-host">{parts.host}</span>
             <span className="omni-rest">{parts.rest}</span>
@@ -227,6 +220,7 @@ function Omnibox({ tab }: { tab: TabState | null }) {
           onClick={() => api.toggleReader()}
         />
       )}
+      {tab && !editing && <ShieldBadge tab={tab} />}
       {tab && !editing && !tab.page && !state.incognito && /^(https?|file):/.test(tab.url) && <StarButton tab={tab} />}
       {open && (
         <ul className="omni-list" id="omni-list" role="listbox" onMouseDown={(event) => event.preventDefault()}>

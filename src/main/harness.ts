@@ -12,6 +12,9 @@ import { openPage, runCommand } from './actions'
 import { bookmarkTree } from './bookmarks'
 import { detectSources, importBookmarks } from './importers'
 import { lifecycle } from './lifecycle'
+import { BACKUP_CATEGORIES } from '@shared/types'
+import { collectBackup, holdBackup, restoreBackup, unlockBackup } from './backup'
+import { encryptBackup } from './backupfile'
 import { confirm } from './popup'
 import { browsingSession } from './sessions'
 import { updateSettings } from './settings'
@@ -38,6 +41,8 @@ type Step =
   | { do: 'bookmarks' }
   | { do: 'mouse'; target?: 'ui' | 'tab'; x: number; y: number; button?: 'left' | 'right' | 'middle'; move?: boolean }
   | { do: 'confirm'; title: string; body?: string; lines?: string[]; danger?: boolean }
+  | { do: 'download'; url: string }
+  | { do: 'backup'; password: string; restore?: boolean; dialog?: boolean }
   | { do: 'quit' }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
@@ -157,6 +162,25 @@ export function startHarness(): void {
             else
               for (const type of ['mouseDown', 'mouseUp'] as const)
                 wc.sendInputEvent({ type, x, y, button: step.button ?? 'left', clickCount: 1 })
+            break
+          }
+          case 'download':
+            win.session.downloadURL(step.url)
+            break
+          case 'backup': {
+            // Round trip without the file dialogs: encrypt, open, unlock, restore.
+            const data = await encryptBackup(collectBackup(BACKUP_CATEGORIES), step.password)
+            writeFileSync(join(dir, 'harness.pwbackup'), data)
+            console.log('[harness] backup bytes', data.length)
+            const token = holdBackup(data, 'harness.pwbackup')
+            if (step.dialog) {
+              win.command({ type: 'backup-restore', token, name: 'harness.pwbackup' })
+              break
+            }
+            console.log('[harness] wrong password', JSON.stringify(await unlockBackup(token, `${step.password}x`)))
+            const summary = await unlockBackup(token, step.password)
+            console.log('[harness] unlocked', JSON.stringify(summary))
+            if (step.restore) console.log('[harness] restored', JSON.stringify(await restoreBackup(win, token, BACKUP_CATEGORIES, [])))
             break
           }
           case 'confirm':

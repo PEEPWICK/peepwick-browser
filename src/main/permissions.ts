@@ -174,6 +174,37 @@ export function removePermission(origin: string, kind: PermissionKind): void {
   file.schedule(saved)
 }
 
+/** Sets one remembered answer for a site; null forgets it, so the site asks again. */
+export function setPermission(origin: string, kind: PermissionKind, allow: boolean | null): void {
+  const entry = (saved[origin] ??= {})
+  if (allow === null) delete entry[kind]
+  else entry[kind] = allow
+  if (Object.keys(entry).length === 0) delete saved[origin]
+  file.schedule(saved)
+}
+
+export function exportPermissions(): Decisions {
+  return JSON.parse(JSON.stringify(saved)) as Decisions
+}
+
+const KINDS: PermissionKind[] = ['camera', 'microphone', 'geolocation', 'notifications', 'midi', 'clipboard', 'screen', 'external', 'other']
+
+/** Restoring a backup: the backup's answers win for the sites it has. */
+export function mergePermissions(incoming: unknown): number {
+  if (!incoming || typeof incoming !== 'object') return 0
+  let count = 0
+  for (const [origin, kinds] of Object.entries(incoming as Record<string, unknown>)) {
+    if (!/^https?:\/\/[^/\s]+$/.test(origin) || !kinds || typeof kinds !== 'object') continue
+    for (const [kind, allow] of Object.entries(kinds as Record<string, unknown>)) {
+      if (!KINDS.includes(kind as PermissionKind) || typeof allow !== 'boolean') continue
+      ;(saved[origin] ??= {})[kind as PermissionKind] = allow
+      count++
+    }
+  }
+  file.schedule(saved)
+  return count
+}
+
 export function clearPermissions(): void {
   saved = {}
   file.schedule(saved)

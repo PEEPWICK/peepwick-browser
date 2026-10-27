@@ -415,3 +415,57 @@ export function withoutDuplicates(tree: DraftTree, existing: Set<string>): { tre
   }
   return { tree: { bar: filter(tree.bar), other: filter(tree.other) }, duplicates }
 }
+
+/** The tree without ids, for a backup file. */
+export function toDraft(tree: BookmarkTree): DraftTree {
+  const strip = (nodes: BookmarkNode[]): DraftNode[] =>
+    nodes.map((node) =>
+      node.type === 'url'
+        ? { type: 'url', title: node.title, url: node.url, addedAt: node.addedAt }
+        : { type: 'folder', title: node.title, addedAt: node.addedAt, children: strip(node.children) },
+    )
+  return { bar: strip(tree.bar.children), other: strip(tree.other.children) }
+}
+
+/**
+ * Merges `incoming` into `tree` in place, as a restore does: a folder with the same
+ * name in the same place is merged into, and addresses already anywhere in the
+ * tree are skipped. Returns how many bookmarks were added.
+ */
+export function mergeTrees(tree: BookmarkTree, incoming: DraftTree, newId: () => string, now = Date.now()): number {
+  const seen = new Set(links(tree).map((link) => urlKey(link.url)))
+  let added = 0
+  const into = (target: BookmarkFolder, nodes: DraftNode[]) => {
+    for (const node of nodes) {
+      if (node.type === 'url') {
+        const key = urlKey(node.url)
+        if (seen.has(key) || !isBookmarkableURL(node.url)) continue
+        seen.add(key)
+        target.children.push({ type: 'url', id: newId(), title: node.title.slice(0, 1000), url: node.url, addedAt: node.addedAt ?? now })
+        added++
+      } else {
+        let folder = target.children.find((child): child is BookmarkFolder => child.type === 'folder' && child.title === node.title)
+        if (!folder) {
+          folder = { type: 'folder', id: newId(), title: node.title.slice(0, 1000), addedAt: node.addedAt ?? now, children: [] }
+          target.children.push(folder)
+        }
+        into(folder, node.children)
+      }
+    }
+  }
+  into(tree.bar, incoming.bar)
+  into(tree.other, incoming.other)
+  return added
+}
+
+/** Checks the shape of a draft tree read from a file. */
+export function isDraftTree(value: unknown): value is DraftTree {
+  const isDraftNode = (node: unknown): boolean => {
+    const n = node as DraftNode
+    if (!n || typeof n.title !== 'string') return false
+    if (n.type === 'url') return typeof n.url === 'string'
+    return n.type === 'folder' && Array.isArray(n.children) && n.children.every(isDraftNode)
+  }
+  const tree = value as DraftTree
+  return !!tree && Array.isArray(tree.bar) && Array.isArray(tree.other) && tree.bar.every(isDraftNode) && tree.other.every(isDraftNode)
+}

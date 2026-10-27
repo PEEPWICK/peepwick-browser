@@ -4,7 +4,15 @@
 import type { BookmarkTree } from './bookmarks'
 import type {
   AppInfo,
+  BackupCategory,
+  BackupCounts,
+  BackupSummary,
+  CertificateInfo,
+  ClearCounts,
+  ClearRange,
+  ClearRequest,
   CommandId,
+  DownloadState,
   ExtensionInfo,
   GlobalState,
   HistoryEntry,
@@ -14,7 +22,10 @@ import type {
   MenuClickEvent,
   PaneRect,
   PermissionKind,
+  Report,
+  RestoreResult,
   Settings,
+  SiteInfo,
   SitePermission,
   Stats,
   Suggestion,
@@ -42,11 +53,7 @@ export interface BookmarkInput {
   url?: string
 }
 
-export interface ClearDataOptions {
-  history: boolean
-  cookies: boolean
-  cache: boolean
-}
+export type DownloadAction = 'open' | 'show' | 'cancel' | 'pause' | 'resume' | 'remove' | 'retry' | 'copy' | 'trash'
 
 export interface InvokeMethods {
   ready(): InitialData
@@ -57,7 +64,8 @@ export interface InvokeMethods {
   stats(): Stats
   extensionsList(): ExtensionInfo[]
   permissionsList(): SitePermission[]
-  clearData(options: ClearDataOptions): boolean
+  clearData(request: ClearRequest): boolean
+  clearDataCounts(range: ClearRange): ClearCounts
   appInfo(): AppInfo
   setDefaultBrowser(): boolean
   shieldReport(): { host: string; count: number }[]
@@ -66,6 +74,27 @@ export interface InvokeMethods {
   importSources(): ImportSource[]
   importBookmarks(sourceId: string, skipDuplicates: boolean): ImportResult | null
   exportBookmarks(): boolean
+  downloadsList(text: string): DownloadState[]
+  /** The active tab's connection, certificate and site settings. */
+  siteInfo(): SiteInfo | null
+  certificate(host: string): CertificateDetails | null
+  siteClearData(): boolean
+  report(): Report
+  backupCounts(): BackupCounts
+  backupExport(categories: BackupCategory[], password: string): 'saved' | 'cancelled' | 'failed'
+  backupOpen(): { token: string; name: string } | { error: 'format' } | null
+  backupUnlock(token: string, password: string): BackupSummary | { error: 'password' | 'format' | 'expired' }
+  backupRestore(token: string, categories: BackupCategory[], extensionIds: string[]): RestoreResult | null
+  chooseDownloadFolder(): string | null
+  resetSettings(): void
+}
+
+export interface CertificateDetails {
+  host: string
+  certificate: CertificateInfo
+  verification: string
+  errorCode: number
+  knownRoot: boolean
 }
 
 export interface SendMethods {
@@ -76,6 +105,8 @@ export interface SendMethods {
   setRaised(raised: boolean): void
   menuSelect(menuId: number, itemId: number, event: MenuClickEvent): void
   menuClosed(menuId: number): void
+  /** Right-click on a menu item that has its own menu. */
+  menuContext(menuId: number, itemId: number, x: number, y: number): void
   confirmReply(id: number, ok: boolean): void
   appMenu(x: number, y: number): void
   newTab(options?: { url?: string; background?: boolean }): void
@@ -110,13 +141,24 @@ export interface SendMethods {
   interstitial(tabId: number, action: 'retry' | 'proceed' | 'back' | 'open-anyway'): void
   command(id: CommandId): void
   permission(id: number, allow: boolean, remember: boolean): void
-  download(id: string, action: 'open' | 'show' | 'cancel' | 'pause' | 'resume' | 'remove'): void
+  download(id: string, action: DownloadAction): void
   downloadsClear(): void
+  downloadsOpenFolder(): void
+  downloadMenu(id: string, x: number, y: number): void
+  sitePermission(origin: string, kind: PermissionKind, allow: boolean | null): void
+  /** Shows the certificate warning for the active tab's site again. */
+  certificateRevoke(): void
+  reportCopy(): void
+  /** Copies the report and opens the GitHub bug form with it filled in. */
+  reportIssue(): void
+  errorLogClear(): void
+  backupCancel(token: string): void
+  restart(): void
   updateCheck(): void
   updateInstall(): void
   setSettings(patch: Partial<Settings>): void
-  historyRemove(id: number): void
-  historyClear(): void
+  historyRemove(ids: number[]): void
+  historyMenu(id: number, url: string, x: number, y: number): void
   extensionRemove(id: string): void
   extensionOptions(id: string): void
   permissionRemove(origin: string, kind: PermissionKind): void

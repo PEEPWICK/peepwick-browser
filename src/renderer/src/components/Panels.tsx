@@ -1,9 +1,10 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
-import { FileDown, FolderOpen, Pause, Play, Trash2, X } from 'lucide-react'
-import { formatBytes, formatNumber } from '@shared/i18n'
+import { FileDown, FolderOpen, Pause, Play, RotateCw, Trash2, X } from 'lucide-react'
+import { formatNumber } from '@shared/i18n'
 import { WORKSPACE_ICONS, type DownloadState, type Stats, type WorkspaceIcon } from '@shared/types'
 import { displayHost } from '@shared/url'
 import { api, call } from '../api'
+import { downloadStatus } from '../downloads'
 import { LookMark } from '../brand'
 import { useUI } from '../context'
 import { activeTab, useSnapshot, useT } from '../store'
@@ -180,24 +181,16 @@ export function FocusPanel({ anchor }: { anchor: DOMRect }) {
 function DownloadRow({ item }: { item: DownloadState }) {
   const { settings } = useSnapshot()
   const t = useT()
-  const lang = settings.language
   const progress = item.total > 0 ? item.received / item.total : 0
-  let status = ''
-  if (item.status === 'progressing') {
-    status = item.total > 0 ? `${formatBytes(lang, item.received)} / ${formatBytes(lang, item.total)}` : formatBytes(lang, item.received)
-  } else if (item.status === 'paused') status = t('downloads.paused')
-  else if (item.status === 'cancelled') status = t('downloads.cancelled')
-  else if (item.status === 'interrupted') status = t('downloads.failed')
-  else status = formatBytes(lang, item.total || item.received)
-
-  const done = item.status === 'completed'
+  const done = item.status === 'completed' && !item.missing
+  const failed = item.status === 'interrupted' || item.status === 'cancelled'
   return (
     <li className={`download ${done ? 'is-done' : ''}`}>
       <button type="button" className="download-main" disabled={!done} onClick={() => api.download(item.id, 'open')} title={item.filename}>
         <Icon icon={FileDown} size={18} />
         <span className="download-text">
           <span className="download-name">{item.filename}</span>
-          <span className="download-status mono">{status}</span>
+          <span className="download-status mono">{downloadStatus(item, settings.language, t)}</span>
           {(item.status === 'progressing' || item.status === 'paused') && (
             <span className="download-bar">
               <span style={{ width: `${Math.round(progress * 100)}%` }} />
@@ -211,6 +204,7 @@ function DownloadRow({ item }: { item: DownloadState }) {
         {(item.status === 'progressing' || item.status === 'paused') && (
           <IconButton icon={X} label={t('downloads.cancel')} onClick={() => api.download(item.id, 'cancel')} />
         )}
+        {failed && <IconButton icon={RotateCw} label={t('downloads.retry')} onClick={() => api.download(item.id, 'retry')} />}
         {done && <IconButton icon={FolderOpen} label={t('downloads.show')} onClick={() => api.download(item.id, 'show')} />}
         {!(item.status === 'progressing' || item.status === 'paused') && (
           <IconButton icon={Trash2} label={t('downloads.remove')} onClick={() => api.download(item.id, 'remove')} />
@@ -222,8 +216,9 @@ function DownloadRow({ item }: { item: DownloadState }) {
 
 export function DownloadsPanel({ anchor }: { anchor: DOMRect }) {
   const { global } = useSnapshot()
+  const { closePanel } = useUI()
   const t = useT()
-  const list = global.downloads.slice(0, 30)
+  const list = global.downloads.slice(0, 8)
   return (
     <Popover anchor={anchor} label={t('downloads.title')} width={360}>
       <div className="panel-head">
@@ -243,6 +238,17 @@ export function DownloadsPanel({ anchor }: { anchor: DOMRect }) {
           ))}
         </ul>
       )}
+      <div className="panel-actions">
+        <Button
+          variant="quiet"
+          onClick={() => {
+            closePanel()
+            api.openPage('downloads')
+          }}
+        >
+          {t('downloads.all')}
+        </Button>
+      </div>
     </Popover>
   )
 }
@@ -250,7 +256,7 @@ export function DownloadsPanel({ anchor }: { anchor: DOMRect }) {
 export function WorkspacePanel({ id, anchor }: { id: string | null; anchor: DOMRect }) {
   const { state } = useSnapshot()
   const t = useT()
-  const { closePanel } = useUI()
+  const { closePanel, ask } = useUI()
   const existing = id ? state.workspaces.find((w) => w.id === id) : undefined
   const [name, setName] = useState(existing?.name ?? '')
   const [icon, setIcon] = useState<WorkspaceIcon>(existing?.icon ?? 'circle')
@@ -307,10 +313,14 @@ export function WorkspacePanel({ id, anchor }: { id: string | null; anchor: DOMR
             variant="quiet"
             onClick={() => {
               const count = existing.tabIds.length
-              if (count === 0 || window.confirm(t('ws.deleteConfirm', { name: existing.name, n: count }))) {
+              if (count === 0) {
                 api.deleteWorkspace(existing.id)
                 closePanel()
+                return
               }
+              void ask({ title: t('ws.deleteConfirm', { name: existing.name, n: count }), confirm: t('ws.delete'), cancel: t('ws.cancel'), danger: true }).then(
+                (ok) => ok && api.deleteWorkspace(existing.id),
+              )
             }}
           >
             {t('ws.delete')}

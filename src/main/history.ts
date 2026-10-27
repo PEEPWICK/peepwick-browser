@@ -179,3 +179,111 @@ export function clearHistory(): void {
   db.exec('DELETE FROM visits; DELETE FROM pages; DELETE FROM favicons; VACUUM;')
   recent.clear()
 }
+
+/** Pages whose visits changed: recount them, drop the ones left without visits. */
+function refreshPages(urls: string[]): void {
+  if (!db) return
+  const count = db.prepare('SELECT COUNT(*) AS n, MAX(visited_at) AS last FROM visits WHERE url = ?')
+  for (const url of urls) {
+    const row = count.get(url) as { n: number; last: number | null }
+    if (row.n === 0) db.prepare('DELETE FROM pages WHERE url = ?').run(url)
+    else db.prepare('UPDATE pages SET visits = ?, last_visit = ? WHERE url = ?').run(row.n, row.last, url)
+  }
+}
+
+export function countVisits(since = 0): number {
+  if (!db) return 0
+  return (db.prepare('SELECT COUNT(*) AS n FROM visits WHERE visited_at >= ?').get(since) as { n: number }).n
+}
+
+/** Deletes visits from `since` on; with 0, the whole history (and stored site icons). */
+export function deleteVisitsSince(since: number): number {
+  if (!db) return 0
+  if (since <= 0) {
+    const n = countVisits(0)
+    clearHistory()
+    return n
+  }
+  const urls = (db.prepare('SELECT DISTINCT url FROM visits WHERE visited_at >= ?').all(since) as { url: string }[]).map((r) => r.url)
+  const { changes } = db.prepare('DELETE FROM visits WHERE visited_at >= ?').run(since)
+  refreshPages(urls)
+  recent.clear()
+  return Number(changes)
+}
+
+export function removeVisits(ids: number[]): void {
+  if (!db || ids.length === 0) return
+  const urls = new Set<string>()
+  const find = db.prepare('SELECT url FROM visits WHERE id = ?')
+  const remove = db.prepare('DELETE FROM visits WHERE id = ?')
+  for (const id of ids) {
+    const row = find.get(id) as { url: string } | undefined
+    if (!row) continue
+    urls.add(row.url)
+    remove.run(id)
+  }
+  refreshPages([...urls])
+}
+
+/** Every visit to a host (and its www. twin). */
+export function deleteHost(host: string): number {
+  if (!db || !host) return 0
+  const bare = host.replace(/^www\./, '')
+  const urls = (db.prepare('SELECT url FROM pages').all() as { url: string }[])
+    .map((r) => r.url)
+    .filter((url) => hostOf(url).replace(/^www\./, '') === bare)
+  let removed = 0
+  const remove = db.prepare('DELETE FROM visits WHERE url = ?')
+  for (const url of urls) removed += Number(remove.run(url).changes)
+  refreshPages(urls)
+  recent.clear()
+  return removed
+}
+
+// ── Backup ────────────────────────────────────────────────────────────────────
+
+export interface VisitRow {
+  url: string
+  title: string
+  visitedAt: number
+}
+
+export function exportVisits(): VisitRow[] {
+  if (!db) return []
+  return (db.prepare('SELECT url, title, visited_at FROM visits ORDER BY visited_at').all() as { url: string; title: string; visited_at: number }[]).map((r) => ({
+    url: r.url,
+    title: r.title,
+    visitedAt: r.visited_at,
+  }))
+}
+
+/** Adds visits that aren't here yet (same address at the same moment); returns how many. */
+export function importVisits(rows: VisitRow[]): number {
+  if (!db) return 0
+  const exists = db.prepare('SELECT 1 FROM visits WHERE url = ? AND visited_at = ?')
+  const insert = db.prepare('INSERT INTO visits (url, title, visited_at) VALUES (?, ?, ?)')
+  const touched = new Map<string, string>()
+  let added = 0
+  db.exec('BEGIN')
+  try {
+    for (const row of rows) {
+      if (!recordable(row.url) || !Number.isFinite(row.visitedAt)) continue
+      if (exists.get(row.url, row.visitedAt)) continue
+      insert.run(row.url, row.title.slice(0, 1000), row.visitedAt)
+      touched.set(row.url, row.title)
+      added++
+    }
+    for (const [url, title] of touched) {
+      db.prepare(
+        `INSERT INTO pages (url, title, visits, last_visit) VALUES (?, ?, 0, 0)
+         ON CONFLICT(url) DO UPDATE SET title = CASE WHEN pages.title = '' THEN excluded.title ELSE pages.title END`,
+      ).run(url, title)
+    }
+    refreshPages([...touched.keys()])
+    db.exec('COMMIT')
+  } catch (error) {
+    db.exec('ROLLBACK')
+    throw error
+  }
+  return added
+}

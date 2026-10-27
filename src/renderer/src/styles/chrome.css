@@ -836,11 +836,23 @@ button.omni-badge:hover {
   color: var(--text-2);
 }
 
-.omni-insecure {
-  margin-right: var(--s2);
-  padding: 2px 6px;
-  border-radius: 2px;
-  border: 1px solid var(--line-strong);
+/* The site button: lock, warning or the browser's eyes for its own pages. */
+.site-button.is-secure,
+.site-button.is-unverified,
+.site-button.is-local {
+  color: var(--text-2);
+}
+
+.site-button.is-insecure,
+.site-button.is-dangerous {
+  color: var(--text);
+}
+
+.site-button.is-dangerous svg {
+  color: var(--accent);
+}
+
+.site-warning {
   font-size: 10px;
 }
 

@@ -1,14 +1,17 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { BookMarked, Download, ExternalLink, Upload, X } from 'lucide-react'
+import { BookMarked, Copy, Download, ExternalLink, Upload, X } from 'lucide-react'
 import { walk } from '@shared/bookmarks'
 import type { MessageKey } from '@shared/i18n'
 import { SEARCH_ENGINES } from '@shared/search'
-import { normalizeDomain } from '@shared/settings'
+import { normalizeDomain, SECURE_DNS_SERVERS } from '@shared/settings'
 import {
   SETTINGS_SECTIONS,
   type AppInfo,
   type BookmarksBarMode,
+  type ClearKind,
   type PermissionKind,
+  type Report,
+  type SecureDns,
   type SearchEngineId,
   type SettingsSection,
   type ShieldLevel,
@@ -74,36 +77,196 @@ function DomainList({ items, onChange, empty, placeholder }: { items: string[]; 
   )
 }
 
-function ClearData() {
+/** Settings › Privacy: what to clear every time the browser closes. */
+function ClearOnExit() {
+  const { settings: s } = useSnapshot()
   const t = useT()
-  const [choice, setChoice] = useState({ history: true, cookies: false, cache: true })
-  const [done, setDone] = useState(false)
-  const keys: [keyof typeof choice, MessageKey][] = [
-    ['history', 'settings.clearData.history'],
-    ['cookies', 'settings.clearData.cookies'],
-    ['cache', 'settings.clearData.cache'],
-  ]
+  const kinds: ClearKind[] = ['history', 'downloads', 'cookies', 'cache']
   return (
-    <div className="clear-data">
-      {keys.map(([key, label]) => (
-        <label key={key} className="check">
-          <input type="checkbox" checked={choice[key]} onChange={(event) => setChoice({ ...choice, [key]: event.target.checked })} />
-          <span>{t(label)}</span>
+    <div className="clear-kinds">
+      {kinds.map((kind) => (
+        <label key={kind} className="check">
+          <input
+            type="checkbox"
+            checked={s.clearOnExit.includes(kind)}
+            onChange={(event) =>
+              api.setSettings({ clearOnExit: event.target.checked ? [...s.clearOnExit, kind] : s.clearOnExit.filter((k) => k !== kind) })
+            }
+          />
+          <span>{t(`clear.${kind}` as MessageKey)}</span>
         </label>
       ))}
-      <div className="clear-data-actions">
+    </div>
+  )
+}
+
+function SecureDnsRow() {
+  const { settings: s } = useSnapshot()
+  const t = useT()
+  const providers = Object.entries(SECURE_DNS_SERVERS) as [Exclude<SecureDns, 'off' | 'automatic'>, { name: string }][]
+  const strict = s.secureDns !== 'off' && s.secureDns !== 'automatic'
+  return (
+    <Row title={t('settings.secureDns')} hint={strict ? `${t('settings.secureDnsHint')} ${t('settings.secureDnsStrict')}` : t('settings.secureDnsHint')}>
+      <select className="select" value={s.secureDns} onChange={(event) => api.setSettings({ secureDns: event.target.value as SecureDns })}>
+        <option value="automatic">{t('settings.secureDns.automatic')}</option>
+        {providers.map(([id, provider]) => (
+          <option key={id} value={id}>
+            {provider.name}
+          </option>
+        ))}
+        <option value="off">{t('settings.secureDns.off')}</option>
+      </select>
+    </Row>
+  )
+}
+
+function DownloadFolderRow() {
+  const { settings: s } = useSnapshot()
+  const t = useT()
+  return (
+    <Row title={t('settings.downloadFolder')} hint={s.downloadDir || t('settings.downloadFolderDefault')}>
+      <div className="setting-buttons">
+        {s.downloadDir && (
+          <Button variant="quiet" onClick={() => api.setSettings({ downloadDir: '' })}>
+            {t('settings.useDefault')}
+          </Button>
+        )}
+        <Button onClick={() => void call.chooseDownloadFolder()}>{t('settings.change')}</Button>
+      </div>
+    </Row>
+  )
+}
+
+function SystemRows() {
+  const { settings: s } = useSnapshot()
+  const { ask, showToast } = useUI()
+  const t = useT()
+  const [info, setInfo] = useState<AppInfo | null>(null)
+  useEffect(() => {
+    void call.appInfo().then(setInfo)
+  }, [])
+  const pending = !!info && info.hardwareAcceleration !== s.hardwareAcceleration
+  return (
+    <>
+      <Row title={t('settings.hardware')} hint={t('settings.hardwareHint')}>
+        <div className="setting-buttons">
+          {pending && <Button onClick={() => api.restart()}>{t('settings.restart')}</Button>}
+          <Toggle checked={s.hardwareAcceleration} label={t('settings.hardware')} onChange={(hardwareAcceleration) => api.setSettings({ hardwareAcceleration })} />
+        </div>
+      </Row>
+      <Row title={t('settings.reset')} hint={t('settings.resetHint')}>
         <Button
-          disabled={!choice.history && !choice.cookies && !choice.cache}
+          variant="quiet"
+          onClick={() =>
+            void ask({ title: t('settings.resetConfirm'), body: t('settings.resetHint'), confirm: t('settings.resetRun'), cancel: t('common.cancel'), danger: true }).then(
+              (ok) => {
+                if (!ok) return
+                void call.resetSettings().then(() => showToast({ text: t('settings.resetDone') }))
+              },
+            )
+          }
+        >
+          {t('settings.reset')}
+        </Button>
+      </Row>
+    </>
+  )
+}
+
+function BackupSection() {
+  const { openPanel, showToast } = useUI()
+  const t = useT()
+  return (
+    <>
+      <p className="setting-hint section-lead">{t('backup.lead')}</p>
+      <Row title={t('backup.export')} hint={t('backup.exportHint')}>
+        <Button onClick={() => openPanel({ kind: 'backup-export' })}>
+          <Icon icon={Upload} size={15} /> {t('backup.create')}
+        </Button>
+      </Row>
+      <Row title={t('backup.import')} hint={t('backup.importHint')}>
+        <Button
+          onClick={() =>
+            void call.backupOpen().then((file) => {
+              if (!file) return
+              if ('error' in file) showToast({ text: t('backup.notBackup') })
+              else openPanel({ kind: 'backup-restore', token: file.token, name: file.name })
+            })
+          }
+        >
+          <Icon icon={Download} size={15} /> {t('backup.choose')}
+        </Button>
+      </Row>
+    </>
+  )
+}
+
+function ReportSection() {
+  const { settings: s } = useSnapshot()
+  const { showToast } = useUI()
+  const t = useT()
+  const [report, setReport] = useState<Report | null>(null)
+  const load = () => void call.report().then(setReport)
+  useEffect(load, [s.errorLog])
+  if (!report) return null
+  const loads = report.loadErrors.reduce((n, l) => n + l.count, 0)
+  return (
+    <>
+      <p className="setting-hint section-lead">{t('report.lead')}</p>
+      <dl className="report-facts">
+        <dt className="label">{t('report.version')}</dt>
+        <dd className="mono">{report.version}</dd>
+        <dt className="label">{t('report.system')}</dt>
+        <dd className="mono">{report.system}</dd>
+        <dt className="label">{t('report.errors')}</dt>
+        <dd>{report.errors.length === 0 ? <span className="muted">{t('report.errorsNone')}</span> : t('report.errorsCount', { n: report.errors.length })}</dd>
+        {loads > 0 && (
+          <>
+            <dt className="label">{t('report.loadErrors')}</dt>
+            <dd className="mono">
+              {report.loadErrors
+                .slice(0, 4)
+                .map((l) => `${l.name} ×${l.count}`)
+                .join(' · ')}
+            </dd>
+          </>
+        )}
+      </dl>
+      <div className="setting-buttons report-actions">
+        <Button variant="primary" onClick={() => api.reportIssue()}>
+          <Icon icon={ExternalLink} size={15} /> {t('report.issue')}
+        </Button>
+        <Button
           onClick={() => {
-            setDone(false)
-            void call.clearData(choice).then(() => setDone(true))
+            api.reportCopy()
+            showToast({ text: t('report.copied') })
           }}
         >
-          {t('settings.clearData.run')}
+          <Icon icon={Copy} size={15} /> {t('report.copy')}
         </Button>
-        {done && <span className="mono muted">{t('settings.clearData.done')}</span>}
       </div>
-    </div>
+      <p className="setting-hint">{t('report.issueHint')}</p>
+      <details className="report-details" onToggle={(event) => (event.currentTarget as HTMLDetailsElement).open && load()}>
+        <summary className="label">{t('report.show')}</summary>
+        <pre className="report-text mono">{report.text}</pre>
+      </details>
+      <Row title={t('report.log')} hint={t('report.logHint')}>
+        <Toggle checked={s.errorLog} label={t('report.log')} onChange={(errorLog) => api.setSettings({ errorLog })} />
+      </Row>
+      <Row title={t('report.clear')}>
+        <Button
+          variant="quiet"
+          disabled={report.errors.length === 0 && loads === 0}
+          onClick={() => {
+            api.errorLogClear()
+            showToast({ text: t('report.cleared') })
+            setTimeout(load, 100)
+          }}
+        >
+          {t('report.clear')}
+        </Button>
+      </Row>
+    </>
   )
 }
 
@@ -171,9 +334,9 @@ function About() {
           <button
             type="button"
             className="link-button"
-            onClick={() => api.openURL('https://github.com/PEEPWICK/peepwick-browser/issues/new?template=bug_report.yml', true)}
+            onClick={() => api.openPage('settings', 'report')}
           >
-            {t('stage.report')} <Icon icon={ExternalLink} size={13} />
+            {t('stage.report')}
           </button>
         </div>
       )}
@@ -263,6 +426,7 @@ function BookmarksSection() {
 
 export function Settings({ section }: { section: string }) {
   const { settings: s, state } = useSnapshot()
+  const { openPanel } = useUI()
   const t = useT()
   const current: SettingsSection = (SETTINGS_SECTIONS as readonly string[]).includes(section) ? (section as SettingsSection) : 'general'
   const scroller = useRef<HTMLDivElement>(null)
@@ -294,6 +458,8 @@ export function Settings({ section }: { section: string }) {
           <Toggle checked={s.restoreSession} label={t('settings.restore')} onChange={(restoreSession) => api.setSettings({ restoreSession })} />
         </Row>
         {!state.incognito && <DefaultBrowser />}
+        <h3 className="settings-subhead label">{t('settings.system')}</h3>
+        <SystemRows />
       </>
     ),
     appearance: (
@@ -399,10 +565,14 @@ export function Settings({ section }: { section: string }) {
             onChange={(shieldAllowlist) => api.setSettings({ shieldAllowlist })}
           />
         </div>
+        <SecureDnsRow />
+        <Row title={t('settings.clearData')} hint={t('settings.clearDataHint')}>
+          <Button onClick={() => openPanel({ kind: 'clear-data' })}>{t('settings.clearDataOpen')}</Button>
+        </Row>
         <div className="setting-block">
-          <div className="setting-title">{t('settings.clearData')}</div>
-          <div className="setting-hint">{t('settings.clearDataHint')}</div>
-          <ClearData />
+          <div className="setting-title">{t('clear.onExit')}</div>
+          <div className="setting-hint">{t('clear.onExitHint')}</div>
+          <ClearOnExit />
         </div>
       </>
     ),
@@ -432,10 +602,15 @@ export function Settings({ section }: { section: string }) {
       </>
     ),
     downloads: (
-      <Row title={t('settings.askSave')} hint={t('settings.downloadsFolder')}>
-        <Toggle checked={s.askWhereToSave} label={t('settings.askSave')} onChange={(askWhereToSave) => api.setSettings({ askWhereToSave })} />
-      </Row>
+      <>
+        <DownloadFolderRow />
+        <Row title={t('settings.askSave')}>
+          <Toggle checked={s.askWhereToSave} label={t('settings.askSave')} onChange={(askWhereToSave) => api.setSettings({ askWhereToSave })} />
+        </Row>
+      </>
     ),
+    backup: <BackupSection />,
+    report: <ReportSection />,
     about: <About />,
   }
 
@@ -443,7 +618,7 @@ export function Settings({ section }: { section: string }) {
     <div className="page settings">
       <nav className="settings-nav">
         <h1 className="settings-heading">{t('settings.title')}</h1>
-        {SETTINGS_SECTIONS.filter((id) => !(state.incognito && id === 'bookmarks')).map((id) => (
+        {SETTINGS_SECTIONS.filter((id) => !(state.incognito && (id === 'bookmarks' || id === 'backup'))).map((id) => (
           <button
             key={id}
             type="button"

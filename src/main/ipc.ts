@@ -1,9 +1,22 @@
 // Routes calls from the browser UI. Only the UI views this process created may call
 // in; web pages have no bridge at all.
-import { app, ipcMain, type IpcMainEvent, type IpcMainInvokeEvent } from 'electron'
+import { app, clipboard, dialog, ipcMain, type IpcMainEvent, type IpcMainInvokeEvent } from 'electron'
+import { cancelRestore, exportBackup, localCounts, openBackup, restoreBackup, unlockBackup } from './backup'
+import { buildReport, clearErrorLog, issueURL } from './diagnostics'
 import { execFile } from 'node:child_process'
-import { IPC_INVOKE, IPC_SEND, type BookmarkOpen, type ClearDataOptions, type InvokeMethods, type SendMethods } from '@shared/ipc'
-import { WORKSPACE_ICONS, type AppInfo, type CommandId, type InternalPage, type PaneRect, type PermissionKind, type WorkspaceIcon } from '@shared/types'
+import { IPC_INVOKE, IPC_SEND, type BookmarkOpen, type DownloadAction, type InvokeMethods, type SendMethods } from '@shared/ipc'
+import { clearBrowsingData, clearCounts, sanitizeClearRequest } from './cleardata'
+import {
+  BACKUP_CATEGORIES,
+  WORKSPACE_ICONS,
+  type AppInfo,
+  type BackupCategory,
+  type CommandId,
+  type InternalPage,
+  type PaneRect,
+  type PermissionKind,
+  type WorkspaceIcon,
+} from '@shared/types'
 import { bookmarkCurrentPage, bookmarkSpaceTabs, isCommandAvailable, newTab, openPage, runCommand } from './actions'
 import {
   bookmarkTree,
@@ -20,27 +33,31 @@ import {
 } from './bookmarks'
 import { detectSources, importBookmarks } from './importers'
 import { links } from '@shared/bookmarks'
-import { clearDownloads, downloadAction } from './downloads'
+import { allDownloads, clearDownloads, downloadAction, downloadFolder, openDownloadFolder } from './downloads'
 import { listExtensions, removeExtension } from './extensions'
 import { startFocus, stopFocus } from './focus'
-import { clearHistory, getFavicon, matchPages, queryHistory, removeVisit, topSites } from './history'
-import { showAppMenu, showTabMenu } from './menus'
-import { confirmReply, menuClosed, menuSelect } from './popup'
+import { getFavicon, matchPages, queryHistory, removeVisits, topSites } from './history'
+import { historyChanged, showAppMenu, showDownloadMenu, showHistoryMenu, showTabMenu } from './menus'
+import { confirmReply, menuClosed, menuContext, menuSelect } from './popup'
 import { resolveInput } from '@shared/input'
 import { commandSuggestions, suggest } from './omnibox'
-import { clearPermissions, listPermissions, removePermission, respond } from './permissions'
+import { listPermissions, removePermission, respond, setPermission } from './permissions'
 import { releaseStage, shownVersion } from './paths'
-import { browsingSession } from './sessions'
-import { settings, updateSettings } from './settings'
+import { resetSettings, settings, updateSettings } from './settings'
 import { siteOf } from './shield'
 import { stats } from './stats'
 import { checkForUpdates, installUpdate } from './updater'
 import { BrowserWin } from './window'
 import { globalState } from './windows'
-import { hostOf } from '@shared/url'
+import { hostOf, originOf } from '@shared/url'
+import { certificateInfo, clearSiteData, revokeCertificateException, siteInfo, verificationFor } from './security'
 
-const PAGES: InternalPage[] = ['newtab', 'settings', 'history', 'extensions', 'bookmarks']
+const PAGES: InternalPage[] = ['newtab', 'settings', 'history', 'extensions', 'bookmarks', 'downloads']
 const OPEN_MODES: BookmarkOpen[] = ['current', 'tab', 'background', 'window', 'incognito']
+const DOWNLOAD_ACTIONS: DownloadAction[] = ['open', 'show', 'cancel', 'pause', 'resume', 'remove', 'retry', 'copy', 'trash']
+
+const categoryList = (value: unknown): BackupCategory[] =>
+  Array.isArray(value) ? BACKUP_CATEGORIES.filter((c) => (value as unknown[]).includes(c)) : []
 
 const ids = (value: unknown): string[] =>
   Array.isArray(value) ? value.filter((id): id is string => typeof id === 'string').slice(0, 5000) : []
@@ -96,6 +113,7 @@ export function appInfo(): AppInfo {
     platform: `${process.platform} ${process.arch}`,
     packaged: app.isPackaged,
     isDefaultBrowser: isDefaultBrowser(),
+    hardwareAcceleration: app.isHardwareAccelerationEnabled(),
   }
 }
 
@@ -103,7 +121,7 @@ const invoke: { [K in keyof InvokeMethods]: (win: BrowserWin, ...args: unknown[]
   ready(win) {
     win.markUIReady()
     win.updateTitle()
-    return { state: win.toState(), global: globalState(), settings: settings(), app: appInfo(), bookmarks: bookmarkTree() }
+    return { state: win.toState(), global: globalState(win.incognito), settings: settings(), app: appInfo(), bookmarks: bookmarkTree() }
   },
   async suggest(win, input) {
     const text = str(input, 500)
@@ -166,16 +184,13 @@ const invoke: { [K in keyof InvokeMethods]: (win: BrowserWin, ...args: unknown[]
   permissionsList() {
     return listPermissions()
   },
-  async clearData(_win, options) {
-    const o = (options ?? {}) as Partial<ClearDataOptions>
-    const ses = browsingSession()
-    if (o.history) clearHistory()
-    if (o.cookies) {
-      await ses.clearStorageData()
-      clearPermissions()
-    }
-    if (o.cache) await ses.clearCache()
+  async clearData(_win, request) {
+    await clearBrowsingData(sanitizeClearRequest(request))
+    historyChanged()
     return true
+  },
+  async clearDataCounts(_win, range) {
+    return clearCounts(sanitizeClearRequest({ range }).range)
   },
   appInfo() {
     return appInfo()
@@ -204,6 +219,61 @@ const invoke: { [K in keyof InvokeMethods]: (win: BrowserWin, ...args: unknown[]
   },
   async exportBookmarks(win) {
     return exportBookmarks(win)
+  },
+  backupCounts() {
+    return localCounts()
+  },
+  async backupExport(win, categories, password) {
+    if (win.incognito || typeof password !== 'string' || password.length < 8 || password.length > 1024) return 'failed'
+    try {
+      return await exportBackup(win, categoryList(categories), password)
+    } catch (error) {
+      console.error('[backup] export failed', error)
+      return 'failed'
+    }
+  },
+  async backupOpen(win) {
+    return win.incognito ? null : openBackup(win)
+  },
+  async backupUnlock(_win, token, password) {
+    return unlockBackup(str(token, 64), typeof password === 'string' ? password.slice(0, 1024) : '')
+  },
+  async backupRestore(win, token, categories, extensionIds) {
+    if (win.incognito) return null
+    return restoreBackup(win, str(token, 64), categoryList(categories), Array.isArray(extensionIds) ? extensionIds.filter((id): id is string => typeof id === 'string').slice(0, 200) : [])
+  },
+  async chooseDownloadFolder(win) {
+    const { canceled, filePaths } = await dialog.showOpenDialog(win.base, { properties: ['openDirectory', 'createDirectory'], defaultPath: downloadFolder() })
+    if (canceled || !filePaths[0]) return null
+    updateSettings({ downloadDir: filePaths[0] })
+    return filePaths[0]
+  },
+  resetSettings() {
+    resetSettings()
+  },
+  report() {
+    return buildReport(listExtensions().length)
+  },
+  async siteInfo(win) {
+    const tab = win.activeTab()
+    if (!tab) return null
+    return siteInfo(tab.displayURL(), win.session)
+  },
+  certificate(_win, host) {
+    const name = str(host, 300)
+    const result = verificationFor(name)
+    if (!result) return null
+    return { host: name, certificate: certificateInfo(result.certificate), verification: result.verification, errorCode: result.errorCode, knownRoot: result.knownRoot }
+  },
+  async siteClearData(win) {
+    const url = win.activeTab()?.displayURL()
+    if (!url || !/^https?:/.test(url)) return false
+    await clearSiteData(url, win.session)
+    return true
+  },
+  downloadsList(win, text) {
+    // A private window sees its own downloads too; normal windows never see those.
+    return allDownloads(str(text, 200)).filter((d) => win.incognito || !d.incognito)
   },
   shieldReport(win) {
     const tab = win.activeTab()
@@ -253,6 +323,9 @@ const send: { [K in keyof SendMethods]: (win: BrowserWin, ...args: unknown[]) =>
   },
   menuClosed(win, menuId) {
     menuClosed(win, num(menuId))
+  },
+  menuContext(win, menuId, itemId, x, y) {
+    menuContext(win, num(menuId), num(itemId), num(x) || 0, num(y) || 0)
   },
   confirmReply(_win, id, ok) {
     confirmReply(num(id), ok === true)
@@ -393,12 +466,47 @@ const send: { [K in keyof SendMethods]: (win: BrowserWin, ...args: unknown[]) =>
     respond(num(id), allow === true, remember === true)
   },
   download(_win, id, action) {
-    if (['open', 'show', 'cancel', 'pause', 'resume', 'remove'].includes(action as string)) {
-      downloadAction(str(id, 64), action as 'open')
-    }
+    if (DOWNLOAD_ACTIONS.includes(action as DownloadAction)) downloadAction(str(id, 64), action as DownloadAction)
   },
   downloadsClear() {
     clearDownloads()
+  },
+  downloadsOpenFolder() {
+    openDownloadFolder()
+  },
+  sitePermission(win, origin, kind, allow) {
+    // Only the active tab's own site, so the UI can't edit arbitrary origins.
+    const url = win.activeTab()?.displayURL()
+    if (!url || originOf(url) !== origin) return
+    setPermission(origin as string, kind as PermissionKind, typeof allow === 'boolean' ? allow : null)
+  },
+  reportCopy() {
+    clipboard.writeText(buildReport(listExtensions().length).text)
+  },
+  reportIssue(win) {
+    const report = buildReport(listExtensions().length)
+    clipboard.writeText(report.text)
+    win.openTab({ url: issueURL(report) })
+  },
+  errorLogClear() {
+    clearErrorLog()
+  },
+  restart() {
+    app.relaunch()
+    app.quit()
+  },
+  backupCancel(_win, token) {
+    cancelRestore(str(token, 64))
+  },
+  certificateRevoke(win) {
+    const tab = win.activeTab()
+    if (!tab) return
+    revokeCertificateException(hostOf(tab.displayURL()))
+    // Open connections already trust the certificate; new ones ask again.
+    void win.session.closeAllConnections().then(() => tab.reload())
+  },
+  downloadMenu(win, id, x, y) {
+    showDownloadMenu(win, str(id, 64), num(x) || 0, num(y) || 0)
   },
   updateCheck() {
     void checkForUpdates()
@@ -409,11 +517,13 @@ const send: { [K in keyof SendMethods]: (win: BrowserWin, ...args: unknown[]) =>
   setSettings(_win, patch) {
     updateSettings(patch)
   },
-  historyRemove(_win, id) {
-    removeVisit(num(id))
+  historyRemove(win, list) {
+    if (win.incognito || !Array.isArray(list)) return
+    removeVisits(list.filter((id): id is number => typeof id === 'number' && Number.isInteger(id)).slice(0, 5000))
   },
-  historyClear() {
-    clearHistory()
+  historyMenu(win, id, url, x, y) {
+    if (win.incognito) return
+    showHistoryMenu(win, num(id), str(url), num(x) || 0, num(y) || 0)
   },
   extensionRemove(_win, id) {
     void removeExtension(str(id, 64))

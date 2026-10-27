@@ -6,6 +6,13 @@ export type SearchEngineId = 'duckduckgo' | 'brave' | 'startpage' | 'google' | '
 /** standard: ads and trackers · strict: also cookie notices and other annoyances */
 export type ShieldLevel = 'off' | 'standard' | 'strict'
 export type BookmarksBarMode = 'always' | 'newtab' | 'never'
+/** DNS over HTTPS: 'automatic' upgrades when the system's resolver supports it. */
+export type SecureDns = 'off' | 'automatic' | 'cloudflare' | 'quad9' | 'mullvad' | 'google'
+/** What can be cleared, now or when the browser closes. */
+export type ClearKind = 'history' | 'downloads' | 'cookies' | 'cache' | 'permissions'
+export const CLEAR_KINDS: ClearKind[] = ['history', 'downloads', 'cookies', 'cache', 'permissions']
+/** How far back clearing goes, in hours; 0 is all time. */
+export type ClearRange = 1 | 24 | 168 | 672 | 0
 
 export const WORKSPACE_ICONS = [
   'circle',
@@ -44,9 +51,23 @@ export interface Settings {
   sidebarCollapsed: boolean
   bookmarksBar: BookmarksBarMode
   onboarded: boolean
+  /** Keep the error log in a file on this computer between sessions. Nothing is sent. */
+  errorLog: boolean
+  /** Cleared every time the browser closes. */
+  clearOnExit: ClearKind[]
+  secureDns: SecureDns
+  /** Where downloads go; empty for the system's Downloads folder. */
+  downloadDir: string
+  /** Takes effect after a restart. */
+  hardwareAcceleration: boolean
 }
 
-export type TabSecurity = 'secure' | 'insecure' | 'internal' | 'local'
+/**
+ * secure: HTTPS and the certificate checked out · unverified: HTTPS, but no check
+ * was seen this session (a page from the cache) · insecure: plain HTTP ·
+ * dangerous: HTTPS whose certificate failed and the warning was skipped.
+ */
+export type TabSecurity = 'secure' | 'unverified' | 'insecure' | 'dangerous' | 'internal' | 'local'
 
 /** Something the UI draws in place of the page: an error, a crash or the focus gate. */
 export type Interstitial =
@@ -54,7 +75,7 @@ export type Interstitial =
   | { kind: 'crashed' }
   | { kind: 'focus'; url: string; host: string }
 
-export type InternalPage = 'newtab' | 'settings' | 'history' | 'extensions' | 'bookmarks'
+export type InternalPage = 'newtab' | 'settings' | 'history' | 'extensions' | 'bookmarks' | 'downloads'
 
 export const SETTINGS_SECTIONS = [
   'general',
@@ -66,6 +87,8 @@ export const SETTINGS_SECTIONS = [
   'permissions',
   'focus',
   'downloads',
+  'backup',
+  'report',
   'about',
 ] as const
 export type SettingsSection = (typeof SETTINGS_SECTIONS)[number]
@@ -171,6 +194,13 @@ export interface DownloadState {
   total: number
   status: DownloadStatus
   startedAt: number
+  endedAt?: number
+  /** Bytes per second, smoothed; 0 when not moving. */
+  speed?: number
+  /** The finished file is no longer where it was saved. */
+  missing?: boolean
+  /** From a private window: listed while the browser runs, never saved. */
+  incognito?: boolean
 }
 
 export interface WindowState {
@@ -236,6 +266,8 @@ export type CommandId =
   | 'bookmarks'
   | 'toggle-bookmarks-bar'
   | 'import-bookmarks'
+  | 'report'
+  | 'backup'
 
 export interface HistoryEntry {
   id: number
@@ -289,6 +321,8 @@ export interface AppInfo {
   platform: string
   packaged: boolean
   isDefaultBrowser: boolean
+  /** Whether this run uses the graphics card (the setting applies after a restart). */
+  hardwareAcceleration: boolean
 }
 
 /** Commands the main process asks the UI to carry out. */
@@ -307,6 +341,12 @@ export type UICommand =
   | { type: 'import-bookmarks' }
   | { type: 'menu'; menu: MenuModel }
   | { type: 'confirm'; dialog: ConfirmModel }
+  | { type: 'clear-data' }
+  | { type: 'history-search'; text: string }
+  | { type: 'history-changed' }
+  | { type: 'certificate'; host: string }
+  | { type: 'bookmark-rename'; id: string }
+  | { type: 'backup-restore'; token: string; name: string }
 
 /**
  * A menu the UI draws. Native menus and message boxes take their colours from the
@@ -319,6 +359,8 @@ export interface MenuModel {
   x: number
   y: number
   align?: 'end'
+  /** Opened from an item of this menu (right-click in a bookmark folder): it stays open below. */
+  over?: number
 }
 
 export type MenuNode =
@@ -336,6 +378,8 @@ export type MenuNode =
       icon?: string
       folder?: boolean
       submenu?: MenuNode[]
+      /** The item has its own right-click menu. */
+      context?: boolean
     }
 
 export interface ConfirmModel {
@@ -374,4 +418,105 @@ export interface ImportResult {
   duplicates: number
   skipped: number
   favicons: number
+}
+
+// ── Site security ────────────────────────────────────────────────────────────
+
+export interface CertificateInfo {
+  subject: string
+  subjectOrganization: string
+  issuer: string
+  issuerOrganization: string
+  validFrom: number
+  validTo: number
+  /** Names the certificate covers (subjectAltName). */
+  names: string[]
+  serialNumber: string
+  sha256: string
+  sha1: string
+  keyType: string
+  signatureAlgorithm: string
+  /** The issuers above it, nearest first. */
+  chain: { subject: string; issuer: string; validTo: number }[]
+}
+
+export interface SiteInfo {
+  url: string
+  host: string
+  origin: string
+  security: TabSecurity
+  /** Chromium's verification result for the host, as a net error name (net::OK when fine). */
+  verification: string | null
+  errorCode: number
+  /** Chains to a root the system trusts out of the box, rather than one added locally. */
+  knownRoot: boolean
+  /** The certificate warning was skipped for this host this session. */
+  exception: boolean
+  certificate: CertificateInfo | null
+  permissions: SitePermission[]
+  cookies: number
+}
+
+// ── Clearing browsing data ───────────────────────────────────────────────────
+
+export interface ClearRequest {
+  range: ClearRange
+  kinds: ClearKind[]
+}
+
+export interface ClearCounts {
+  history: number
+  downloads: number
+  cookies: number
+  permissions: number
+}
+
+// ── Error report ─────────────────────────────────────────────────────────────
+
+export interface ErrorRecord {
+  time: number
+  /** main, interface, page, gpu, network, update… */
+  source: string
+  message: string
+  count: number
+}
+
+export interface Report {
+  /** Plain text to paste into an issue. */
+  text: string
+  version: string
+  system: string
+  errors: ErrorRecord[]
+  /** Page load failures by Chromium error name, no addresses. */
+  loadErrors: { name: string; count: number }[]
+  logFile: boolean
+}
+
+// ── Backup ───────────────────────────────────────────────────────────────────
+
+export type BackupCategory = 'settings' | 'bookmarks' | 'workspaces' | 'tabs' | 'focus' | 'permissions' | 'extensions' | 'history'
+export const BACKUP_CATEGORIES: BackupCategory[] = ['settings', 'bookmarks', 'workspaces', 'tabs', 'focus', 'permissions', 'extensions', 'history']
+/** Ticked when exporting, unless the person changes it. */
+export const BACKUP_DEFAULTS: BackupCategory[] = ['settings', 'bookmarks', 'workspaces', 'focus', 'permissions', 'extensions']
+
+/** How much of each category there is (on this computer, or in a backup file). */
+export type BackupCounts = Partial<Record<BackupCategory, number>>
+
+export interface BackupSummary {
+  token: string
+  createdAt: number
+  version: string
+  counts: BackupCounts
+  extensions: { id: string; name: string }[]
+}
+
+export interface RestoreResult {
+  settings: boolean
+  bookmarks: number
+  workspaces: number
+  tabs: number
+  focusDays: number
+  permissions: number
+  extensions: number
+  history: number
 }

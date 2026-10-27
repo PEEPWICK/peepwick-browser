@@ -2,14 +2,17 @@
 // draws them (popup.ts).
 import { app, clipboard, type ContextMenuParams, type WebContents } from 'electron'
 import { searchURL } from '@shared/search'
+import { hostOf } from '@shared/url'
 import { focusState, startFocus, stopFocus } from './focus'
 import { getExtensions } from './extensions'
 import { isCommandAvailable, newTab, openDevTools, openPage, runCommand, savePage } from './actions'
 import { createBookmark, exportBookmarks } from './bookmarks'
-import { fromElectron, popupMenu, separator as sep, type MenuSpec } from './popup'
+import { allDownloads, downloadAction } from './downloads'
+import { deleteHost, removeVisits } from './history'
+import { confirm, fromElectron, popupMenu, separator as sep, type MenuSpec } from './popup'
 import { settings, t } from './settings'
 import type { Tab } from './tab'
-import type { BrowserWin } from './window'
+import { BrowserWin } from './window'
 import { createWindow } from './windows'
 
 export function showPageMenu(tab: Tab, wc: WebContents, params: ContextMenuParams): void {
@@ -165,6 +168,7 @@ export function showAppMenu(win: BrowserWin, x: number, y: number): void {
     { label: t('menu.newIncognito'), accelerator: 'Ctrl+Shift+N', click: () => createWindow({ incognito: true }) },
     sep,
     { label: t('menu.history'), accelerator: 'Ctrl+H', click: () => openPage(win, 'history') },
+    ...(!win.incognito ? [{ label: t('menu.clearData'), accelerator: 'Ctrl+Shift+Delete', click: () => runCommand(win, 'clear-data') }] : []),
     ...(!win.incognito
       ? [
           {
@@ -188,7 +192,7 @@ export function showAppMenu(win: BrowserWin, x: number, y: number): void {
           },
         ]
       : []),
-    { label: t('menu.downloads'), accelerator: 'Ctrl+J', click: () => win.command({ type: 'downloads' }) },
+    { label: t('menu.downloads'), accelerator: 'Ctrl+J', click: () => openPage(win, 'downloads') },
     ...(!win.incognito ? [{ label: t('menu.extensions'), click: () => openPage(win, 'extensions') }] : []),
     sep,
     { label: t('menu.zoomIn'), accelerator: 'Ctrl+=', enabled: !!tab?.webContents, click: () => tab?.zoom('in') },
@@ -213,10 +217,87 @@ export function showAppMenu(win: BrowserWin, x: number, y: number): void {
     { label: t('menu.devtools'), accelerator: 'F12', enabled: !!tab?.webContents && !tab.page, click: () => openDevTools(win) },
     sep,
     { label: t('menu.settings'), click: () => openPage(win, 'settings') },
+    { label: t('menu.report'), click: () => runCommand(win, 'report') },
     { label: t('menu.about'), click: () => runCommand(win, 'check-updates') },
     sep,
     { label: t('menu.quit'), accelerator: 'Ctrl+Q', click: () => app.quit() },
   ]
   // x is the menu button's right edge: the menu lines up with it.
-  popupMenu(win, items, x, y, 'end')
+  popupMenu(win, items, x, y, { align: 'end' })
+}
+
+export function showDownloadMenu(win: BrowserWin, id: string, x: number, y: number): void {
+  const entry = allDownloads().find((d) => d.id === id)
+  if (!entry) return
+  const active = entry.status === 'progressing' || entry.status === 'paused'
+  const done = entry.status === 'completed' && !entry.missing
+  const items: MenuSpec[] = [
+    { label: t('downloads.open'), enabled: done, click: () => downloadAction(id, 'open') },
+    { label: t('downloads.show'), enabled: done, click: () => downloadAction(id, 'show') },
+    sep,
+    ...(entry.status === 'progressing' ? [{ label: t('downloads.pause'), click: () => downloadAction(id, 'pause') }] : []),
+    ...(entry.status === 'paused' ? [{ label: t('downloads.resume'), click: () => downloadAction(id, 'resume') }] : []),
+    ...(active ? [{ label: t('downloads.cancel'), click: () => downloadAction(id, 'cancel') }] : []),
+    ...(!active
+      ? [{ label: entry.status === 'completed' ? t('downloads.again') : t('downloads.retry'), click: () => downloadAction(id, 'retry') }]
+      : []),
+    { label: t('downloads.copyLink'), click: () => downloadAction(id, 'copy') },
+    sep,
+    {
+      label: t('downloads.trash'),
+      enabled: done,
+      click: () =>
+        void confirm(win, {
+          title: t('downloads.trashConfirm', { name: entry.filename }),
+          body: t('downloads.trashBody'),
+          confirm: t('downloads.trash'),
+          cancel: t('common.cancel'),
+          danger: true,
+        }).then((ok) => ok && downloadAction(id, 'trash')),
+    },
+    { label: t('downloads.remove'), enabled: !active, click: () => downloadAction(id, 'remove') },
+  ]
+  popupMenu(win, items, x, y)
+}
+
+/** Lets every window's history page know the list changed under it. */
+export function historyChanged(): void {
+  for (const win of BrowserWin.all.values()) win.send('command', { type: 'history-changed' })
+}
+
+export function showHistoryMenu(win: BrowserWin, id: number, url: string, x: number, y: number): void {
+  if (!/^https?:/.test(url)) return
+  const host = hostOf(url).replace(/^www\./, '')
+  const items: MenuSpec[] = [
+    { label: t('bookmarks.openNewTab'), click: () => win.openTab({ url, background: true }) },
+    { label: t('bookmarks.openNewWindow'), click: () => createWindow({ incognito: false, urls: [url] }) },
+    { label: t('bookmarks.openIncognito'), click: () => createWindow({ incognito: true, urls: [url] }) },
+    { label: t('ctx.copyLink'), click: () => clipboard.writeText(url) },
+    sep,
+    { label: t('history.moreFromSite'), click: () => win.send('command', { type: 'history-search', text: host }) },
+    sep,
+    {
+      label: t('history.remove'),
+      click: () => {
+        removeVisits([id])
+        historyChanged()
+      },
+    },
+    {
+      label: t('history.removeSite'),
+      click: () =>
+        void confirm(win, {
+          title: t('history.removeSiteConfirm', { site: host }),
+          body: t('history.removeSiteBody'),
+          confirm: t('history.removeSiteRun'),
+          cancel: t('common.cancel'),
+          danger: true,
+        }).then((ok) => {
+          if (!ok) return
+          deleteHost(host)
+          historyChanged()
+        }),
+    },
+  ]
+  popupMenu(win, items, x, y)
 }

@@ -123,6 +123,8 @@ export const COMMANDS: CommandId[] = [
   'toggle-bookmarks-bar',
   'import-bookmarks',
   'clear-data',
+  'backup',
+  'report',
   'check-updates',
 ]
 

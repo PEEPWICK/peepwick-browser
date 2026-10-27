@@ -22,6 +22,7 @@ import { BROWSING_PARTITION, uiSession } from './sessions'
 import { settings, t } from './settings'
 import { shieldActiveFor } from './shield'
 import { handleShortcut } from './shortcuts'
+import { watchInterface } from './diagnostics'
 import { Tab, type SavedTab, type TabOptions } from './tab'
 
 export interface SavedWorkspace {
@@ -119,6 +120,7 @@ export class BrowserWin {
       },
     })
     this.ui.setBackgroundColor('#00000000')
+    watchInterface(this.ui.webContents)
     this.base.contentView.addChildView(this.ui)
     this.wireUI()
     this.wireWindow()

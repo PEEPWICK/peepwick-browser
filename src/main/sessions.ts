@@ -9,6 +9,7 @@ import { getFavicon } from './history'
 import { installNetwork } from './network'
 import { devServerURL, rendererPath } from './paths'
 import { installPermissions } from './permissions'
+import { watchCertificates } from './security'
 import { enableCosmetics } from './shield'
 
 export const BROWSING_PARTITION = 'persist:peepwick'
@@ -101,6 +102,7 @@ function configureBrowsingSession(ses: Session, kind: 'browsing' | 'incognito'):
   enableCosmetics(ses)
   installPermissions(ses, kind === 'incognito')
   installDownloads(ses, kind === 'incognito')
+  watchCertificates(ses)
   const wanted = ['tr', 'en-US']
   const languages = wanted.filter((lang) => ses.availableSpellCheckerLanguages.includes(lang))
   if (languages.length > 0) ses.setSpellCheckerLanguages(languages)

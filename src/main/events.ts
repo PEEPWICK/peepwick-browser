@@ -11,5 +11,7 @@ export const bus = new EventEmitter<{
   bookmarks: []
   /** A tab's state changed; windows coalesce these into one UI update. */
   'window-dirty': [windowId: number]
+  /** A host's certificate was checked for the first time this session. */
+  security: []
 }>()
 bus.setMaxListeners(50)

@@ -1,5 +1,5 @@
 import { SEARCH_ENGINES } from './search'
-import type { BookmarksBarMode, Lang, SearchEngineId, Settings, ShieldLevel, ThemePref } from './types'
+import { CLEAR_KINDS, type BookmarksBarMode, type ClearKind, type Lang, type SearchEngineId, type SecureDns, type Settings, type ShieldLevel, type ThemePref } from './types'
 
 export const DEFAULT_FOCUS_SITES = [
   'youtube.com',
@@ -32,13 +32,27 @@ export function defaultSettings(language: Lang): Settings {
     sidebarCollapsed: false,
     bookmarksBar: 'always',
     onboarded: false,
+    errorLog: false,
+    clearOnExit: [],
+    secureDns: 'automatic',
+    downloadDir: '',
+    hardwareAcceleration: true,
   }
+}
+
+/** DNS over HTTPS servers for each provider choice. */
+export const SECURE_DNS_SERVERS: Record<Exclude<SecureDns, 'off' | 'automatic'>, { name: string; template: string }> = {
+  cloudflare: { name: 'Cloudflare', template: 'https://cloudflare-dns.com/dns-query' },
+  quad9: { name: 'Quad9', template: 'https://dns.quad9.net/dns-query' },
+  mullvad: { name: 'Mullvad', template: 'https://dns.mullvad.net/dns-query' },
+  google: { name: 'Google', template: 'https://dns.google/dns-query{?dns}' },
 }
 
 const LANGS: Lang[] = ['tr', 'en']
 const THEMES: ThemePref[] = ['system', 'dark', 'light']
 const LEVELS: ShieldLevel[] = ['off', 'standard', 'strict']
 const BAR_MODES: BookmarksBarMode[] = ['always', 'newtab', 'never']
+const DNS: SecureDns[] = ['off', 'automatic', 'cloudflare', 'quad9', 'mullvad', 'google']
 
 /** Keeps only well-formed values from an untrusted settings patch. */
 export function sanitizeSettingsPatch(patch: unknown): Partial<Settings> {
@@ -63,6 +77,16 @@ export function sanitizeSettingsPatch(patch: unknown): Partial<Settings> {
   bool('askWhereToSave')
   bool('sidebarCollapsed')
   bool('onboarded')
+  bool('errorLog')
+  bool('hardwareAcceleration')
+  if (DNS.includes(input.secureDns as SecureDns)) out.secureDns = input.secureDns as SecureDns
+  if (Array.isArray(input.clearOnExit)) {
+    out.clearOnExit = CLEAR_KINDS.filter((kind) => (input.clearOnExit as unknown[]).includes(kind)) as ClearKind[]
+  }
+  // An absolute folder path, or empty for the system default.
+  if (typeof input.downloadDir === 'string' && (input.downloadDir === '' || (input.downloadDir.startsWith('/') && input.downloadDir.length < 4096))) {
+    out.downloadDir = input.downloadDir
+  }
   if (Array.isArray(input.shieldAllowlist)) out.shieldAllowlist = cleanDomains(input.shieldAllowlist)
   if (Array.isArray(input.focusSites)) out.focusSites = cleanDomains(input.focusSites)
   if (typeof input.focusMinutes === 'number' && Number.isFinite(input.focusMinutes)) {

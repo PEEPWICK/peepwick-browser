@@ -135,7 +135,8 @@ export function Modal({ label, width = 440, children, onClose }: { label: string
 
 // ── Edit dialog: edit a bookmark or folder, or create a new one ────────────────
 
-export function EditDialog({ id, parentId, folder }: { id?: string; parentId?: string; folder?: boolean }) {
+/** Edits a bookmark or folder, creates one, or (rename) changes only the name. */
+export function EditDialog({ id, parentId, folder, rename = false }: { id?: string; parentId?: string; folder?: boolean; rename?: boolean }) {
   const tree = useBookmarks()
   const { state } = useSnapshot()
   const { closePanel } = useUI()
@@ -155,9 +156,22 @@ export function EditDialog({ id, parentId, folder }: { id?: string; parentId?: s
     first.current?.select()
   }, [])
 
-  const heading = node ? (isFolder ? t('bookmarks.editFolder') : t('bookmarks.editTitle')) : isFolder ? t('bookmarks.newFolder') : t('bookmarks.newBookmark')
+  const heading = rename
+    ? t('bookmarks.renameTitle')
+    : node
+      ? isFolder
+        ? t('bookmarks.editFolder')
+        : t('bookmarks.editTitle')
+      : isFolder
+        ? t('bookmarks.newFolder')
+        : t('bookmarks.newBookmark')
 
   const save = async () => {
+    if (rename && node) {
+      if (title.trim()) api.bookmarkUpdate(node.id, { title: title.trim() })
+      closePanel()
+      return
+    }
     const cleanURL = url.trim() && !/^[a-z][a-z0-9+.-]*:/i.test(url.trim()) ? `https://${url.trim()}` : url.trim()
     if (!isFolder && !isBookmarkableURL(cleanURL)) {
       setError(t('bookmarks.invalidUrl'))
@@ -191,7 +205,7 @@ export function EditDialog({ id, parentId, folder }: { id?: string; parentId?: s
           <span className="label">{t('bookmarks.name')}</span>
           <input ref={first} className="text-input" value={title} disabled={isRoot} onChange={(event) => setTitle(event.target.value)} />
         </label>
-        {!isFolder && (
+        {!isFolder && !rename && (
           <label className="field">
             <span className="label">{t('bookmarks.url')}</span>
             <input
@@ -206,7 +220,7 @@ export function EditDialog({ id, parentId, folder }: { id?: string; parentId?: s
             {error && <span className="field-error">{error}</span>}
           </label>
         )}
-        {!isRoot && (
+        {!isRoot && !rename && (
           <label className="field">
             <span className="label">{t('bookmarks.folder')}</span>
             <FolderSelect value={target} onChange={setTarget} exclude={isFolder ? node?.id : undefined} />

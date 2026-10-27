@@ -8,10 +8,15 @@ export type Panel =
   | { kind: 'workspace'; id: string | null; anchor: DOMRect }
   | { kind: 'palette' }
   | { kind: 'star'; anchor: DOMRect; created: boolean }
-  | { kind: 'bookmark-edit'; id?: string; parentId?: string; folder?: boolean }
+  | { kind: 'bookmark-edit'; id?: string; parentId?: string; folder?: boolean; rename?: boolean }
   | { kind: 'import' }
-  | { kind: 'menu'; menu: MenuModel }
+  | { kind: 'menu'; menu: MenuModel; context?: MenuModel }
   | { kind: 'confirm'; dialog: ConfirmModel }
+  | { kind: 'site'; anchor: DOMRect }
+  | { kind: 'clear-data' }
+  | { kind: 'backup-export' }
+  | { kind: 'backup-restore'; token: string; name: string }
+  | { kind: 'certificate'; host: string }
 
 export interface UIContextValue {
   panel: Panel | null
@@ -23,7 +28,11 @@ export interface UIContextValue {
   findOpen: boolean
   setFindOpen: (open: boolean) => void
   showToast: (toast: Toast) => void
+  /** Asks a yes/no question in the browser's own dialog. */
+  ask: (question: Question) => Promise<boolean>
 }
+
+export type Question = Omit<ConfirmModel, 'id'>
 
 export interface Toast {
   text: string

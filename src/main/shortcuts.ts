@@ -103,7 +103,7 @@ export function handleShortcut(win: BrowserWin, input: Input): boolean {
     if (tab) win.closeTab(tab)
     return true
   }
-  if (key === 'Delete' && shift) return openPage(win, 'settings', 'privacy'), true
+  if (key === 'Delete' && shift) return runCommand(win, 'clear-data'), true
   if (key === ',') return openPage(win, 'settings'), true
 
   if (shift) {
@@ -178,7 +178,7 @@ export function handleShortcut(win: BrowserWin, input: Input): boolean {
       openPage(win, 'history')
       return true
     case 'j':
-      win.command({ type: 'downloads' })
+      openPage(win, 'downloads')
       return true
     case 'p':
       if (wc && !tab?.page) wc.print()

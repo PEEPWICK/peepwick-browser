@@ -4,7 +4,7 @@ import type { InternalPage, TabSecurity } from './types'
 export const INTERNAL_SCHEME = 'peepwick'
 export const NEW_TAB_URL = 'peepwick://newtab'
 
-const INTERNAL_PAGES: InternalPage[] = ['newtab', 'settings', 'history', 'extensions', 'bookmarks']
+const INTERNAL_PAGES: InternalPage[] = ['newtab', 'settings', 'history', 'extensions', 'bookmarks', 'downloads']
 
 export function internalPage(url: string): InternalPage | null {
   const match = /^peepwick:\/\/([a-z]+)\/?/i.exec(url.trim())

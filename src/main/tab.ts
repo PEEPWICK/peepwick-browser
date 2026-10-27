@@ -2,7 +2,7 @@
 // error screens and the focus gate are drawn by the UI instead, and sleeping tabs
 // have no view at all until they are shown again.
 import { dialog, WebContentsView, type WebContents, type WebContentsViewConstructorOptions } from 'electron'
-import { NEW_TAB_URL, hostOf, internalPage, internalURL, securityOf } from '@shared/url'
+import { NEW_TAB_URL, hostOf, internalPage, internalURL } from '@shared/url'
 import type { MessageKey } from '@shared/i18n'
 import type { FindState, InternalPage, Interstitial, TabState } from '@shared/types'
 import { getExtensions } from './extensions'
@@ -10,9 +10,11 @@ import { resolveFavicon, storedFavicon } from './favicons'
 import { grantPass, shouldGate } from './focus'
 import { addVisit, updateTitle } from './history'
 import { showPageMenu } from './menus'
+import { recordLoadError } from './diagnostics'
 import { denyPendingFor } from './permissions'
 import { ReaderView, extractArticle, isReaderable, renderArticle } from './reader'
 import { registerContents, unregisterContents } from './registry'
+import { allowCertificate, securityFor } from './security'
 import { settings, t } from './settings'
 import { handleShortcut } from './shortcuts'
 import type { BrowserWin } from './window'
@@ -53,15 +55,11 @@ const PAGE_TITLES: Record<InternalPage, MessageKey> = {
   history: 'history.title',
   extensions: 'ext.title',
   bookmarks: 'bookmarks.title',
+  downloads: 'downloads.title',
 }
-const certificateExceptions = new Set<string>()
 /** Views we closed on purpose (sleep, close), as opposed to pages closing themselves. */
 const closedByUs = new WeakSet<WebContents>()
 let nextId = 1
-
-export function certificateAllowed(host: string): boolean {
-  return certificateExceptions.has(host)
-}
 
 export class Tab {
   readonly id = nextId++
@@ -211,6 +209,8 @@ export class Tab {
     wc.on('did-fail-load', (_event, code, description, url, isMainFrame) => {
       if (!isMainFrame || code === -3) return
       if (this.interstitial?.kind === 'focus') return
+      // The shield's own blocks (-20) aren't failures worth reporting.
+      if (code !== -20) recordLoadError(description)
       this.interstitial = { kind: 'error', code, description, url, certificate: code <= -200 && code > -300 }
       this.loading = false
       this.win.layout()
@@ -433,7 +433,7 @@ export class Tab {
   proceedInsecure(): void {
     if (this.interstitial?.kind !== 'error' || !this.interstitial.certificate) return
     const url = this.interstitial.url
-    certificateExceptions.add(hostOf(url))
+    allowCertificate(hostOf(url))
     this.load(url)
   }
 
@@ -593,8 +593,7 @@ export class Tab {
 
   toState(): TabState {
     const url = this.displayURL()
-    let security = securityOf(url)
-    if (security === 'secure' && certificateExceptions.has(hostOf(url))) security = 'insecure'
+    const security = securityFor(url)
     return {
       id: this.id,
       contentsId: this.webContents?.id ?? null,

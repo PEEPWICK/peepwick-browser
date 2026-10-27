@@ -16,14 +16,18 @@ if (process.env['PEEPWICK_PROFILE']) {
 // take the desktop's theme. When the browser has its own light or dark theme, give
 // GTK the matching Adwaita variant. GTK reads this while starting up; index.ts
 // removes it afterwards so programs the browser opens don't inherit it.
-function savedTheme(): unknown {
+function savedSettings(): { theme?: unknown; hardwareAcceleration?: unknown } {
   try {
-    return (JSON.parse(readFileSync(join(app.getPath('userData'), 'settings.json'), 'utf8')) as { theme?: unknown }).theme
+    return JSON.parse(readFileSync(join(app.getPath('userData'), 'settings.json'), 'utf8')) as { theme?: unknown }
   } catch {
-    return undefined
+    return {}
   }
 }
 
-const theme = savedTheme() ?? 'dark'
+const saved = savedSettings()
+const theme = saved.theme ?? 'dark'
 export const gtkThemeSet = process.platform === 'linux' && !process.env['GTK_THEME'] && (theme === 'dark' || theme === 'light')
 if (gtkThemeSet) process.env['GTK_THEME'] = theme === 'dark' ? 'Adwaita:dark' : 'Adwaita'
+
+// Settings › General › Use hardware acceleration; only possible before the app is ready.
+if (saved.hardwareAcceleration === false) app.disableHardwareAcceleration()

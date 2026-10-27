@@ -19,19 +19,22 @@ export interface MenuSpec {
   folder?: boolean
   submenu?: MenuSpec[]
   click?: (event: MenuClickEvent) => void
+  /** The item's own right-click menu, opened on top of this one. */
+  context?: () => MenuSpec[]
 }
 
 export const separator: MenuSpec = { type: 'separator' }
 
 interface OpenMenu {
-  id: number
   actions: Map<number, (event: MenuClickEvent) => void>
+  contexts: Map<number, () => MenuSpec[]>
 }
 
-const openMenus = new WeakMap<BrowserWin, OpenMenu>()
+/** Each window's open menus: one, or a folder menu with a right-click menu on top. */
+const openMenus = new WeakMap<BrowserWin, Map<number, OpenMenu>>()
 let nextId = 1
 
-function build(specs: MenuSpec[], actions: OpenMenu['actions']): MenuNode[] {
+function build(specs: MenuSpec[], menu: OpenMenu): MenuNode[] {
   const out: MenuNode[] = []
   for (const spec of specs) {
     if (spec.type === 'separator') {
@@ -39,8 +42,9 @@ function build(specs: MenuSpec[], actions: OpenMenu['actions']): MenuNode[] {
       continue
     }
     const id = nextId++
-    if (spec.click) actions.set(id, spec.click)
-    const submenu = spec.submenu ? build(spec.submenu, actions) : undefined
+    if (spec.click) menu.actions.set(id, spec.click)
+    if (spec.context) menu.contexts.set(id, spec.context)
+    const submenu = spec.submenu ? build(spec.submenu, menu) : undefined
     out.push({
       kind: submenu ? 'submenu' : spec.type === 'checkbox' ? 'check' : 'item',
       id,
@@ -52,26 +56,33 @@ function build(specs: MenuSpec[], actions: OpenMenu['actions']): MenuNode[] {
       icon: spec.icon,
       folder: spec.folder,
       submenu,
+      context: spec.context ? true : undefined,
     })
   }
   while (out.at(-1)?.kind === 'separator') out.pop()
   return out
 }
 
-/** Opens a menu at window coordinates. A new menu replaces an open one. */
-export function popupMenu(win: BrowserWin, specs: MenuSpec[], x: number, y: number, align?: 'end'): void {
+/**
+ * Opens a menu at window coordinates. A new menu replaces the open ones, unless it
+ * opens `over` one of them (a right-click inside a bookmark folder menu).
+ */
+export function popupMenu(win: BrowserWin, specs: MenuSpec[], x: number, y: number, options: { align?: 'end'; over?: number } = {}): void {
   if (win.base.isDestroyed()) return
-  const actions: OpenMenu['actions'] = new Map()
-  const items = build(specs, actions)
+  const menu: OpenMenu = { actions: new Map(), contexts: new Map() }
+  const items = build(specs, menu)
   if (items.length === 0) return
   const id = nextId++
-  openMenus.set(win, { id, actions })
-  win.command({ type: 'menu', menu: { id, items, x: Math.round(x), y: Math.round(y), align } })
+  const open = openMenus.get(win)
+  if (options.over !== undefined && open?.has(options.over)) open.set(id, menu)
+  else openMenus.set(win, new Map([[id, menu]]))
+  win.command({ type: 'menu', menu: { id, items, x: Math.round(x), y: Math.round(y), align: options.align, over: options.over } })
 }
 
 export function menuSelect(win: BrowserWin, menuId: number, itemId: number, event: MenuClickEvent): void {
-  const menu = openMenus.get(win)
-  if (!menu || menu.id !== menuId) return
+  const menu = openMenus.get(win)?.get(menuId)
+  if (!menu) return
+  // Choosing anything closes every open menu.
   openMenus.delete(win)
   const action = menu.actions.get(itemId)
   if (!action) return
@@ -81,8 +92,13 @@ export function menuSelect(win: BrowserWin, menuId: number, itemId: number, even
   action(event)
 }
 
+export function menuContext(win: BrowserWin, menuId: number, itemId: number, x: number, y: number): void {
+  const build = openMenus.get(win)?.get(menuId)?.contexts.get(itemId)
+  if (build) popupMenu(win, build(), x, y, { over: menuId })
+}
+
 export function menuClosed(win: BrowserWin, menuId: number): void {
-  if (openMenus.get(win)?.id === menuId) openMenus.delete(win)
+  openMenus.get(win)?.delete(menuId)
 }
 
 export function imageURL(image: NativeImage | string | undefined | null): string | undefined {

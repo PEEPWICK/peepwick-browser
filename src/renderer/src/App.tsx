@@ -9,10 +9,13 @@ import { Toolbar } from './components/Toolbar'
 import { FindBar, PermissionBar } from './components/Bars'
 import { BookmarksBar } from './components/BookmarksBar'
 import { EditDialog, ImportDialog, StarPanel, ToastBar } from './components/BookmarkDialogs'
+import { BackupExportDialog, BackupRestoreDialog } from './components/Backup'
+import { ClearDataDialog } from './components/ClearData'
 import { ConfirmDialog } from './components/Confirm'
 import { MenuPopup } from './components/Menu'
+import { CertificateDialog, SitePanel } from './components/SiteInfo'
 import { Tooltips } from './components/Tooltips'
-import { UIContext, type Panel, type Toast, type UIContextValue } from './context'
+import { UIContext, type Panel, type Question, type Toast, type UIContextValue } from './context'
 import { activeTab, useSnapshot, useT } from './store'
 
 function useTheme(): void {
@@ -45,6 +48,23 @@ export function App() {
   const tab = activeTab(state)
   const activeTabRef = useRef(tab)
   activeTabRef.current = tab
+  // Questions the UI asks itself get negative ids; the main process's are positive.
+  const questions = useRef(new Map<number, (ok: boolean) => void>())
+  const nextQuestion = useRef(0)
+  const ask = useCallback(
+    (question: Question) =>
+      new Promise<boolean>((resolve) => {
+        const id = --nextQuestion.current
+        questions.current.set(id, resolve)
+        setPanel({ kind: 'confirm', dialog: { id, ...question } })
+      }),
+    [],
+  )
+  const answer = (id: number, ok: boolean) => {
+    if (id > 0) return api.confirmReply(id, ok)
+    questions.current.get(id)?.(ok)
+    questions.current.delete(id)
+  }
 
   const value = useMemo<UIContextValue>(
     () => ({
@@ -59,8 +79,9 @@ export function App() {
       findOpen,
       setFindOpen,
       showToast: setToast,
+      ask,
     }),
-    [panel, findOpen],
+    [panel, findOpen, ask],
   )
 
   const anchorFor = useCallback((selector: string): DOMRect => {
@@ -110,8 +131,31 @@ export function App() {
           case 'import-bookmarks':
             setPanel({ kind: 'import' })
             break
-          case 'menu':
-            setPanel({ kind: 'menu', menu: command.menu })
+          case 'menu': {
+            const menu = command.menu
+            // A right-click menu from a folder menu opens on top of it.
+            setPanel((current) =>
+              menu.over !== undefined && current?.kind === 'menu' && current.menu.id === menu.over ? { ...current, context: menu } : { kind: 'menu', menu },
+            )
+            break
+          }
+          case 'clear-data':
+            setPanel({ kind: 'clear-data' })
+            break
+          case 'history-search':
+            window.dispatchEvent(new CustomEvent('pw-history-search', { detail: command.text }))
+            break
+          case 'history-changed':
+            window.dispatchEvent(new Event('pw-history-changed'))
+            break
+          case 'backup-restore':
+            setPanel({ kind: 'backup-restore', token: command.token, name: command.name })
+            break
+          case 'certificate':
+            setPanel({ kind: 'certificate', host: command.host })
+            break
+          case 'bookmark-rename':
+            setPanel({ kind: 'bookmark-edit', id: command.id, rename: true })
             break
           case 'confirm':
             setPanel({ kind: 'confirm', dialog: command.dialog })
@@ -159,10 +203,22 @@ export function App() {
       {panel?.kind === 'workspace' && <WorkspacePanel id={panel.id} anchor={panel.anchor} />}
       {panel?.kind === 'palette' && <Palette />}
       {panel?.kind === 'star' && <StarPanel anchor={panel.anchor} created={panel.created} />}
-      {panel?.kind === 'bookmark-edit' && <EditDialog id={panel.id} parentId={panel.parentId} folder={panel.folder} />}
+      {panel?.kind === 'bookmark-edit' && <EditDialog id={panel.id} parentId={panel.parentId} folder={panel.folder} rename={panel.rename} />}
       {panel?.kind === 'import' && <ImportDialog />}
-      {panel?.kind === 'confirm' && <ConfirmDialog key={panel.dialog.id} dialog={panel.dialog} />}
-      {panel?.kind === 'menu' && <MenuPopup key={panel.menu.id} menu={panel.menu} />}
+      {panel?.kind === 'site' && <SitePanel anchor={panel.anchor} />}
+      {panel?.kind === 'clear-data' && <ClearDataDialog />}
+      {panel?.kind === 'backup-export' && <BackupExportDialog />}
+      {panel?.kind === 'backup-restore' && <BackupRestoreDialog key={panel.token} token={panel.token} name={panel.name} />}
+      {panel?.kind === 'certificate' && <CertificateDialog host={panel.host} />}
+      {panel?.kind === 'confirm' && <ConfirmDialog key={panel.dialog.id} dialog={panel.dialog} onAnswer={(ok) => answer(panel.dialog.id, ok)} />}
+      {panel?.kind === 'menu' && <MenuPopup key={panel.menu.id} menu={panel.menu} inactive={!!panel.context} />}
+      {panel?.kind === 'menu' && panel.context && (
+        <MenuPopup
+          key={panel.context.id}
+          menu={panel.context}
+          onDismiss={() => setPanel((current) => (current?.kind === 'menu' ? { kind: 'menu', menu: current.menu } : current))}
+        />
+      )}
       <Tooltips />
       {!settings.onboarded && !state.incognito && <Onboarding />}
     </UIContext.Provider>

@@ -3,7 +3,7 @@
 **A calm, private browser that guards your attention. First, we look.**
 
 > **Alpha.** PEEPWICK Browser is in alpha: features may change and you may run into bugs.
-> Releases are tagged with an `a` (v0.1.3a). Please [report what you find](https://github.com/PEEPWICK/peepwick-browser/issues/new?template=bug_report.yml).
+> Releases are tagged with an `a` (v0.1.3a). Please [report what you find](https://github.com/PEEPWICK/peepwick-browser/issues/new?template=bug_report.yml); Settings › Report a bug fills in the details for you.
 
 PEEPWICK Browser is built on Chromium (through [Electron](https://www.electronjs.org/)) and shaped
 by one idea from the PEEPWICK brand: attention is the scarcest thing online. It blocks ads and
@@ -32,6 +32,20 @@ lets the pages you visit keep their own colour.
   Chromium, Brave, Edge, Vivaldi, Opera, Firefox, LibreWolf, Zen and Floorp (Snap and Flatpak
   installs included), or from an HTML file; export to HTML. Imports read the other browser's
   files on this computer and bring the site icons along.
+- **Site security.** The button at the left of the address bar shows whether the connection is
+  secure, based on Chromium's own certificate check rather than the `https` in the address. Open
+  it to see the certificate (who issued it, the domains it covers, validity, fingerprints, chain),
+  the site's permissions, and to delete the site's cookies and data.
+- **Downloads.** A full downloads page (<kbd>Ctrl</kbd>+<kbd>J</kbd>) with progress, speed and time
+  left; pause, resume, cancel, retry, open, show in folder, move to trash; searchable history.
+- **Clearing browsing data** (<kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Delete</kbd>) for a time range,
+  per site from the history page, or every time the browser closes.
+- **Encrypted backup.** Settings, bookmarks, spaces, focus history, site permissions, the extension
+  list and, if you choose, open tabs and browsing history go into one password-protected file
+  (scrypt + AES-256-GCM). Restore it on another computer; it merges with what is there.
+- **Secure DNS** (DNS over HTTPS), automatic or through Cloudflare, Quad9, Mullvad or Google.
+- **Report a bug.** Settings › Report a bug shows a short report (version, system, error codes,
+  never addresses or file names) to copy or send to GitHub's bug form in one click.
 - **Command bar.** <kbd>Ctrl</kbd>+<kbd>K</kbd> finds open tabs, bookmarks, history and commands.
 - **Chrome extensions.** Install extensions from the Chrome Web Store. Most popular extensions
   work; some APIs are not available yet (see limitations).
@@ -82,6 +96,7 @@ your password through the system dialog.
 | <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>R</kbd> | Reader view |
 | <kbd>Ctrl</kbd>+<kbd>F</kbd> | Find on page |
 | <kbd>Ctrl</kbd>+<kbd>H</kbd> / <kbd>Ctrl</kbd>+<kbd>J</kbd> | History / downloads |
+| <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Delete</kbd> | Clear browsing data |
 | <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>N</kbd> | Private window |
 
 ## What the browser sends, and where
@@ -94,9 +109,12 @@ PEEPWICK Browser has no telemetry and no account. It talks to these services on 
 | `github.com` (Releases) | Update checks and downloads | At startup and every four hours |
 | Your search engine | Search suggestions | Only if you turn suggestions on (off by default) |
 | Chrome Web Store | Installing and updating extensions | Only if you install extensions |
+| Your secure DNS provider | Looking up site addresses | Only if you pick one (automatic uses your system's provider) |
 
 Pages you visit load as in any browser. Favicons are fetched once by the browser and kept locally.
 Importing bookmarks reads the other browser's files on this computer; nothing leaves it.
+The error log behind "Report a bug" stays on this computer (in a file only if you turn that on);
+it reaches GitHub only when you send a report yourself. Backups are files you keep; no cloud.
 
 ## Build from source
 
@@ -182,6 +200,21 @@ sayfalar kendi renkleriyle kalır.
   Chrome, Chromium, Brave, Edge, Vivaldi, Opera, Firefox, LibreWolf, Zen ve Floorp'tan (Snap ve
   Flatpak kurulumları dahil) ya da bir HTML dosyasından içe aktarma; HTML olarak dışa aktarma.
   İçe aktarma yalnızca bu bilgisayardaki dosyaları okur, site simgelerini de getirir.
+- **Site güvenliği:** Adres çubuğunun solundaki düğme bağlantının güvenli olup olmadığını,
+  adresteki `https`'e değil Chromium'un sertifika denetimine bakarak gösterir. Açınca sertifikayı
+  (veren kuruluş, kapsadığı alan adları, geçerlilik, parmak izleri, zincir), sitenin izinlerini
+  görebilir, sitenin çerezlerini ve verilerini silebilirsiniz.
+- **İndirmeler:** İlerleme, hız ve kalan süreyle tam bir indirmeler sayfası (<kbd>Ctrl</kbd>+<kbd>J</kbd>);
+  duraklatma, sürdürme, iptal, yeniden deneme, açma, klasörde gösterme, çöp kutusuna taşıma,
+  aranabilir geçmiş.
+- **Tarama verilerini temizleme** (<kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Delete</kbd>): zaman
+  aralığıyla, geçmiş sayfasından site bazında ya da tarayıcı her kapandığında.
+- **Şifreli yedek:** Ayarlar, yer imleri, alanlar, odak geçmişi, site izinleri, eklenti listesi
+  ve isterseniz açık sekmeler ile tarama geçmişi, parolayla korunan tek bir dosyaya girer (scrypt +
+  AES-256-GCM). Başka bir bilgisayarda geri yükleyin; mevcut verilerle birleştirilir.
+- **Güvenli DNS** (DNS over HTTPS): otomatik ya da Cloudflare, Quad9, Mullvad veya Google ile.
+- **Hata bildir:** Ayarlar › Hata bildir, kısa bir rapor gösterir (sürüm, sistem, hata kodları;
+  adresler ve dosya adları asla girmez). Tek tıkla kopyalayın ya da GitHub'daki hata formuna gönderin.
 - **Komut çubuğu:** <kbd>Ctrl</kbd>+<kbd>K</kbd> ile açık sekmeler, yer imleri, geçmiş ve komutlar.
 - **Chrome eklentileri:** Chrome Web Mağazası'ndan eklenti kurabilirsiniz.
 - **Gizli pencere** kapanınca hiçbir şey bırakmaz.

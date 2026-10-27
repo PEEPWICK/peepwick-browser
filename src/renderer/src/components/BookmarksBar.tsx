@@ -165,6 +165,12 @@ export function BookmarksBar() {
         event.preventDefault()
         dropInto(event, 'bar', items.length, tabs)
       }}
+      onContextMenu={(event) => {
+        // The empty part of the bar: add a page or folder, show or hide the bar.
+        if ((event.target as HTMLElement).closest('.bar-item')) return
+        event.preventDefault()
+        api.bookmarkMenu('bar', event.clientX, event.clientY)
+      }}
     >
       {items.length === 0 && (
         <span className="bar-empty">

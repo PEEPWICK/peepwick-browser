@@ -19,6 +19,15 @@ export function settings(): Settings {
   return current
 }
 
+/** Back to the defaults, keeping the language and the welcome screen already seen. */
+export function resetSettings(): Settings {
+  const keep = { language: current.language, onboarded: current.onboarded }
+  current = { ...defaultSettings(current.language), ...keep }
+  file.schedule(current)
+  bus.emit('settings')
+  return current
+}
+
 export function updateSettings(patch: unknown): Settings {
   const clean = sanitizeSettingsPatch(patch)
   if (Object.keys(clean).length === 0) return current
