@@ -104,6 +104,17 @@ export function wireBroadcasts(): void {
     const tree = bookmarkTree()
     for (const win of BrowserWin.all.values()) win.send('bookmarks', tree)
   })
+  // New icons: every UI asks for them again (they're versioned URLs).
+  let faviconVersion = 0
+  let faviconTimer: NodeJS.Timeout | null = null
+  bus.on('favicon', () => {
+    if (faviconTimer) return
+    faviconTimer = setTimeout(() => {
+      faviconTimer = null
+      faviconVersion++
+      for (const win of BrowserWin.all.values()) win.send('favicon', faviconVersion)
+    }, 300)
+  })
   bus.on('security', () => {
     for (const win of BrowserWin.all.values()) win.markDirty()
   })

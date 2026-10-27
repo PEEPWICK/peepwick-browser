@@ -96,3 +96,16 @@ describe('url helpers', () => {
     expect(displayParts('https://tr.wikipedia.org/wiki/G%C3%B6z').rest).toBe('/wiki/Göz')
   })
 })
+
+describe('data URLs for site icons', () => {
+  it('reads base64, parameters and URL-encoded text', async () => {
+    const { parseDataURL } = await import('@shared/url')
+    expect(parseDataURL('data:image/png;base64,iVBO')?.type).toBe('image/png')
+    const svg = parseDataURL('data:image/svg+xml;charset=utf-8;base64,PHN2Zy8+')
+    expect(svg?.type).toBe('image/svg+xml')
+    expect(new TextDecoder().decode(svg!.body)).toBe('<svg/>')
+    expect(new TextDecoder().decode(parseDataURL('data:image/svg+xml,%3Csvg%2F%3E')!.body)).toBe('<svg/>')
+    expect(parseDataURL('data:,')).toBeNull()
+    expect(parseDataURL('https://x/icon.png')).toBeNull()
+  })
+})

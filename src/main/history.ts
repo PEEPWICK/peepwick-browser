@@ -3,6 +3,7 @@
 import { DatabaseSync } from 'node:sqlite'
 import { displayHost, hostOf } from '@shared/url'
 import type { HistoryEntry, TopSite } from '@shared/types'
+import { bus } from './events'
 import { userPath } from './paths'
 
 let db: DatabaseSync | null = null
@@ -71,15 +72,21 @@ export function updateTitle(url: string, title: string): void {
 
 export function setFavicon(host: string, data: string): void {
   if (!db || !host || data.length > 200_000) return
+  const current = db.prepare('SELECT data FROM favicons WHERE host = ?').get(host) as { data: string } | undefined
+  if (current?.data === data) return
   db.prepare(
     `INSERT INTO favicons (host, data, updated_at) VALUES (?, ?, ?)
      ON CONFLICT(host) DO UPDATE SET data = excluded.data, updated_at = excluded.updated_at`,
   ).run(host, data, Date.now())
+  // Icons already on screen (the bookmarks bar, lists) look again.
+  bus.emit('favicon', host)
 }
 
+/** The icon for a host, or for its www. twin (a bookmark and the page it lands on often differ). */
 export function getFavicon(host: string): string | null {
   if (!db || !host) return null
-  const row = db.prepare('SELECT data FROM favicons WHERE host = ?').get(host) as { data: string } | undefined
+  const twin = host.startsWith('www.') ? host.slice(4) : `www.${host}`
+  const row = db.prepare('SELECT data FROM favicons WHERE host IN (?, ?) ORDER BY host = ? DESC LIMIT 1').get(host, twin, host) as { data: string } | undefined
   return row?.data ?? null
 }
 
@@ -174,9 +181,16 @@ export function removeVisit(id: number): void {
   }
 }
 
-export function clearHistory(): void {
+/** Clears the whole history. Icons of the hosts in `keepIcons` (bookmarked sites) stay. */
+export function clearHistory(keepIcons: Set<string> = new Set()): void {
   if (!db) return
-  db.exec('DELETE FROM visits; DELETE FROM pages; DELETE FROM favicons; VACUUM;')
+  db.exec('DELETE FROM visits; DELETE FROM pages;')
+  const remove = db.prepare('DELETE FROM favicons WHERE host = ?')
+  for (const { host } of db.prepare('SELECT host FROM favicons').all() as { host: string }[]) {
+    const bare = host.replace(/^www\./, '')
+    if (!keepIcons.has(host) && !keepIcons.has(bare) && !keepIcons.has(`www.${bare}`)) remove.run(host)
+  }
+  db.exec('VACUUM;')
   recent.clear()
 }
 
@@ -197,11 +211,11 @@ export function countVisits(since = 0): number {
 }
 
 /** Deletes visits from `since` on; with 0, the whole history (and stored site icons). */
-export function deleteVisitsSince(since: number): number {
+export function deleteVisitsSince(since: number, keepIcons?: Set<string>): number {
   if (!db) return 0
   if (since <= 0) {
     const n = countVisits(0)
-    clearHistory()
+    clearHistory(keepIcons)
     return n
   }
   const urls = (db.prepare('SELECT DISTINCT url FROM visits WHERE visited_at >= ?').all(since) as { url: string }[]).map((r) => r.url)

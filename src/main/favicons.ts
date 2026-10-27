@@ -21,9 +21,19 @@ export async function resolveFavicon(
   // Pages often declare an empty `data:,` icon just to stop the favicon request.
   const url = candidates.find((c) => /^https?:/.test(c) || isImageDataURL(c))
   if (!url) return null
-  if (url.startsWith('data:')) return url.length <= MAX_BYTES ? url : null
+  const host = hostOf(pageURL)
+  // Icons written into the page itself are kept too, so bookmarks can show them.
+  if (url.startsWith('data:')) {
+    if (url.length > MAX_BYTES) return null
+    if (persist) setFavicon(host, url)
+    return url
+  }
   const cached = cache.get(url)
-  if (cached) return cached
+  if (cached) {
+    // Fetched before (maybe in a private window, where nothing is stored).
+    if (persist) setFavicon(host, cached)
+    return cached
+  }
   try {
     const controller = new AbortController()
     const timeout = setTimeout(() => controller.abort(), 6000)
@@ -37,7 +47,7 @@ export async function resolveFavicon(
     if (!mime) return null
     const data = `data:${mime};base64,${Buffer.from(body).toString('base64')}`
     remember(url, data)
-    if (persist) setFavicon(hostOf(pageURL), data)
+    if (persist) setFavicon(host, data)
     return data
   } catch {
     return null

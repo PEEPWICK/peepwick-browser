@@ -3,6 +3,9 @@
 // can only be cleared for all time: Electron offers no time range for them.
 import type { ClearCounts, ClearKind, ClearRange, ClearRequest } from '@shared/types'
 import { CLEAR_KINDS } from '@shared/types'
+import { links } from '@shared/bookmarks'
+import { hostOf } from '@shared/url'
+import { bookmarkTree } from './bookmarks'
 import { clearDownloads, countDownloads } from './downloads'
 import { clearFormEntries, countFormEntries } from './formdata'
 import { clearPasswords, passwordStatus } from './passwords'
@@ -47,7 +50,8 @@ export async function clearBrowsingData({ range, kinds }: ClearRequest): Promise
   const since = sinceFor(range)
   const has = (kind: ClearKind) => kinds.includes(kind)
   const session = browsingSession()
-  if (has('history')) deleteVisitsSince(since)
+  // Bookmarked sites keep their icons when the history goes.
+  if (has('history')) deleteVisitsSince(since, new Set(links(bookmarkTree()).map((link) => hostOf(link.url))))
   if (has('downloads')) clearDownloads(since)
   if (has('permissions')) clearPermissions()
   if (has('forms')) clearFormEntries(since)

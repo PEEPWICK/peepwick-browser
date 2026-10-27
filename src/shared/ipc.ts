@@ -205,6 +205,8 @@ export interface EventMap {
   bookmarks: BookmarkTree
   /** To the autofill popup view only. */
   autofill: AutofillPopupState
+  /** Stored site icons changed; peepwick://favicon/ URLs carry this as ?v=. */
+  favicon: number
 }
 
 export type InvokeName = keyof InvokeMethods

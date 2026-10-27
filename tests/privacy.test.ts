@@ -100,4 +100,19 @@ describe('history clearing', () => {
     expect(history.deleteHost('b.example')).toBe(1)
     expect(history.queryHistory('').map((e) => e.title)).toEqual(['A1'])
   })
+
+  it('finds a site icon under the www. twin', () => {
+    history.setFavicon('www.icons.example', 'data:image/png;base64,AAAA')
+    expect(history.getFavicon('icons.example')).toBe('data:image/png;base64,AAAA')
+    expect(history.getFavicon('www.icons.example')).toBe('data:image/png;base64,AAAA')
+  })
+
+  it('keeps bookmarked sites’ icons when the whole history is cleared', () => {
+    history.setFavicon('kept.example', 'data:image/png;base64,BBBB')
+    history.setFavicon('gone.example', 'data:image/png;base64,CCCC')
+    history.deleteVisitsSince(0, new Set(['www.kept.example']))
+    expect(history.countVisits(0)).toBe(0)
+    expect(history.getFavicon('kept.example')).toBe('data:image/png;base64,BBBB')
+    expect(history.getFavicon('gone.example')).toBeNull()
+  })
 })

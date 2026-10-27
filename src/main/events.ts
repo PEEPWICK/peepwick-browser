@@ -13,5 +13,7 @@ export const bus = new EventEmitter<{
   'window-dirty': [windowId: number]
   /** A host's certificate was checked for the first time this session. */
   security: []
+  /** A site's icon was stored or changed. */
+  favicon: [host: string]
 }>()
 bus.setMaxListeners(50)

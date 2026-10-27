@@ -12,6 +12,8 @@ export interface Snapshot {
   settings: Settings
   app: AppInfo
   bookmarks: BookmarkTree
+  /** Goes up when site icons are stored, so icon images load again. */
+  faviconVersion: number
 }
 
 let snapshot: Snapshot | null = null
@@ -23,7 +25,7 @@ function emit(): void {
 
 export async function initStore(): Promise<void> {
   const data: InitialData = await call.ready()
-  snapshot = data
+  snapshot = { ...data, faviconVersion: 0 }
   on('state', (state) => {
     if (snapshot) snapshot = { ...snapshot, state }
     emit()
@@ -38,6 +40,10 @@ export async function initStore(): Promise<void> {
   })
   on('bookmarks', (bookmarks) => {
     if (snapshot) snapshot = { ...snapshot, bookmarks }
+    emit()
+  })
+  on('favicon', (faviconVersion) => {
+    if (snapshot) snapshot = { ...snapshot, faviconVersion }
     emit()
   })
 }

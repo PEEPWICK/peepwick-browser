@@ -84,3 +84,18 @@ function decodeSafe(value: string): string {
     return value
   }
 }
+
+/**
+ * Splits a data: URL into its type and bytes. Handles parameters before the data
+ * (data:image/svg+xml;charset=utf-8;base64,…) and URL-encoded text.
+ */
+export function parseDataURL(url: string): { type: string; body: Uint8Array } | null {
+  const match = /^data:([^;,]+)((?:;[^;,]*)*?)(;base64)?,(.*)$/s.exec(url)
+  if (!match) return null
+  try {
+    const body = match[3] ? Uint8Array.from(atob(match[4]), (c) => c.charCodeAt(0)) : new TextEncoder().encode(decodeURIComponent(match[4]))
+    return { type: match[1].toLowerCase(), body }
+  } catch {
+    return null
+  }
+}

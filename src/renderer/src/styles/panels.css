@@ -381,9 +381,12 @@
 .palette {
   position: absolute;
   top: 14vh;
-  left: 50%;
+  /* Centred with margins, not a transform: the opening animation sets transform
+     and would otherwise start the bar off-centre and snap it into place. */
+  left: 0;
+  right: 0;
+  margin-inline: auto;
   width: min(640px, calc(100vw - 48px));
-  transform: translateX(-50%);
   display: flex;
   flex-direction: column;
   max-height: 64vh;
@@ -519,9 +522,11 @@
 .modal {
   position: absolute;
   top: 16vh;
-  left: 50%;
+  /* Centred with margins, not a transform (see .palette). */
+  left: 0;
+  right: 0;
+  margin-inline: auto;
   max-width: calc(100vw - 48px);
-  transform: translateX(-50%);
   display: flex;
   flex-direction: column;
   background: var(--raised);

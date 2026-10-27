@@ -8,6 +8,7 @@ import { installAutofill } from './autofill'
 import { installDownloads } from './downloads'
 import { getFavicon } from './history'
 import { installNetwork } from './network'
+import { parseDataURL } from '@shared/url'
 import { devServerURL, rendererPath } from './paths'
 import { installPermissions } from './permissions'
 import { watchCertificates } from './security'
@@ -68,10 +69,10 @@ const UI_CSP = [
 /** peepwick://favicon/<host>: the stored icon for a site, so lists can load icons lazily. */
 function faviconResponse(host: string): Response {
   const data = getFavicon(host)
-  const match = data ? /^data:([^;,]+)(;base64)?,(.*)$/s.exec(data) : null
-  if (!match) return new Response('Not found', { status: 404 })
-  const body = match[2] ? Buffer.from(match[3], 'base64') : Buffer.from(decodeURIComponent(match[3]))
-  return new Response(body, { headers: { 'content-type': match[1], 'cache-control': 'max-age=3600' } })
+  const parsed = data ? parseDataURL(data) : null
+  // A missing icon is never cached: it may be stored a moment later.
+  if (!parsed) return new Response('Not found', { status: 404, headers: { 'cache-control': 'no-store' } })
+  return new Response(Buffer.from(parsed.body), { headers: { 'content-type': parsed.type, 'cache-control': 'max-age=3600' } })
 }
 
 export function configureUISession(): void {

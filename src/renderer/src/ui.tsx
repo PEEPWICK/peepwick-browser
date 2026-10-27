@@ -18,6 +18,7 @@ import {
 } from 'lucide-react'
 import type { WorkspaceIcon } from '@shared/types'
 import { displayHost, hostOf, isImageDataURL } from '@shared/url'
+import { useSnapshot } from './store'
 import { api } from './api'
 
 /** Lucide icons at the brand's 1.5 px stroke. */
@@ -62,10 +63,14 @@ export const WORKSPACE_GLYPHS: Record<WorkspaceIcon, LucideIcon> = {
 }
 
 export function Favicon({ src, url, size = 16 }: { src: string | null | undefined; url?: string; size?: number }) {
+  const version = useSnapshot().faviconVersion
+  // Stored icons are asked for again whenever one is saved: an icon that wasn't
+  // there a moment ago (not visited yet) shows up without reopening anything.
+  const shown = src?.startsWith('peepwick://favicon/') ? `${src}?v=${version}` : src
   const [broken, setBroken] = useState(false)
-  useEffect(() => setBroken(false), [src])
-  if (src && (isImageDataURL(src) || src.startsWith('peepwick://favicon/')) && !broken) {
-    return <img className="favicon" src={src} width={size} height={size} alt="" draggable={false} onError={() => setBroken(true)} />
+  useEffect(() => setBroken(false), [shown])
+  if (shown && (isImageDataURL(shown) || shown.startsWith('peepwick://favicon/')) && !broken) {
+    return <img className="favicon" src={shown} width={size} height={size} alt="" draggable={false} onError={() => setBroken(true)} />
   }
   const letter = (url ? displayHost(url) : '').charAt(0).toLocaleUpperCase('tr') || '·'
   return (
