@@ -3,8 +3,9 @@ import { app, dialog } from 'electron'
 import { NEW_TAB_URL } from '@shared/url'
 import type { CommandId, InternalPage } from '@shared/types'
 import { bookmarkPage, bookmarkTabs } from './bookmarks'
+import { addPage } from './readinglist'
 import { focusState, startFocus, stopFocus } from './focus'
-import { settings, updateSettings } from './settings'
+import { settings, t, updateSettings } from './settings'
 import { checkForUpdates } from './updater'
 import type { BrowserWin } from './window'
 import { createWindow } from './windows'
@@ -97,6 +98,11 @@ export function isCommandAvailable(win: BrowserWin, id: CommandId): boolean {
       return !!workspace.split
     case 'pin':
       return !!active && !active.page
+    case 'translate':
+      return !!active && !active.page && !active.interstitial && /^https?:/.test(active.url)
+    case 'reading-add':
+      return !win.incognito && !!active && !active.page && !active.interstitial && /^https?:/.test(active.url)
+    case 'reading-list':
     case 'extensions':
     case 'import-bookmarks':
     case 'backup':
@@ -167,6 +173,22 @@ export function runCommand(win: BrowserWin, id: CommandId): void {
     case 'passwords':
       openPage(win, 'passwords')
       break
+    case 'task-manager':
+      win.command({ type: 'task-manager' })
+      break
+    case 'reading-list':
+      openPage(win, 'reading')
+      break
+    case 'translate':
+      if (isCommandAvailable(win, 'translate')) void win.activeTab()?.offerTranslation()
+      break
+    case 'reading-add': {
+      const contents = win.activeTab()?.webContents
+      if (contents && isCommandAvailable(win, 'reading-add')) {
+        void addPage(contents).then((item) => item && win.command({ type: 'toast', text: t(item.saved ? 'reading.addedOffline' : 'reading.added') }))
+      }
+      break
+    }
     case 'check-updates':
       void checkForUpdates()
       openPage(win, 'settings', 'about')

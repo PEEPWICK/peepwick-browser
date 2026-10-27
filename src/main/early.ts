@@ -29,5 +29,9 @@ const theme = saved.theme ?? 'dark'
 export const gtkThemeSet = process.platform === 'linux' && !process.env['GTK_THEME'] && (theme === 'dark' || theme === 'light')
 if (gtkThemeSet) process.env['GTK_THEME'] = theme === 'dark' ? 'Adwaita:dark' : 'Adwaita'
 
+// Read aloud uses the system's voices, which Chromium reaches through speech-dispatcher
+// only when asked to.
+if (process.platform === 'linux') app.commandLine.appendSwitch('enable-speech-dispatcher')
+
 // Settings › General › Use hardware acceleration; only possible before the app is ready.
 if (saved.hardwareAcceleration === false) app.disableHardwareAcceleration()

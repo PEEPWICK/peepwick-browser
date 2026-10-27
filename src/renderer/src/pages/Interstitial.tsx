@@ -55,6 +55,36 @@ function FocusGate({ tab, host }: { tab: TabState; host: string }) {
   )
 }
 
+function DangerousSite({ tab, host, threat }: { tab: TabState; host: string; threat: 'malware' | 'phishing' }) {
+  const t = useT()
+  const [details, setDetails] = useState(false)
+  return (
+    <div className="page interstitial is-danger">
+      <div className="interstitial-body">
+        <DoubleEye height={40} mode="down" />
+        <span className="label interstitial-code">{t('danger.label')}</span>
+        <h1 className="display small">{t(threat === 'phishing' ? 'danger.phishing.title' : 'danger.malware.title')}</h1>
+        <p className="lead">{t(threat === 'phishing' ? 'danger.phishing.body' : 'danger.malware.body', { host })}</p>
+        {details && <p className="muted">{t('danger.source')}</p>}
+        <div className="interstitial-actions">
+          <Button variant="primary" onClick={() => api.interstitial(tab.id, 'back')}>
+            {t('danger.back')}
+          </Button>
+          {details ? (
+            <Button variant="quiet" onClick={() => api.interstitial(tab.id, 'dangerous')}>
+              {t('danger.continue')}
+            </Button>
+          ) : (
+            <Button variant="quiet" onClick={() => setDetails(true)}>
+              {t('danger.details')}
+            </Button>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export function Interstitial({ tab, interstitial }: { tab: TabState; interstitial: InterstitialState }) {
   const t = useT()
   const { openPanel } = useUI()
@@ -79,6 +109,31 @@ export function Interstitial({ tab, interstitial }: { tab: TabState; interstitia
   }
 
   const host = hostOf(interstitial.url)
+
+  if (interstitial.kind === 'https-only') {
+    return (
+      <div className="page interstitial is-warning">
+        <div className="interstitial-body">
+          <DoubleEye height={40} mode="down" />
+          <span className="label interstitial-code">{t('httpsOnly.label')}</span>
+          <h1 className="display small">{t('httpsOnly.title')}</h1>
+          <p className="lead">{t('httpsOnly.body', { host })}</p>
+          <p className="muted">{t('httpsOnly.hint')}</p>
+          <div className="interstitial-actions">
+            <Button variant="primary" onClick={() => api.interstitial(tab.id, 'back')}>
+              {t('focus.gate.back')}
+            </Button>
+            <Button variant="quiet" onClick={() => api.interstitial(tab.id, 'http')}>
+              {t('httpsOnly.continue')}
+            </Button>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  if (interstitial.kind === 'dangerous') return <DangerousSite tab={tab} host={host} threat={interstitial.threat} />
+
   if (interstitial.certificate) {
     return (
       <div className="page interstitial is-warning">

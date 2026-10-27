@@ -124,8 +124,12 @@ export const COMMANDS: CommandId[] = [
   'import-bookmarks',
   'clear-data',
   'passwords',
+  'reading-add',
+  'reading-list',
+  'translate',
   'backup',
   'report',
+  'task-manager',
   'check-updates',
 ]
 

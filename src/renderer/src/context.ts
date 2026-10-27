@@ -5,6 +5,7 @@ export type Panel =
   | { kind: 'shield'; anchor: DOMRect }
   | { kind: 'focus'; anchor: DOMRect }
   | { kind: 'downloads'; anchor: DOMRect }
+  | { kind: 'media'; anchor: DOMRect }
   | { kind: 'workspace'; id: string | null; anchor: DOMRect }
   | { kind: 'palette' }
   | { kind: 'star'; anchor: DOMRect; created: boolean }
@@ -16,6 +17,7 @@ export type Panel =
   | { kind: 'confirm'; dialog: ConfirmModel }
   | { kind: 'site'; anchor: DOMRect }
   | { kind: 'clear-data' }
+  | { kind: 'task-manager' }
   | { kind: 'backup-export' }
   | { kind: 'backup-restore'; token: string; name: string }
   | { kind: 'certificate'; host: string }
@@ -29,6 +31,9 @@ export interface UIContextValue {
   registerOmnibox: (focus: (text?: string) => void) => void
   findOpen: boolean
   setFindOpen: (open: boolean) => void
+  /** Read aloud is open for the active tab. */
+  listening: boolean
+  setListening: (open: boolean) => void
   showToast: (toast: Toast) => void
   /** Asks a yes/no question in the browser's own dialog. */
   ask: (question: Question) => Promise<boolean>

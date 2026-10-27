@@ -13,6 +13,7 @@ import { devServerURL, rendererPath } from './paths'
 import { installPermissions } from './permissions'
 import { watchCertificates } from './security'
 import { enableCosmetics } from './shield'
+import { savedResponse } from './readinglist'
 
 export const BROWSING_PARTITION = 'persist:peepwick'
 const INCOGNITO_PARTITION = 'peepwick-incognito'
@@ -106,6 +107,13 @@ function configureBrowsingSession(ses: Session, kind: 'browsing' | 'incognito'):
   installDownloads(ses, kind === 'incognito')
   watchCertificates(ses)
   installAutofill(ses)
+  // Offline copies from the reading list; nothing else of ours is reachable from pages.
+  if (kind === 'browsing') {
+    ses.protocol.handle('peepwick', (request) => {
+      const url = new URL(request.url)
+      return url.host === 'saved' ? savedResponse(url) : new Response('Not found', { status: 404 })
+    })
+  }
   const wanted = ['tr', 'en-US']
   const languages = wanted.filter((lang) => ses.availableSpellCheckerLanguages.includes(lang))
   if (languages.length > 0) ses.setSpellCheckerLanguages(languages)

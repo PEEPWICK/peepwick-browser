@@ -3,6 +3,8 @@
 // Privacy Control all run from here, in that order.
 import type { Session } from 'electron'
 import { shouldGate } from './focus'
+import { httpsAnswered, httpsUpgrade } from './httpsonly'
+import { threatFor } from './safebrowsing'
 import { tabForContents } from './registry'
 import { settings } from './settings'
 import { cspFor, isThirdParty, matchRequest, shieldActiveFor } from './shield'
@@ -43,6 +45,24 @@ export function installNetwork(session: Session, kind: 'browsing' | 'incognito' 
         callback({ cancel: true })
         return
       }
+      if (kind !== 'reader' && tab) {
+        const threat = threatFor(details.url)
+        if (threat) {
+          tab.showDangerous(details.url, threat)
+          callback({ cancel: true })
+          return
+        }
+        const upgrade = httpsUpgrade(details.webContentsId, details.url)
+        if (upgrade === 'warn') {
+          tab.httpsOnlyFailed(details.url)
+          callback({ cancel: true })
+          return
+        }
+        if (upgrade) {
+          callback({ redirectURL: upgrade })
+          return
+        }
+      }
       callback({})
       return
     }
@@ -80,6 +100,7 @@ export function installNetwork(session: Session, kind: 'browsing' | 'incognito' 
   })
 
   session.webRequest.onHeadersReceived(FILTER, (details, callback) => {
+    if (details.resourceType === 'mainFrame') httpsAnswered(details.webContentsId)
     const headers = details.responseHeaders
     const isDocument = details.resourceType === 'mainFrame' || details.resourceType === 'subFrame'
     const top = details.resourceType === 'mainFrame' ? details.url : topURL(details, tabForContents(details.webContentsId))

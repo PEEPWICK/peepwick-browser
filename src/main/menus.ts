@@ -7,6 +7,7 @@ import { focusState, startFocus, stopFocus } from './focus'
 import { getExtensions } from './extensions'
 import { isCommandAvailable, newTab, openDevTools, openPage, runCommand, savePage } from './actions'
 import { createBookmark, exportBookmarks } from './bookmarks'
+import { addLink } from './readinglist'
 import { allDownloads, downloadAction } from './downloads'
 import { deleteHost, removeVisits } from './history'
 import { confirm, fromElectron, popupMenu, separator as sep, type MenuSpec } from './popup'
@@ -46,6 +47,19 @@ export function showPageMenu(tab: Tab, wc: WebContents, params: ContextMenuParam
       ...(win.incognito || !/^(https?|ftp|file):/.test(link)
         ? []
         : [{ label: t('ctx.bookmarkLink'), click: () => void createBookmark({ parentId: 'bar', title: params.linkText.trim() || link, url: link }) }]),
+      ...(win.incognito || !/^https?:/.test(link)
+        ? []
+        : [
+            {
+              label: t('ctx.readLater'),
+              click: () => {
+                win.command({ type: 'toast', text: t('reading.saving') })
+                void addLink(link, params.linkText.trim(), win.session).then(
+                  (item) => item && win.command({ type: 'toast', text: t(item.saved ? 'reading.addedOffline' : 'reading.added') }),
+                )
+              },
+            },
+          ]),
       sep,
     )
   }
@@ -59,9 +73,14 @@ export function showPageMenu(tab: Tab, wc: WebContents, params: ContextMenuParam
       { label: t('ctx.copyImageAddress'), click: () => clipboard.writeText(src) },
       sep,
     )
-  } else if ((params.mediaType === 'video' || params.mediaType === 'audio') && params.srcURL) {
+  } else if (params.mediaType === 'video' || params.mediaType === 'audio') {
     const src = params.srcURL
-    items.push({ label: t('ctx.saveMedia'), click: () => wc.downloadURL(src) }, sep)
+    items.push(
+      ...(params.mediaType === 'video' ? [{ label: t('media.pip'), click: () => void tab.pictureInPicture() }] : []),
+      // blob: and MediaSource videos (most streaming sites) can't be saved as a file.
+      ...(src && /^https?:/.test(src) ? [{ label: t('ctx.saveMedia'), click: () => wc.downloadURL(src) }] : []),
+      sep,
+    )
   }
 
   if (params.isEditable) {
@@ -93,6 +112,8 @@ export function showPageMenu(tab: Tab, wc: WebContents, params: ContextMenuParam
       { label: t('ctx.reload'), accelerator: 'Ctrl+R', click: () => tab.reload() },
       sep,
       { label: t('ctx.savePage'), accelerator: 'Ctrl+S', click: () => void savePage(win) },
+      ...(tab === win.activeTab() && isCommandAvailable(win, 'reading-add') ? [{ label: t('cmd.reading-add'), click: () => runCommand(win, 'reading-add') }] : []),
+      ...(tab === win.activeTab() && isCommandAvailable(win, 'translate') ? [{ label: t('cmd.translate'), click: () => void tab.offerTranslation() }] : []),
       { label: t('ctx.print'), accelerator: 'Ctrl+P', click: () => wc.print() },
       sep,
     )
@@ -193,13 +214,26 @@ export function showAppMenu(win: BrowserWin, x: number, y: number): void {
         ]
       : []),
     ...(!win.incognito ? [{ label: t('menu.passwords'), click: () => openPage(win, 'passwords') }] : []),
+    ...(!win.incognito
+      ? [
+          {
+            label: t('reading.title'),
+            submenu: [
+              { label: t('cmd.reading-add'), enabled: isCommandAvailable(win, 'reading-add'), click: () => runCommand(win, 'reading-add') },
+              { label: t('reading.open'), click: () => openPage(win, 'reading') },
+            ],
+          },
+        ]
+      : []),
     { label: t('menu.downloads'), accelerator: 'Ctrl+J', click: () => openPage(win, 'downloads') },
     ...(!win.incognito ? [{ label: t('menu.extensions'), click: () => openPage(win, 'extensions') }] : []),
+    { label: t('cmd.task-manager'), accelerator: 'Shift+Esc', click: () => runCommand(win, 'task-manager') },
     sep,
     { label: t('menu.zoomIn'), accelerator: 'Ctrl+=', enabled: !!tab?.webContents, click: () => tab?.zoom('in') },
     { label: t('menu.zoomOut'), accelerator: 'Ctrl+-', enabled: !!tab?.webContents, click: () => tab?.zoom('out') },
     { label: t('menu.zoomReset'), accelerator: 'Ctrl+0', enabled: !!tab?.webContents, click: () => tab?.zoom('reset') },
     sep,
+    { label: t('cmd.translate'), enabled: isCommandAvailable(win, 'translate'), click: () => runCommand(win, 'translate') },
     { label: t('menu.find'), accelerator: 'Ctrl+F', enabled: !!tab?.webContents && !tab.page, click: () => win.command({ type: 'find' }) },
     { label: t('menu.print'), accelerator: 'Ctrl+P', enabled: !!tab?.webContents && !tab.page, click: () => tab?.webContents?.print() },
     {

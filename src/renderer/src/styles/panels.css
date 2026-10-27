@@ -967,3 +967,129 @@
   gap: var(--s2);
   line-height: 1.5;
 }
+
+/* Playing media */
+
+.media-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.media-list li {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  border-radius: var(--radius);
+}
+
+.media-list li:hover {
+  background: var(--surface-hover);
+}
+
+.media-tab {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--s3);
+  padding: var(--s2);
+  text-align: left;
+  color: var(--text);
+}
+
+.media-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  font-size: 12px;
+}
+
+.media-name {
+  font-size: 13px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.toolbar-actions .is-playing {
+  color: var(--accent);
+}
+
+/* Task manager */
+
+.task-table {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.task-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 96px 64px 72px;
+  gap: var(--s3);
+  align-items: center;
+  width: 100%;
+  min-height: 34px;
+  padding: 0 var(--s3);
+  text-align: left;
+  font-size: 13px;
+  color: var(--text);
+}
+
+.task-row > :not(:first-child) {
+  text-align: right;
+}
+
+.task-head {
+  min-height: 30px;
+  border-bottom: 1px solid var(--line);
+  color: var(--text-2);
+}
+
+.task-body {
+  max-height: min(420px, 55vh);
+  overflow-y: auto;
+}
+
+.task-body .task-row:hover {
+  background: var(--surface-hover);
+}
+
+.task-body .task-row.is-selected {
+  background: var(--raised);
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+
+.task-name {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  min-width: 0;
+}
+
+.task-title {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.task-more {
+  flex: none;
+  font-size: 12px;
+}
+
+.task-actions {
+  align-items: center;
+}
+
+.task-total {
+  margin-right: auto;
+  font-size: 12px;
+}

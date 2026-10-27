@@ -118,6 +118,9 @@ export function wireBroadcasts(): void {
   bus.on('security', () => {
     for (const win of BrowserWin.all.values()) win.markDirty()
   })
+  bus.on('zoom', () => {
+    for (const win of BrowserWin.all.values()) for (const tab of win.tabs.values()) tab.refreshZoom()
+  })
   bus.on('window-dirty', (id) => {
     if (!BrowserWin.all.get(id)?.incognito) scheduleSave()
   })

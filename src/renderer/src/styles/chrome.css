@@ -1190,3 +1190,85 @@ button.omni-badge:hover {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* Read aloud */
+
+.listen-bar {
+  gap: var(--s2);
+}
+
+.listen-label {
+  font-size: 13px;
+  font-weight: 550;
+  margin-right: var(--s2);
+}
+
+.listen-progress {
+  font-size: 12px;
+  margin-left: var(--s2);
+}
+
+.listen-note {
+  font-size: 12px;
+}
+
+.listen-field {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s2);
+}
+
+.listen-bar .spacer {
+  flex: 1;
+}
+
+.listen-bar .select {
+  width: auto;
+  height: 28px;
+  padding: 0 var(--s2);
+  font-size: 12px;
+  max-width: 220px;
+}
+
+/* Translate */
+
+.translate-bar .select {
+  height: 30px;
+  width: auto;
+  max-width: 200px;
+  padding: 0 var(--s2);
+  font-size: 13px;
+}
+
+.translate-note {
+  font-size: 12px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.translate-status {
+  font-size: 13px;
+}
+
+.translate-progress {
+  display: block;
+  flex: none;
+  width: 160px;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--line);
+  overflow: hidden;
+}
+
+.translate-progress span {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  transition: width var(--fast) var(--ease);
+}
+
+.translate-bar .spacer {
+  flex: 1;
+}

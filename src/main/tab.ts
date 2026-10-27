@@ -4,7 +4,7 @@
 import { dialog, WebContentsView, type WebContents, type WebContentsViewConstructorOptions } from 'electron'
 import { NEW_TAB_URL, hostOf, internalPage, internalURL } from '@shared/url'
 import type { MessageKey } from '@shared/i18n'
-import type { FindState, InternalPage, Interstitial, TabState } from '@shared/types'
+import type { FindState, InternalPage, Interstitial, TabState, TranslationState } from '@shared/types'
 import { getExtensions } from './extensions'
 import { resolveFavicon, storedFavicon } from './favicons'
 import { grantPass, shouldGate } from './focus'
@@ -13,9 +13,14 @@ import { showPageMenu } from './menus'
 import { hideAutofill } from './autofill'
 import { recordLoadError } from './diagnostics'
 import { denyPendingFor } from './permissions'
-import { ReaderView, extractArticle, isReaderable, renderArticle } from './reader'
+import { ReaderView, extractArticle, isReaderable, renderArticle, type Article } from './reader'
 import { registerContents, unregisterContents } from './registry'
+import { allowHttp, httpsFallback, httpsSettled } from './httpsonly'
 import { allowCertificate, securityFor } from './security'
+import { savedSource } from './readinglist'
+import { passDangerous, type Threat } from './safebrowsing'
+import { canTranslate, defaultTarget, downloadSize, ensureModels, pageLanguage, restorePage, translatePage } from './translation'
+import { rememberZoom, zoomFor } from './zoom'
 import { settings, t } from './settings'
 import { handleShortcut } from './shortcuts'
 import type { BrowserWin } from './window'
@@ -58,6 +63,7 @@ const PAGE_TITLES: Record<InternalPage, MessageKey> = {
   bookmarks: 'bookmarks.title',
   downloads: 'downloads.title',
   passwords: 'passwords.title',
+  reading: 'reading.title',
 }
 /** Views we closed on purpose (sleep, close), as opposed to pages closing themselves. */
 const closedByUs = new WeakSet<WebContents>()
@@ -84,6 +90,13 @@ export class Tab {
   openerId: number | null = null
   /** Between a new page starting to load and it replacing the old one. */
   navigating = false
+  media: 'playing' | 'paused' | null = null
+  /** The article reader view shows, for reading it aloud. */
+  readerArticle: Article | null = null
+  pageLang: string | null = null
+  translation: TranslationState | null = null
+  /** Bumped whenever a translation should stop: a new one, a new page, closing the bar. */
+  private translationRun = 0
   private savedHistory: SavedHistory | null
   private readerToken = 0
 
@@ -143,6 +156,9 @@ export class Tab {
             spellcheck: true,
             navigateOnDragDrop: false,
             safeDialogs: true,
+            // Settings › Appearance; like Chrome, monospace text keeps its smaller ratio.
+            defaultFontSize: settings().fontSize,
+            defaultMonospaceFontSize: Math.round((settings().fontSize * 13) / 16),
           },
         })
     view.setBackgroundColor('#FFFFFF')
@@ -169,6 +185,7 @@ export class Tab {
       this.loading = false
       this.changed()
       void this.checkReader(wc)
+      void this.detectLanguage(wc)
     })
     wc.on('did-start-navigation', (details) => {
       if (!details.isMainFrame || details.isSameDocument) return
@@ -182,7 +199,13 @@ export class Tab {
       this.changed()
     })
     wc.on('did-navigate', (_event, url) => {
+      httpsSettled(wc.id)
       this.navigating = false
+      this.media = null
+      this.pageLang = null
+      this.translation = null
+      this.translationRun++
+      wc.setZoomFactor(zoomFor(url, this.win.incognito))
       if (this.win.activeTab() === this) hideAutofill(this.win)
       if (this.interstitial) return
       const hostChanged = hostOf(url) !== hostOf(this.url)
@@ -190,7 +213,7 @@ export class Tab {
       this.page = null
       this.blocked = 0
       this.blockedHosts.clear()
-      if (hostChanged) this.favicon = storedFavicon(url)
+      if (hostChanged) this.favicon = storedFavicon(savedSource(url) ?? url)
       if (!this.win.incognito) addVisit(url, wc.getTitle())
       this.changed()
     })
@@ -217,7 +240,13 @@ export class Tab {
     })
     wc.on('did-fail-load', (_event, code, description, url, isMainFrame) => {
       if (!isMainFrame || code === -3) return
-      if (this.interstitial?.kind === 'focus') return
+      // Our own warnings cancel the request they replace.
+      if (this.interstitial && ['focus', 'https-only', 'dangerous'].includes(this.interstitial.kind)) return
+      const http = httpsFallback(wc.id, url, code)
+      if (http) {
+        this.httpsOnlyFailed(http)
+        return
+      }
       // The shield's own blocks (-20) aren't failures worth reporting.
       if (code !== -20) recordLoadError(description)
       this.interstitial = { kind: 'error', code, description, url, certificate: code <= -200 && code > -300 }
@@ -228,8 +257,17 @@ export class Tab {
     wc.on('render-process-gone', (_event, details) => {
       if (details.reason === 'clean-exit') return
       this.interstitial = { kind: 'crashed' }
+      this.media = null
       this.loading = false
       this.win.layout()
+      this.changed()
+    })
+    wc.on('media-started-playing', () => {
+      this.media = 'playing'
+      this.changed()
+    })
+    wc.on('media-paused', () => {
+      if (this.media === 'playing') this.media = 'paused'
       this.changed()
     })
     wc.on('audio-state-changed', (event) => {
@@ -439,6 +477,42 @@ export class Tab {
     this.load(url)
   }
 
+  /** The HTTPS version of an HTTP address didn't work; ask before going unencrypted. */
+  httpsOnlyFailed(url: string): void {
+    if (this.interstitial?.kind === 'https-only' && this.interstitial.url === url) return
+    this.interstitial = { kind: 'https-only', url }
+    this.url = url
+    this.loading = false
+    this.webContents?.stop()
+    this.win.layout()
+    this.changed()
+  }
+
+  /** Called from the request pipeline when a top-level load is on a malware or phishing list. */
+  showDangerous(url: string, threat: Threat): void {
+    this.interstitial = { kind: 'dangerous', url, threat }
+    this.url = url
+    this.title = ''
+    this.favicon = null
+    this.loading = false
+    this.win.layout()
+    this.changed()
+  }
+
+  continueToDangerous(): void {
+    if (this.interstitial?.kind !== 'dangerous') return
+    const url = this.interstitial.url
+    passDangerous(url)
+    this.load(url)
+  }
+
+  continueOverHttp(): void {
+    if (this.interstitial?.kind !== 'https-only') return
+    const url = this.interstitial.url
+    allowHttp(url)
+    this.load(url)
+  }
+
   proceedInsecure(): void {
     if (this.interstitial?.kind !== 'error' || !this.interstitial.certificate) return
     const url = this.interstitial.url
@@ -454,6 +528,12 @@ export class Tab {
     this.changed()
   }
 
+  /** Applies the remembered or default zoom again, after either changed in Settings. */
+  refreshZoom(): void {
+    const wc = this.webContents
+    if (wc && !this.page && !this.interstitial) wc.setZoomFactor(zoomFor(wc.getURL(), this.win.incognito))
+  }
+
   zoomFactor(): number {
     return this.webContents?.getZoomFactor() ?? 1
   }
@@ -466,6 +546,7 @@ export class Tab {
     if (direction === 'in') next = ZOOM_STEPS.find((step) => step > current + 0.001) ?? current
     if (direction === 'out') next = [...ZOOM_STEPS].reverse().find((step) => step < current - 0.001) ?? current
     wc.setZoomFactor(next)
+    if (wc === this.webContents) rememberZoom(wc.getURL(), next, this.win.incognito)
     this.changed()
   }
 
@@ -524,6 +605,7 @@ export class Tab {
       return
     }
     const html = renderArticle(article, wc.getURL(), settings().language, this.win.isDark())
+    this.readerArticle = article
     this.reader = new ReaderView(
       html,
       (url, newTab) => {
@@ -542,6 +624,7 @@ export class Tab {
 
   closeReader(): void {
     this.readerToken++
+    this.readerArticle = null
     if (!this.reader) return
     this.reader.destroy()
     this.reader = null
@@ -624,6 +707,131 @@ export class Tab {
       readerAvailable: this.readerAvailable,
       reader: !!this.reader,
       find: this.find,
+      media: this.media,
+      pageLang: this.pageLang,
+      translation: this.translation,
     }
+  }
+
+  // ── Translation ─────────────────────────────────────────────────────────────
+
+  private async detectLanguage(wc: WebContents): Promise<void> {
+    if (!/^https?:/.test(wc.getURL())) return
+    const found = await pageLanguage(wc)
+    // Only languages there are models for, so the address bar never offers what can't be done.
+    const lang = found && canTranslate(found, defaultTarget(settings().language)) ? found : null
+    if (!wc.isDestroyed() && lang !== this.pageLang) {
+      this.pageLang = lang
+      this.changed()
+    }
+  }
+
+  private updateTranslation(run: number, patch: Partial<TranslationState>): void {
+    if (run !== this.translationRun || !this.translation) return
+    this.translation = { ...this.translation, ...patch }
+    this.changed()
+  }
+
+  /** Opens the translate bar, or closes it when it is open. */
+  async offerTranslation(): Promise<void> {
+    if (this.translation) {
+      this.closeTranslation()
+      return
+    }
+    const wc = this.webContents
+    if (!wc || this.page || this.interstitial) return
+    const from = this.pageLang ?? (await pageLanguage(wc)) ?? 'en'
+    this.chooseTranslation(from, defaultTarget(settings().language))
+  }
+
+  /** The bar's languages changed: look up how much would have to be downloaded. */
+  chooseTranslation(from: string, to: string): void {
+    const run = ++this.translationRun
+    this.translation = { status: 'offer', from, to, progress: 0, download: -1 }
+    this.changed()
+    downloadSize(from, to).then(
+      (download) => this.updateTranslation(run, { download }),
+      (error: unknown) => this.updateTranslation(run, { download: 0, error: error instanceof Error && error.message === 'unsupported' ? 'unsupported' : 'offline' }),
+    )
+  }
+
+  async startTranslation(from: string, to: string): Promise<void> {
+    const wc = this.webContents
+    if (!wc || this.page || this.interstitial || from === to) return
+    const run = ++this.translationRun
+    this.translation = { status: 'downloading', from, to, progress: 0, download: -1 }
+    this.changed()
+    try {
+      await ensureModels(from, to, (progress) => this.updateTranslation(run, { progress }))
+      this.updateTranslation(run, { status: 'translating', progress: 0, download: 0 })
+      const finished = await translatePage(
+        wc,
+        from,
+        to,
+        (progress) => this.updateTranslation(run, { progress }),
+        () => run !== this.translationRun || wc.isDestroyed(),
+      )
+      if (finished) this.updateTranslation(run, { status: 'done', progress: 1 })
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      console.warn('[translation]', message)
+      const kind = message === 'unsupported' ? 'unsupported' : /HTTP|net::|checksum|fetch/i.test(message) ? 'offline' : 'failed'
+      this.updateTranslation(run, { status: 'error', error: kind })
+    }
+  }
+
+  async revertTranslation(): Promise<void> {
+    const wc = this.webContents
+    const current = this.translation
+    this.translationRun++
+    if (wc) await restorePage(wc)
+    if (current) this.chooseTranslation(current.from, current.to)
+  }
+
+  /** Hides the bar; a translated page stays translated. */
+  closeTranslation(): void {
+    this.translationRun++
+    this.translation = null
+    this.changed()
+  }
+
+  // ── Media ───────────────────────────────────────────────────────────────────
+
+  /** Runs a snippet in every frame (videos often live in embedded players). */
+  private async inFrames<T>(code: string): Promise<T[]> {
+    const wc = this.webContents
+    if (!wc) return []
+    const frames = wc.mainFrame.framesInSubtree.filter((f) => !f.isDestroyed())
+    return Promise.all(frames.map((f) => f.executeJavaScript(code, true).catch(() => null))) as Promise<T[]>
+  }
+
+  /** Pauses what plays, or plays again what we paused. */
+  async toggleMedia(): Promise<void> {
+    const playing = await this.inFrames<boolean>(`(() => {
+      const all = [...document.querySelectorAll('video, audio')]
+      const now = all.filter((m) => !m.paused)
+      now.forEach((m) => { m.dataset.pwPaused = '1'; m.pause() })
+      return now.length > 0
+    })()`)
+    if (playing.some(Boolean)) return
+    await this.inFrames(`(() => {
+      const all = [...document.querySelectorAll('video, audio')]
+      const ours = all.filter((m) => m.dataset.pwPaused)
+      for (const m of ours.length ? ours : all.slice(0, 1)) { delete m.dataset.pwPaused; m.play().catch(() => {}) }
+    })()`)
+  }
+
+  /** Puts the playing (or largest) video in a small window that stays on top; again to bring it back. */
+  async pictureInPicture(): Promise<void> {
+    await this.inFrames(`(async () => {
+      if (document.pictureInPictureElement) return document.exitPictureInPicture()
+      const videos = [...document.querySelectorAll('video')].filter((v) => v.readyState > 0)
+      const area = (v) => v.clientWidth * v.clientHeight
+      const video = videos.find((v) => !v.paused) ?? videos.sort((a, b) => area(b) - area(a))[0]
+      if (!video) return
+      // Some sites switch picture-in-picture off; the person asked for it.
+      video.disablePictureInPicture = false
+      return video.requestPictureInPicture()
+    })()`)
   }
 }

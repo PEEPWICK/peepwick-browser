@@ -4,6 +4,10 @@
 import type { BookmarkTree } from './bookmarks'
 import type {
   Address,
+  ReadAloudText,
+  ReadingItem,
+  TaskRow,
+  TranslationModel,
   AppInfo,
   AutofillPopupState,
   BackupCategory,
@@ -103,6 +107,12 @@ export interface InvokeMethods {
   addressesList(): Address[]
   addressSave(address: Partial<Address>): string | null
   formEntryCount(): number
+  siteZooms(): { host: string; zoom: number }[]
+  tasks(): TaskRow[]
+  readingList(): ReadingItem[]
+  readAloud(tabId: number): ReadAloudText | null
+  translationLanguages(): string[]
+  translationModels(): TranslationModel[]
 }
 
 export interface CertificateDetails {
@@ -154,7 +164,7 @@ export interface SendMethods {
   shieldToggleSite(): void
   focusStart(minutes: number): void
   focusStop(): void
-  interstitial(tabId: number, action: 'retry' | 'proceed' | 'back' | 'open-anyway'): void
+  interstitial(tabId: number, action: 'retry' | 'proceed' | 'back' | 'open-anyway' | 'http' | 'dangerous'): void
   command(id: CommandId): void
   permission(id: number, allow: boolean, remember: boolean): void
   download(id: string, action: DownloadAction): void
@@ -170,6 +180,7 @@ export interface SendMethods {
   errorLogClear(): void
   backupCancel(token: string): void
   restart(): void
+  media(tabId: number, action: 'toggle' | 'pip'): void
   passwordCopy(id: string): void
   passwordsRemove(ids: string[]): void
   passwordsUndo(): void
@@ -177,6 +188,13 @@ export interface SendMethods {
   saveLoginAnswer(id: number, answer: 'save' | 'never' | 'dismiss'): void
   addressRemove(id: string): void
   formEntriesClear(): void
+  forgetZoom(host: string | null): void
+  endTask(pid: number): void
+  readingOpen(id: string, newTab: boolean): void
+  readingMark(id: string, read: boolean): void
+  readingRemove(id: string): void
+  translation(tabId: number, action: 'offer' | 'choose' | 'start' | 'revert' | 'close', from?: string, to?: string): void
+  translationRemove(from: string, to: string): void
   updateCheck(): void
   updateInstall(): void
   setSettings(patch: Partial<Settings>): void

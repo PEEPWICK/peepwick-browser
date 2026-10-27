@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { api, on } from './api'
 import { Content } from './components/Content'
-import { DownloadsPanel, FocusPanel, ShieldPanel, WorkspacePanel } from './components/Panels'
+import { DownloadsPanel, FocusPanel, MediaPanel, ShieldPanel, WorkspacePanel } from './components/Panels'
 import { Onboarding } from './components/Onboarding'
 import { Palette } from './components/Palette'
 import { Sidebar } from './components/Sidebar'
@@ -16,6 +16,9 @@ import { MenuPopup } from './components/Menu'
 import { AddressDialog, PasswordDialog } from './components/Autofill'
 import { CertificateDialog, SitePanel } from './components/SiteInfo'
 import { SaveLoginBar } from './components/SaveLogin'
+import { TaskManagerDialog } from './components/TaskManager'
+import { ListenBar, canListen } from './components/ListenBar'
+import { TranslateBar } from './components/TranslateBar'
 import { Tooltips } from './components/Tooltips'
 import { UIContext, type Panel, type Question, type Toast, type UIContextValue } from './context'
 import type { SaveLoginPrompt } from '@shared/types'
@@ -42,6 +45,7 @@ export function App() {
   const { state, settings } = useSnapshot()
   const [panel, setPanel] = useState<Panel | null>(null)
   const [findOpen, setFindOpen] = useState(false)
+  const [listening, setListening] = useState(false)
   const [toast, setToast] = useState<Toast | null>(null)
   const [saveLogin, setSaveLogin] = useState<SaveLoginPrompt | null>(null)
   const closeToast = useCallback(() => setToast(null), [])
@@ -82,10 +86,12 @@ export function App() {
       },
       findOpen,
       setFindOpen,
+      listening,
+      setListening,
       showToast: setToast,
       ask,
     }),
-    [panel, findOpen, ask],
+    [panel, findOpen, listening, ask],
   )
 
   const anchorFor = useCallback((selector: string): DOMRect => {
@@ -152,6 +158,9 @@ export function App() {
           case 'clear-data':
             setPanel({ kind: 'clear-data' })
             break
+          case 'task-manager':
+            setPanel((current) => (current?.kind === 'task-manager' ? null : { kind: 'task-manager' }))
+            break
           case 'history-search':
             window.dispatchEvent(new CustomEvent('pw-history-search', { detail: command.text }))
             break
@@ -170,6 +179,12 @@ export function App() {
           case 'confirm':
             setPanel({ kind: 'confirm', dialog: command.dialog })
             break
+          case 'reading-changed':
+            window.dispatchEvent(new Event('pw-reading-changed'))
+            break
+          case 'toast':
+            setToast({ text: command.text })
+            break
           case 'bookmarks-removed':
             setToast({ text: tRef.current('bookmarks.removed', { n: command.count }), action: { label: tRef.current('bookmarks.undo'), run: () => api.bookmarkUndo() } })
             break
@@ -178,8 +193,11 @@ export function App() {
     [anchorFor],
   )
 
-  // The find bar belongs to the page it was opened on.
-  useEffect(() => setFindOpen(false), [tab?.id])
+  // The find bar and read aloud belong to the page they were opened on.
+  useEffect(() => {
+    setFindOpen(false)
+    setListening(false)
+  }, [tab?.id])
 
   const showBar =
     !state.incognito && !state.fullscreen && (settings.bookmarksBar === 'always' || (settings.bookmarksBar === 'newtab' && tab?.page === 'newtab'))
@@ -204,6 +222,8 @@ export function App() {
             {toast && <ToastBar toast={toast} onClose={closeToast} />}
             {state.permission && <PermissionBar prompt={state.permission} />}
             {findOpen && tab && !tab.page && <FindBar tab={tab} onClose={() => setFindOpen(false)} />}
+            {listening && tab && canListen(tab) && <ListenBar key={tab.id} tab={tab} uiLang={settings.language} onClose={() => setListening(false)} />}
+            {tab?.translation && <TranslateBar tab={tab} />}
           </div>
           <Content />
         </main>
@@ -211,6 +231,7 @@ export function App() {
       {panel?.kind === 'shield' && <ShieldPanel anchor={panel.anchor} />}
       {panel?.kind === 'focus' && <FocusPanel anchor={panel.anchor} />}
       {panel?.kind === 'downloads' && <DownloadsPanel anchor={panel.anchor} />}
+      {panel?.kind === 'media' && <MediaPanel anchor={panel.anchor} />}
       {panel?.kind === 'workspace' && <WorkspacePanel id={panel.id} anchor={panel.anchor} />}
       {panel?.kind === 'palette' && <Palette />}
       {panel?.kind === 'star' && <StarPanel anchor={panel.anchor} created={panel.created} />}
@@ -218,6 +239,7 @@ export function App() {
       {panel?.kind === 'import' && <ImportDialog focus={panel.focus} />}
       {panel?.kind === 'site' && <SitePanel anchor={panel.anchor} />}
       {panel?.kind === 'clear-data' && <ClearDataDialog />}
+      {panel?.kind === 'task-manager' && <TaskManagerDialog />}
       {panel?.kind === 'password-edit' && <PasswordDialog key={panel.id ?? 'new'} id={panel.id} />}
       {panel?.kind === 'address-edit' && <AddressDialog key={panel.id ?? 'new'} id={panel.id} />}
       {panel?.kind === 'backup-export' && <BackupExportDialog />}

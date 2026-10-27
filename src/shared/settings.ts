@@ -40,8 +40,17 @@ export function defaultSettings(language: Lang): Settings {
     passwordSave: true,
     passwordFill: true,
     formFill: true,
+    defaultZoom: 1,
+    fontSize: 16,
+    httpsOnly: true,
+    safeBrowsing: true,
+    fingerprintProtection: true,
+    rejectCookieBanners: true,
   }
 }
+
+export const ZOOM_LEVELS = [0.5, 0.67, 0.75, 0.8, 0.9, 1, 1.1, 1.25, 1.5, 1.75, 2]
+export const FONT_SIZES = [12, 14, 16, 18, 20, 24]
 
 /** DNS over HTTPS servers for each provider choice. */
 export const SECURE_DNS_SERVERS: Record<Exclude<SecureDns, 'off' | 'automatic'>, { name: string; template: string }> = {
@@ -85,6 +94,12 @@ export function sanitizeSettingsPatch(patch: unknown): Partial<Settings> {
   bool('passwordSave')
   bool('passwordFill')
   bool('formFill')
+  bool('httpsOnly')
+  bool('safeBrowsing')
+  bool('fingerprintProtection')
+  bool('rejectCookieBanners')
+  if (ZOOM_LEVELS.includes(input.defaultZoom as number)) out.defaultZoom = input.defaultZoom as number
+  if (FONT_SIZES.includes(input.fontSize as number)) out.fontSize = input.fontSize as number
   if (DNS.includes(input.secureDns as SecureDns)) out.secureDns = input.secureDns as SecureDns
   // Saved passwords are never wiped on exit.
   if (Array.isArray(input.clearOnExit)) {

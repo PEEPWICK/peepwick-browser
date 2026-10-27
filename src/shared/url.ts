@@ -4,7 +4,7 @@ import type { InternalPage, TabSecurity } from './types'
 export const INTERNAL_SCHEME = 'peepwick'
 export const NEW_TAB_URL = 'peepwick://newtab'
 
-const INTERNAL_PAGES: InternalPage[] = ['newtab', 'settings', 'history', 'extensions', 'bookmarks', 'downloads', 'passwords']
+const INTERNAL_PAGES: InternalPage[] = ['newtab', 'settings', 'history', 'extensions', 'bookmarks', 'downloads', 'passwords', 'reading']
 
 export function internalPage(url: string): InternalPage | null {
   const match = /^peepwick:\/\/([a-z]+)\/?/i.exec(url.trim())
@@ -27,10 +27,27 @@ export function securityOf(url: string): TabSecurity {
   if (url.startsWith('https:')) return 'secure'
   if (url.startsWith('http:')) {
     const host = hostOf(url)
-    return host === 'localhost' || host === '127.0.0.1' || host === '[::1]' ? 'local' : 'insecure'
+    return isLocalHost(host) ? 'local' : 'insecure'
   }
   if (url.startsWith('file:')) return 'local'
   return 'internal'
+}
+
+/**
+ * Hosts on this machine or the local network, which can't get a certificate from a
+ * public authority and so are left on HTTP by HTTPS-Only mode.
+ */
+export function isLocalHost(host: string): boolean {
+  const h = host.toLowerCase().replace(/^\[|\]$/g, '').replace(/\.$/, '')
+  if (!h.includes('.') && !h.includes(':')) return true
+  if (/\.(localhost|local|lan|home|test|internal|intranet|corp|home\.arpa|example|invalid)$/.test(h)) return true
+  const v4 = h.match(/^(\d+)\.(\d+)\.(\d+)\.(\d+)$/)
+  if (v4) {
+    const [a, b] = [Number(v4[1]), Number(v4[2])]
+    return a === 127 || a === 10 || a === 0 || (a === 169 && b === 254) || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168) || (a === 100 && b >= 64 && b <= 127)
+  }
+  if (h.includes(':')) return h === '::1' || /^f[cd][0-9a-f]{2}:/.test(h) || /^fe[89ab][0-9a-f]:/.test(h)
+  return false
 }
 
 export function hostOf(url: string): string {

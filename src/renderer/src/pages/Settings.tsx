@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { BookMarked, Copy, Download, ExternalLink, Upload, X } from 'lucide-react'
+import { BookMarked, Copy, Download, ExternalLink, Languages, Upload, X } from 'lucide-react'
 import { walk } from '@shared/bookmarks'
-import type { MessageKey } from '@shared/i18n'
+import { formatBytes, type MessageKey } from '@shared/i18n'
 import { SEARCH_ENGINES } from '@shared/search'
-import { normalizeDomain, SECURE_DNS_SERVERS } from '@shared/settings'
+import { FONT_SIZES, normalizeDomain, SECURE_DNS_SERVERS, ZOOM_LEVELS } from '@shared/settings'
 import {
   SETTINGS_SECTIONS,
   type AppInfo,
@@ -17,13 +17,15 @@ import {
   type ShieldLevel,
   type SitePermission,
   type ThemePref,
+  type TranslationModel,
 } from '@shared/types'
 import { api, call } from '../api'
 import { DoubleEye, LookMark } from '../brand'
 import { AutofillSection } from '../components/Autofill'
+import { useLanguageName } from '../components/TranslateBar'
 import { useUI } from '../context'
 import { useBookmarks, useSnapshot, useT } from '../store'
-import { Button, Icon, IconButton, Segmented, SettingRow as Row, Toggle } from '../ui'
+import { Button, Favicon, Icon, IconButton, Segmented, SettingRow as Row, Toggle, faviconFor } from '../ui'
 
 
 
@@ -59,6 +61,88 @@ function DomainList({ items, onChange, empty, placeholder }: { items: string[]; 
             <li key={domain}>
               <span className="mono">{domain}</span>
               <IconButton icon={X} label={t('settings.remove')} onClick={() => onChange(items.filter((d) => d !== domain))} />
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  )
+}
+
+const percent = (factor: number) => `${Math.round(factor * 100)}%`
+
+/** Settings › Appearance: sites that open at their own zoom. */
+function SiteZooms() {
+  const t = useT()
+  const [zooms, setZooms] = useState<{ host: string; zoom: number }[]>([])
+  const load = () => void call.siteZooms().then(setZooms)
+  useEffect(load, [])
+  const forget = (host: string | null) => {
+    api.forgetZoom(host)
+    setTimeout(load, 80)
+  }
+  return (
+    <div className="setting-block">
+      <div className="setting-head">
+        <div>
+          <div className="setting-title">{t('settings.siteZoom')}</div>
+          <div className="setting-hint">{t('settings.siteZoomHint')}</div>
+        </div>
+        {zooms.length > 0 && (
+          <Button variant="quiet" onClick={() => forget(null)}>
+            {t('settings.siteZoomReset')}
+          </Button>
+        )}
+      </div>
+      {zooms.length === 0 ? (
+        <p className="setting-hint">{t('settings.siteZoomEmpty')}</p>
+      ) : (
+        <ul className="address-list">
+          {zooms.map(({ host, zoom }) => (
+            <li key={host}>
+              <Favicon src={faviconFor(`https://${host}`)} url={`https://${host}`} size={16} />
+              <span className="mono site-zoom-host">{host}</span>
+              <span className="mono muted">{percent(zoom)}</span>
+              <IconButton icon={X} label={t('settings.remove')} onClick={() => forget(host)} />
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  )
+}
+
+/** Settings › General: translation models downloaded so far. */
+function TranslationModels() {
+  const { settings } = useSnapshot()
+  const t = useT()
+  const name = useLanguageName(settings.language)
+  const [models, setModels] = useState<TranslationModel[]>([])
+  const load = () => void call.translationModels().then(setModels)
+  useEffect(load, [])
+  return (
+    <div className="setting-block">
+      <div className="setting-title">{t('settings.translationModels')}</div>
+      <div className="setting-hint">{t('settings.translationModelsHint')}</div>
+      {models.length === 0 ? (
+        <p className="setting-hint">{t('settings.translationModelsEmpty')}</p>
+      ) : (
+        <ul className="address-list">
+          {models.map((model) => (
+            <li key={`${model.from}-${model.to}`}>
+              <Icon icon={Languages} size={15} className="muted" />
+              <span className="site-zoom-host">
+                {name(model.from)} → {name(model.to)}
+              </span>
+              <span className="mono muted">{formatBytes(settings.language, model.size)}</span>
+              <IconButton
+                icon={X}
+                label={t('settings.remove')}
+                onClick={() => {
+                  api.translationRemove(model.from, model.to)
+                  setTimeout(load, 120)
+                }}
+              />
             </li>
           ))}
         </ul>
@@ -467,6 +551,7 @@ export function Settings({ section }: { section: string }) {
           <Toggle checked={s.restoreSession} label={t('settings.restore')} onChange={(restoreSession) => api.setSettings({ restoreSession })} />
         </Row>
         {!state.incognito && <DefaultBrowser />}
+        <TranslationModels />
         <h3 className="settings-subhead label">{t('settings.system')}</h3>
         <SystemRows />
       </>
@@ -485,6 +570,25 @@ export function Settings({ section }: { section: string }) {
             onChange={(theme) => api.setSettings({ theme })}
           />
         </Row>
+        <Row title={t('settings.defaultZoom')} hint={t('settings.defaultZoomHint')}>
+          <select className="select" value={s.defaultZoom} onChange={(event) => api.setSettings({ defaultZoom: Number(event.target.value) })}>
+            {ZOOM_LEVELS.map((n) => (
+              <option key={n} value={n}>
+                {percent(n)}
+              </option>
+            ))}
+          </select>
+        </Row>
+        <Row title={t('settings.fontSize')} hint={t('settings.fontSizeHint')}>
+          <select className="select" value={s.fontSize} onChange={(event) => api.setSettings({ fontSize: Number(event.target.value) })}>
+            {FONT_SIZES.map((n) => (
+              <option key={n} value={n}>
+                {n === 16 ? t('settings.fontSize.default', { n }) : `${n} px`}
+              </option>
+            ))}
+          </select>
+        </Row>
+        <SiteZooms />
         <Row title={t('settings.bookmarksBar')}>
           <Segmented<BookmarksBarMode>
             label={t('settings.bookmarksBar')}
@@ -563,6 +667,26 @@ export function Settings({ section }: { section: string }) {
             checked={s.sendGlobalPrivacyControl}
             label={t('settings.gpc')}
             onChange={(sendGlobalPrivacyControl) => api.setSettings({ sendGlobalPrivacyControl })}
+          />
+        </Row>
+        <Row title={t('settings.httpsOnly')} hint={t('settings.httpsOnlyHint')}>
+          <Toggle checked={s.httpsOnly} label={t('settings.httpsOnly')} onChange={(httpsOnly) => api.setSettings({ httpsOnly })} />
+        </Row>
+        <Row title={t('settings.safeBrowsing')} hint={t('settings.safeBrowsingHint')}>
+          <Toggle checked={s.safeBrowsing} label={t('settings.safeBrowsing')} onChange={(safeBrowsing) => api.setSettings({ safeBrowsing })} />
+        </Row>
+        <Row title={t('settings.fingerprint')} hint={t('settings.fingerprintHint')}>
+          <Toggle
+            checked={s.fingerprintProtection}
+            label={t('settings.fingerprint')}
+            onChange={(fingerprintProtection) => api.setSettings({ fingerprintProtection })}
+          />
+        </Row>
+        <Row title={t('settings.cookieBanners')} hint={t('settings.cookieBannersHint')}>
+          <Toggle
+            checked={s.rejectCookieBanners}
+            label={t('settings.cookieBanners')}
+            onChange={(rejectCookieBanners) => api.setSettings({ rejectCookieBanners })}
           />
         </Row>
         <div className="setting-block">

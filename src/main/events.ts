@@ -15,5 +15,7 @@ export const bus = new EventEmitter<{
   security: []
   /** A site's icon was stored or changed. */
   favicon: [host: string]
+  /** A remembered site zoom or the default zoom changed. */
+  zoom: []
 }>()
 bus.setMaxListeners(50)

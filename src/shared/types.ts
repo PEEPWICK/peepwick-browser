@@ -66,6 +66,18 @@ export interface Settings {
   passwordFill: boolean
   /** Suggest and remember form entries and addresses. */
   formFill: boolean
+  /** Page zoom for sites without their own (1 = 100 %). */
+  defaultZoom: number
+  /** Default font size in CSS pixels, for pages that don't set their own. */
+  fontSize: number
+  /** Load sites over HTTPS, asking before falling back to HTTP. */
+  httpsOnly: boolean
+  /** Warn before opening sites on the phishing and malware lists. */
+  safeBrowsing: boolean
+  /** Blur what sites can read to recognise this browser (canvas, WebGL, audio…). */
+  fingerprintProtection: boolean
+  /** Click "reject" on cookie consent banners. */
+  rejectCookieBanners: boolean
 }
 
 /**
@@ -80,8 +92,12 @@ export type Interstitial =
   | { kind: 'error'; code: number; description: string; url: string; certificate: boolean }
   | { kind: 'crashed' }
   | { kind: 'focus'; url: string; host: string }
+  /** HTTPS-Only: the site didn't answer over HTTPS. */
+  | { kind: 'https-only'; url: string }
+  /** On a phishing or malware list. */
+  | { kind: 'dangerous'; url: string; threat: 'phishing' | 'malware' }
 
-export type InternalPage = 'newtab' | 'settings' | 'history' | 'extensions' | 'bookmarks' | 'downloads' | 'passwords'
+export type InternalPage = 'newtab' | 'settings' | 'history' | 'extensions' | 'bookmarks' | 'downloads' | 'passwords' | 'reading'
 
 export const SETTINGS_SECTIONS = [
   'general',
@@ -124,6 +140,11 @@ export interface TabState {
   readerAvailable: boolean
   reader: boolean
   find: FindState | null
+  /** Video or audio in the page: playing, paused after playing, or none. */
+  media: 'playing' | 'paused' | null
+  /** The page's language as it declares it, when translation could help. */
+  pageLang: string | null
+  translation: TranslationState | null
 }
 
 export interface FindState {
@@ -276,6 +297,63 @@ export type CommandId =
   | 'report'
   | 'backup'
   | 'passwords'
+  | 'task-manager'
+  | 'reading-add'
+  | 'reading-list'
+  | 'translate'
+
+/** Page translation in one tab, shown in the translate bar. */
+export interface TranslationState {
+  status: 'offer' | 'downloading' | 'translating' | 'done' | 'error'
+  from: string
+  to: string
+  /** 0 to 1, while downloading or translating. */
+  progress: number
+  /** Bytes of models still to download; -1 while unknown. */
+  download: number
+  error?: 'offline' | 'unsupported' | 'failed'
+}
+
+/** A downloaded translation model. */
+export interface TranslationModel {
+  from: string
+  to: string
+  size: number
+}
+
+/** What read aloud speaks: the article of reader view or of a saved page. */
+export interface ReadAloudText {
+  title: string
+  lang: string | null
+  paragraphs: string[]
+}
+
+/** A page on the reading list. */
+export interface ReadingItem {
+  id: string
+  url: string
+  title: string
+  site: string
+  /** Words in the saved article; 0 when only the link is kept. */
+  words: number
+  /** The article is on disk and can be read offline. */
+  saved: boolean
+  addedAt: number
+  readAt: number | null
+}
+
+/** One process in the task manager. */
+export interface TaskRow {
+  pid: number
+  kind: 'browser' | 'gpu' | 'ui' | 'tab' | 'extension' | 'service' | 'other'
+  /** For services and extensions: what runs there. */
+  name: string
+  tabs: { id: number; title: string; url: string; favicon: string | null }[]
+  /** Bytes in memory (working set). */
+  memory: number
+  /** Percent of one processor core since the last look. */
+  cpu: number
+}
 
 export interface HistoryEntry {
   id: number
@@ -357,6 +435,10 @@ export type UICommand =
   | { type: 'backup-restore'; token: string; name: string }
   | { type: 'save-login'; prompt: SaveLoginPrompt | null }
   | { type: 'passwords-changed' }
+  | { type: 'task-manager' }
+  | { type: 'reading-changed' }
+  /** A short note from the main process, like "Added to your reading list". */
+  | { type: 'toast'; text: string }
 
 /**
  * A menu the UI draws. Native menus and message boxes take their colours from the

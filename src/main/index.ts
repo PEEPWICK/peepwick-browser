@@ -8,9 +8,13 @@ import { hostOf } from '@shared/url'
 import { flushBookmarks, loadBookmarks } from './bookmarks'
 import { activeDownloadCount, cancelAllDownloads, flushDownloads, loadDownloads } from './downloads'
 import { startAutofill } from './autofill'
+import { startSafeBrowsing } from './safebrowsing'
+import { installPageConfig } from './pageconfig'
+import { flushReadingList, loadReadingList } from './readinglist'
 import { clearOnExit } from './cleardata'
 import { flushFormData, loadFormData } from './formdata'
 import { flushPasswords, loadPasswords } from './passwords'
+import { flushZoom, loadZoom } from './zoom'
 import { syncAppImageDesktopFile } from './defaultbrowser'
 import { startDiagnostics } from './diagnostics'
 import { bus } from './events'
@@ -89,8 +93,12 @@ async function boot(): Promise<void> {
   loadBookmarks()
   loadPasswords()
   loadFormData()
+  loadZoom()
+  loadReadingList()
   openHistory()
   startAutofill()
+  startSafeBrowsing()
+  installPageConfig()
   configureUISession()
   installIPC()
   wireBroadcasts()
@@ -197,6 +205,8 @@ if (!app.requestSingleInstanceLock()) {
     flushBookmarks()
     flushPasswords()
     flushFormData()
+    flushZoom()
+    flushReadingList()
     closeHistory()
   })
 

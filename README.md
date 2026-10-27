@@ -45,6 +45,29 @@ lets the pages you visit keep their own colour.
   secure, based on Chromium's own certificate check rather than the `https` in the address. Open
   it to see the certificate (who issued it, the domains it covers, validity, fingerprints, chain),
   the site's permissions, and to delete the site's cookies and data.
+- **HTTPS-Only mode.** Sites open over an encrypted connection; when one has no secure version,
+  the browser asks before continuing over HTTP. Addresses on your own network are left alone.
+- **Dangerous site warnings.** Phishing and malware sites are stopped behind a warning. The lists
+  (from the malware-filter project: URLhaus, OpenPhish, PhishTank, IPThreat) are downloaded every
+  12 hours and checked on this computer; the addresses you visit are never sent anywhere.
+- **Fingerprinting protection.** Canvas, WebGL and audio readouts get tiny changes that differ for
+  every site and every session, the graphics card model is hidden and the processor count rounded,
+  so sites can't recognise you across sites.
+- **Cookie banners rejected.** Consent notices from common tools (OneTrust, Cookiebot, Didomi,
+  Usercentrics, Quantcast and more), and other clearly marked ones, get their "reject" button
+  pressed for you.
+- **Reading list.** Save pages to read later; articles are kept on this computer and can be read
+  offline. **Read aloud** speaks reader view and saved articles with your system's voices.
+- **Page translation** on this computer with Bergamot, the engine Firefox's translations grew out
+  of. A model (about 20 MB) is downloaded once per language pair after you agree; the page's text
+  never leaves the browser. For now the Bergamot project's models cover German, French, Spanish,
+  Italian, Portuguese, Dutch, Polish, Czech, Russian, Ukrainian, Bulgarian, Estonian, Persian,
+  Icelandic and Norwegian (into English, and English into most of them); there is no Turkish model yet.
+- **Media controls and picture-in-picture.** Play, pause and mute what plays in any tab from the
+  toolbar, and pop a video out into its own small window.
+- **Per-site zoom.** Zoom is remembered for each site; set a default zoom and font size.
+- **Task manager** (<kbd>Shift</kbd>+<kbd>Esc</kbd>): memory and processor use per tab and process;
+  end a page that hangs.
 - **Downloads.** A full downloads page (<kbd>Ctrl</kbd>+<kbd>J</kbd>) with progress, speed and time
   left; pause, resume, cancel, retry, open, show in folder, move to trash; searchable history.
 - **Clearing browsing data** (<kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Delete</kbd>) for a time range,
@@ -107,6 +130,7 @@ your password through the system dialog.
 | <kbd>Ctrl</kbd>+<kbd>H</kbd> / <kbd>Ctrl</kbd>+<kbd>J</kbd> | History / downloads |
 | <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Delete</kbd> | Clear browsing data |
 | <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>N</kbd> | Private window |
+| <kbd>Shift</kbd>+<kbd>Esc</kbd> | Task manager |
 
 ## What the browser sends, and where
 
@@ -115,6 +139,8 @@ PEEPWICK Browser has no telemetry and no account. It talks to these services on 
 | Service | Why | When |
 | --- | --- | --- |
 | `raw.githubusercontent.com` | Filter lists for the shield | First start, then every three days |
+| `malware-filter.gitlab.io` (or its mirror `curbengh.github.io`) | Dangerous site lists | First start, then every 12 hours; off with the setting |
+| `storage.googleapis.com/bergamot-models-sandbox` | Translation models | Only when you translate from a new language, after you agree |
 | `github.com` (Releases) | Update checks and downloads | At startup and every four hours |
 | Your search engine | Search suggestions | Only if you turn suggestions on (off by default) |
 | Chrome Web Store | Installing and updating extensions | Only if you install extensions |
@@ -154,11 +180,13 @@ social preview card in `docs/`.
 ## How it is built
 
 - `src/main`: the Electron main process. Each window has one UI view and one
-  `WebContentsView` per visible tab. All tabs are sandboxed, have no preload and no bridge to the
-  main process. Built-in pages (new tab, settings, history, extensions), error screens and the
-  focus gate are drawn by the UI itself, so web content never reaches a privileged page.
+  `WebContentsView` per visible tab. All tabs are sandboxed. A small page preload runs in an
+  isolated world for autofill, cookie banners and fingerprinting protection; it offers pages no
+  bridge. Built-in pages (new tab, settings, history, extensions), error screens and the focus
+  gate are drawn by the UI itself, so web content never reaches a privileged page.
 - `src/main/network.ts`: one request pipeline per session (Electron allows a single listener),
-  running the focus gate, the shield, third-party cookie blocking and Global Privacy Control.
+  running the focus gate, dangerous site checks, HTTPS-Only upgrades, the shield, third-party
+  cookie blocking and Global Privacy Control.
 - `src/renderer`: the UI in React, styled with the PEEPWICK brand tokens: Gece, Beyaz, warm
   greys and one Fitil amber accent; Archivo, Newsreader and IBM Plex Mono.
 - `src/shared`: types, the IPC contract, translations and pure helpers shared by both sides.
@@ -176,7 +204,8 @@ social preview card in `docs/`.
 
 PEEPWICK Browser is free software under the [GNU General Public License v3.0](LICENSE).
 It includes Chromium and Electron (BSD and MIT), Ghostery's adblocker (MPL-2.0),
-electron-chrome-extensions (GPL-3.0), Mozilla Readability (Apache-2.0), and the Archivo,
+electron-chrome-extensions (GPL-3.0), Mozilla Readability (Apache-2.0), bergamot-translator
+(MPL-2.0), and the Archivo,
 Newsreader and IBM Plex Mono typefaces (SIL Open Font License 1.1).
 
 The PEEPWICK name and the Double-Eye W mark identify PEEPWICK and are not part of the GPL grant.
@@ -218,6 +247,30 @@ sayfalar kendi renkleriyle kalır.
 - **İndirmeler:** İlerleme, hız ve kalan süreyle tam bir indirmeler sayfası (<kbd>Ctrl</kbd>+<kbd>J</kbd>);
   duraklatma, sürdürme, iptal, yeniden deneme, açma, klasörde gösterme, çöp kutusuna taşıma,
   aranabilir geçmiş.
+- **HTTPS-Only modu:** Siteler şifreli bağlantıyla açılır; güvenli sürümü olmayan bir sitede HTTP
+  ile devam etmeden önce sorulur. Kendi ağınızdaki adresler etkilenmez.
+- **Zararlı site uyarısı:** Oltalama ve zararlı yazılım siteleri bir uyarının arkasında durur.
+  Listeler (malware-filter projesi: URLhaus, OpenPhish, PhishTank, IPThreat) 12 saatte bir indirilir
+  ve bilgisayarınızda denetlenir; ziyaret ettiğiniz adresler hiçbir yere gönderilmez.
+- **Parmak izi koruması:** Canvas, WebGL ve ses değerlerine her site ve her oturum için farklı,
+  fark edilmeyecek kadar küçük değişiklikler katılır; ekran kartı modeli gizlenir, işlemci sayısı
+  yuvarlanır. Siteler sizi başka sitelerde tanıyamaz.
+- **Çerez bildirimlerini reddetme:** Yaygın onay araçlarının (OneTrust, Cookiebot, Didomi,
+  Usercentrics, Quantcast ve diğerleri) ve açıkça işaretli diğer bildirimlerin "Reddet" düğmesine
+  sizin yerinize basılır.
+- **Okuma listesi:** Sayfaları sonra okumak için kaydedin; makaleler bilgisayarınızda saklanır,
+  internet olmadan da okunur. **Sesli okuma**, okuma modunu ve kayıtlı makaleleri sistem sesleriyle okur.
+- **Sayfa çevirisi:** Firefox'un çevirisinin temelindeki Bergamot motoruyla, bilgisayarınızda.
+  Her dil çifti için bir model (yaklaşık 20 MB) siz onaylayınca bir kez indirilir; sayfanın metni
+  tarayıcıdan çıkmaz. Şimdilik Bergamot projesinin modelleri Almanca, Fransızca, İspanyolca,
+  İtalyanca, Portekizce, Felemenkçe, Lehçe, Çekçe, Rusça, Ukraynaca, Bulgarca, Estonca, Farsça,
+  İzlandaca ve Norveççeyi kapsar (İngilizceye, çoğunda İngilizceden de); Türkçe model henüz yok.
+- **Medya denetimleri ve resim içinde resim:** Herhangi bir sekmede çalanı araç çubuğundan oynatın,
+  duraklatın, sesini kapatın; videoyu ayrı, küçük bir pencereye alın.
+- **Site başına yakınlaştırma:** Yakınlaştırma her site için hatırlanır; varsayılan yakınlaştırma
+  ve yazı boyutu seçilebilir.
+- **Görev yöneticisi** (<kbd>Shift</kbd>+<kbd>Esc</kbd>): sekme ve işlem başına bellek ve işlemci
+  kullanımı; takılan bir sayfayı sonlandırma.
 - **Tarama verilerini temizleme** (<kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Delete</kbd>): zaman
   aralığıyla, geçmiş sayfasından site bazında ya da tarayıcı her kapandığında.
 - **Şifreli yedek:** Ayarlar, yer imleri, alanlar, odak geçmişi, site izinleri, eklenti listesi

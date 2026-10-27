@@ -54,6 +54,11 @@ import { stats } from './stats'
 import { checkForUpdates, installUpdate } from './updater'
 import { BrowserWin } from './window'
 import { globalState } from './windows'
+import { forgetZoom, siteZooms } from './zoom'
+import { endTask, taskRows } from './taskmanager'
+import { markRead, readingList, readingURL, removeReading, savedArticle } from './readinglist'
+import { articleParagraphs } from '@shared/readaloud'
+import { downloadedModels, removeModel, translationLanguages } from './translation'
 import { hostOf, originOf } from '@shared/url'
 import { certificateInfo, clearSiteData, revokeCertificateException, siteInfo, verificationFor } from './security'
 
@@ -285,6 +290,29 @@ const invoke: { [K in keyof InvokeMethods]: (win: BrowserWin, ...args: unknown[]
   formEntryCount() {
     return countFormEntries()
   },
+  siteZooms() {
+    return siteZooms()
+  },
+  tasks() {
+    return taskRows()
+  },
+  readingList(win) {
+    return win.incognito ? [] : readingList()
+  },
+  translationLanguages() {
+    return translationLanguages()
+  },
+  translationModels() {
+    return downloadedModels()
+  },
+  readAloud(win, tabId) {
+    const tab = tabOf(win, tabId)
+    if (!tab) return null
+    const saved = /^peepwick:\/\/saved\/([\w-]+)/.exec(tab.url)
+    const article = tab.readerArticle ?? (saved ? savedArticle(saved[1]) : null)
+    if (!article) return null
+    return { title: article.title, lang: article.lang, paragraphs: articleParagraphs(article.content) }
+  },
   report() {
     return buildReport(listExtensions().length)
   },
@@ -492,6 +520,8 @@ const send: { [K in keyof SendMethods]: (win: BrowserWin, ...args: unknown[]) =>
     else if (action === 'proceed') tab.proceedInsecure()
     else if (action === 'back') tab.back()
     else if (action === 'open-anyway') tab.openAnyway()
+    else if (action === 'http') tab.continueOverHttp()
+    else if (action === 'dangerous') tab.continueToDangerous()
   },
   command(win, id) {
     if (typeof id === 'string' && isCommandAvailable(win, id as CommandId)) runCommand(win, id as CommandId)
@@ -543,8 +573,48 @@ const send: { [K in keyof SendMethods]: (win: BrowserWin, ...args: unknown[]) =>
   addressRemove(_win, id) {
     removeAddress(str(id, 64))
   },
+  endTask(_win, pid) {
+    endTask(num(pid))
+  },
+  readingOpen(win, id, newTabFlag) {
+    const url = readingURL(str(id))
+    if (!url || win.incognito) return
+    markRead(str(id), true)
+    if (newTabFlag === true) win.openTab({ url })
+    else win.activeTab()?.load(url)
+  },
+  readingMark(_win, id, read) {
+    markRead(str(id), read === true)
+  },
+  readingRemove(_win, id) {
+    removeReading(str(id))
+  },
+  translation(win, tabId, action, from, to) {
+    const tab = tabOf(win, tabId)
+    if (!tab) return
+    const lang = (value: unknown) => (typeof value === 'string' && /^[a-zA-Z]{2,3}(-[a-zA-Z]{4})?$/.test(value) ? value : null)
+    const source = lang(from)
+    const target = lang(to)
+    if (action === 'offer') void tab.offerTranslation()
+    else if (action === 'choose' && source && target) tab.chooseTranslation(source, target)
+    else if (action === 'start' && source && target) void tab.startTranslation(source, target)
+    else if (action === 'revert') void tab.revertTranslation()
+    else if (action === 'close') tab.closeTranslation()
+  },
+  translationRemove(_win, from, to) {
+    void removeModel(str(from), str(to))
+  },
+  forgetZoom(_win, host) {
+    forgetZoom(typeof host === 'string' ? host : null)
+  },
   formEntriesClear() {
     clearFormEntries()
+  },
+  media(win, tabId, action) {
+    const tab = tabOf(win, tabId)
+    if (!tab) return
+    if (action === 'toggle') void tab.toggleMedia()
+    else if (action === 'pip') void tab.pictureInPicture()
   },
   restart() {
     app.relaunch()

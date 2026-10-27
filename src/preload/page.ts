@@ -4,7 +4,11 @@
 // one gets focus, fills in what the person picks from the browser's own popup, and
 // reports a sign-in so the browser can offer to save the password. It never decides
 // what to fill: the main process checks the page's origin and sends the values.
-import { ipcRenderer, webFrame } from 'electron'
+// It also starts fingerprinting protection and cookie banner rejection when the
+// browser says they apply to this site.
+import { contextBridge, ipcRenderer, webFrame } from 'electron'
+import { rejectCookieBanners } from './consent'
+import { farble } from './fingerprint'
 
 const CHANNEL = 'peepwick:autofill'
 const TEXT_TYPES = new Set(['text', 'email', 'tel', 'url', 'number', 'search'])
@@ -231,4 +235,30 @@ function main(): void {
   })
 }
 
+interface PageConfig {
+  /** Fingerprinting protection's seed for this site and session, or null when it's off. */
+  seed: number | null
+  rejectCookieBanners: boolean
+}
+
+function protections(): void {
+  let config: PageConfig | null = null
+  try {
+    // Synchronous on purpose: the protections must be in place before the page's scripts run.
+    config = ipcRenderer.sendSync('peepwick:page-config', location.href) as PageConfig | null
+  } catch {
+    return
+  }
+  if (!config) return
+  if (config.seed !== null) {
+    try {
+      contextBridge.executeInMainWorld({ func: farble, args: [config.seed] })
+    } catch (error) {
+      console.warn('[peepwick] fingerprinting protection failed', error)
+    }
+  }
+  if (config.rejectCookieBanners) rejectCookieBanners()
+}
+
+protections()
 main()

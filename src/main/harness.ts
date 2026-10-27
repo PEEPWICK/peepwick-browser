@@ -121,7 +121,8 @@ export function startHarness(): void {
             console.log('[harness] captured', step.name)
             break
           case 'evalTab': {
-            const result: unknown = await win.activeTab()?.webContents?.executeJavaScript(step.js, true).catch(() => undefined)
+            // executeJavaScript waits for a loading page to finish, which may never happen.
+            const result: unknown = await Promise.race([win.activeTab()?.webContents?.executeJavaScript(step.js, true).catch(() => undefined), sleep(6000).then(() => 'timeout')])
             if (result !== undefined) console.log('[harness] evalTab', JSON.stringify(result))
             break
           }

@@ -17,6 +17,7 @@ const Extensions = lazy(() => import('../pages/Extensions').then((m) => ({ defau
 const BookmarksPage = lazy(() => import('../pages/Bookmarks').then((m) => ({ default: m.BookmarksPage })))
 const DownloadsPage = lazy(() => import('../pages/Downloads').then((m) => ({ default: m.DownloadsPage })))
 const PasswordsPage = lazy(() => import('../pages/Passwords').then((m) => ({ default: m.PasswordsPage })))
+const ReadingPage = lazy(() => import('../pages/Reading').then((m) => ({ default: m.ReadingPage })))
 
 function PageFor({ tab }: { tab: TabState }) {
   if (tab.interstitial) return <Interstitial tab={tab} interstitial={tab.interstitial} />
@@ -35,6 +36,8 @@ function PageFor({ tab }: { tab: TabState }) {
       return <DownloadsPage />
     case 'passwords':
       return <PasswordsPage />
+    case 'reading':
+      return <ReadingPage />
     default:
       return null
   }

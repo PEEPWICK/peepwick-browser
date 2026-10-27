@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
-import { FileDown, FolderOpen, Pause, Play, RotateCw, Trash2, X } from 'lucide-react'
+import { FileDown, FolderOpen, PictureInPicture2, Pause, Play, RotateCw, Trash2, Volume2, VolumeX, X } from 'lucide-react'
 import { formatNumber } from '@shared/i18n'
 import { WORKSPACE_ICONS, type DownloadState, type Stats, type WorkspaceIcon } from '@shared/types'
 import { displayHost } from '@shared/url'
@@ -8,7 +8,7 @@ import { downloadStatus } from '../downloads'
 import { LookMark } from '../brand'
 import { useUI } from '../context'
 import { activeTab, useSnapshot, useT } from '../store'
-import { Button, Icon, IconButton, Segmented, Toggle, WORKSPACE_GLYPHS, remaining, useNow, useOverlay } from '../ui'
+import { Button, Favicon, Icon, IconButton, Segmented, Toggle, WORKSPACE_GLYPHS, remaining, useNow, useOverlay } from '../ui'
 
 export function Popover({ anchor, width = 320, label, children }: { anchor: DOMRect; width?: number; label: string; children: ReactNode }) {
   useOverlay(true)
@@ -249,6 +249,55 @@ export function DownloadsPanel({ anchor }: { anchor: DOMRect }) {
           {t('downloads.all')}
         </Button>
       </div>
+    </Popover>
+  )
+}
+
+/** Tabs of this window that play or have played sound or video since their page loaded. */
+export function mediaTabs(state: ReturnType<typeof useSnapshot>['state']) {
+  return Object.values(state.tabs).filter((tab) => tab.media || tab.audible)
+}
+
+export function MediaPanel({ anchor }: { anchor: DOMRect }) {
+  const { state } = useSnapshot()
+  const { closePanel } = useUI()
+  const t = useT()
+  const tabs = mediaTabs(state)
+  useEffect(() => {
+    if (tabs.length === 0) closePanel()
+  }, [tabs.length])
+  return (
+    <Popover anchor={anchor} label={t('media.title')} width={340}>
+      <div className="panel-head">
+        <span className="label">{t('media.title')}</span>
+      </div>
+      <ul className="media-list">
+        {tabs.map((tab) => {
+          const playing = tab.media === 'playing' || (tab.media === null && tab.audible)
+          return (
+            <li key={tab.id}>
+              <button
+                type="button"
+                className="media-tab"
+                title={t('media.goTo')}
+                onClick={() => {
+                  api.activateTab(tab.id)
+                  closePanel()
+                }}
+              >
+                <Favicon src={tab.favicon} url={tab.url} size={16} />
+                <span className="media-text">
+                  <span className="media-name">{tab.title || tab.url}</span>
+                  <span className="muted">{playing ? t('media.playing') : t('media.paused')}</span>
+                </span>
+              </button>
+              <IconButton icon={playing ? Pause : Play} label={playing ? t('media.pause') : t('media.play')} onClick={() => api.media(tab.id, 'toggle')} />
+              <IconButton icon={PictureInPicture2} label={t('media.pip')} onClick={() => api.media(tab.id, 'pip')} />
+              <IconButton icon={tab.muted ? VolumeX : Volume2} label={tab.muted ? t('media.unmute') : t('media.mute')} onClick={() => api.toggleMute(tab.id)} />
+            </li>
+          )
+        })}
+      </ul>
     </Popover>
   )
 }

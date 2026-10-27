@@ -6,8 +6,11 @@ import {
   Copy,
   Ellipsis,
   Globe,
+  Headphones,
+  Languages,
   History,
   Minus,
+  Music2,
   PanelLeftOpen,
   RotateCw,
   Search,
@@ -27,6 +30,9 @@ import { api, call } from '../api'
 import { useUI } from '../context'
 import { activeTab, useBookmarks, useSnapshot, useT } from '../store'
 import { findLink } from './BookmarkDialogs'
+import { canListen } from './ListenBar'
+import { canTranslate } from './TranslateBar'
+import { mediaTabs } from './Panels'
 import { SiteButton } from './SiteInfo'
 import { Favicon, Icon, IconButton, useOverlay } from '../ui'
 
@@ -81,7 +87,7 @@ function StarButton({ tab }: { tab: TabState }) {
 function Omnibox({ tab }: { tab: TabState | null }) {
   const { settings, state } = useSnapshot()
   const t = useT()
-  const { registerOmnibox } = useUI()
+  const { registerOmnibox, listening, setListening } = useUI()
   const input = useRef<HTMLInputElement>(null)
   const [editing, setEditing] = useState(false)
   const [text, setText] = useState('')
@@ -220,6 +226,18 @@ function Omnibox({ tab }: { tab: TabState | null }) {
           onClick={() => api.toggleReader()}
         />
       )}
+      {tab && !editing && canTranslate(tab, settings.language) && (
+        <IconButton
+          icon={Languages}
+          label={t('cmd.translate')}
+          active={tab.translation?.status === 'done'}
+          className="omni-action"
+          onClick={() => api.translation(tab.id, 'offer')}
+        />
+      )}
+      {tab && !editing && canListen(tab) && (
+        <IconButton icon={Headphones} label={t('listen.start')} active={listening} className="omni-action" onClick={() => setListening(!listening)} />
+      )}
       {tab && !editing && <ShieldBadge tab={tab} />}
       {tab && !editing && !tab.page && !state.incognito && /^(https?|file):/.test(tab.url) && <StarButton tab={tab} />}
       {open && (
@@ -276,6 +294,7 @@ function WindowControls() {
 
 export function Toolbar() {
   const { state, settings } = useSnapshot()
+  const { togglePanel } = useUI()
   const t = useT()
   const tab = activeTab(state)
   return (
@@ -301,6 +320,14 @@ export function Toolbar() {
       <div className="toolbar-actions no-drag">
         {state.extensionsPartition && tab?.contentsId != null && (
           <browser-action-list partition={state.extensionsPartition} tab={String(tab.contentsId)} alignment="bottom left" />
+        )}
+        {mediaTabs(state).length > 0 && (
+          <IconButton
+            icon={Music2}
+            label={t('media.title')}
+            className={Object.values(state.tabs).some((x) => x.media === 'playing' || x.audible) ? 'is-playing' : ''}
+            onClick={(event) => togglePanel({ kind: 'media', anchor: event.currentTarget.getBoundingClientRect() })}
+          />
         )}
         <IconButton
           icon={Ellipsis}

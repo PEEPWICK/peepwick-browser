@@ -58,6 +58,10 @@ export function handleShortcut(win: BrowserWin, input: Input): boolean {
         openDevTools(win)
         return true
       case 'Escape':
+        if (shift) {
+          win.command({ type: 'task-manager' })
+          return true
+        }
         if (tab?.find) {
           tab.stopFind()
           win.send('command', { type: 'escape' })
