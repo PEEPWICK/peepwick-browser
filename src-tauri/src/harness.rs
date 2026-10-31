@@ -165,6 +165,14 @@ async fn run(app: &AppHandle, win: &Rc<BrowserWindow>, step: &Value, out: &str) 
                 result.map(|v| v.to_string()).unwrap_or_else(|e| e)
             );
         }
+        "suggest" => {
+            let local = crate::omnibox::suggest_local(win, get("text"));
+            let out = crate::omnibox::finish(local).await;
+            eprintln!(
+                "[harness] suggest {}",
+                serde_json::to_string(&out).unwrap_or_default()
+            );
+        }
         // A right-click without a mouse: `context` takes WebKit's hit test flags (2 page, 4 link…).
         "pageMenu" => {
             let Some(tab) = win.active_tab() else { return };

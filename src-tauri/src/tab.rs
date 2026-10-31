@@ -21,7 +21,7 @@ use webkit2gtk::{
 use crate::i18n::t;
 use crate::state::TabState;
 use crate::window::{BrowserWindow, OpenOptions};
-use crate::{menus, pages, settings, shortcuts, zoom};
+use crate::{history, menus, pages, settings, shortcuts, zoom};
 
 /// What a closed or restored tab needs to come back.
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -586,9 +586,14 @@ impl Tab {
                         let host_changed = pages::host_of(&uri) != pages::host_of(&tab.url());
                         tab.set_address(&uri);
                         if host_changed {
-                            tab.favicon.replace(None);
+                            // The stored icon until the page's own arrives.
+                            tab.favicon.replace(history::favicon_for_url(&uri));
                         }
                         view.set_zoom_level(zoom::zoom_for(&uri, tab.is_private()));
+                        if !tab.is_private() {
+                            let title = view.title().map(|t| t.to_string()).unwrap_or_default();
+                            history::add_visit(&uri, &title);
+                        }
                     }
                     tab.blocked.set(0);
                 }
@@ -608,8 +613,13 @@ impl Tab {
         let tab = tab_of.clone();
         view.connect_title_notify(move |view| {
             let Some(tab) = tab() else { return };
-            tab.title
-                .replace(view.title().map(|t| t.to_string()).unwrap_or_default());
+            let title = view.title().map(|t| t.to_string()).unwrap_or_default();
+            if !tab.is_private()
+                && let Some(uri) = view.uri()
+            {
+                history::update_title(&uri, &title);
+            }
+            tab.title.replace(title);
             tab.changed();
             if let Some(win) = tab.window() {
                 win.update_title();
@@ -623,7 +633,13 @@ impl Tab {
                 && tab.interstitial.borrow().is_none()
                 && let Some(uri) = view.uri()
             {
+                let moved = *tab.url.borrow() != uri.as_str();
                 tab.url.replace(uri.to_string());
+                // A page that changed its address itself (history.pushState, #anchors).
+                if moved && !view.is_loading() && !tab.is_private() {
+                    let title = view.title().map(|t| t.to_string()).unwrap_or_default();
+                    history::add_visit(&uri, &title);
+                }
             }
             tab.changed();
         });
@@ -631,8 +647,16 @@ impl Tab {
         let tab = tab_of.clone();
         view.connect_favicon_notify(move |view| {
             let Some(tab) = tab() else { return };
-            tab.favicon
-                .replace(view.favicon().and_then(favicon_data_url));
+            let Some(data) = view.favicon().and_then(favicon_data_url) else {
+                return;
+            };
+            if !tab.is_private()
+                && let Some(uri) = view.uri()
+                && history::set_favicon(&pages::host_of(&uri), &data)
+            {
+                crate::window::favicons_changed();
+            }
+            tab.favicon.replace(Some(data));
             tab.changed();
         });
 

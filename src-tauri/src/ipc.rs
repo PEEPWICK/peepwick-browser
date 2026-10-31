@@ -11,19 +11,34 @@ use serde::Serialize;
 use serde_json::{Value, json};
 use tauri::AppHandle;
 
-use crate::actions::{self, COMMANDS};
-use crate::i18n::t;
+use crate::actions;
 use crate::input::resolve_input;
 use crate::menu::{self, ClickEvent};
-use crate::settings::{self, Lang};
+use crate::settings;
 use crate::state::PaneRect;
 use crate::window::{self, BrowserWindow, OpenOptions};
-use crate::{menus, zoom};
+use crate::{history, menus, omnibox, zoom};
 
-enum Reply {
-    /// The window's UI asked before Rust finished setting the window up.
-    NotReady,
-    Done(Result<Value, String>),
+/// Runs `f` on the main thread with the window whose UI called. The UI may ask before Rust
+/// has finished setting its window up; then it waits a little.
+async fn on_main<T: Send + 'static>(
+    app: &AppHandle,
+    label: &str,
+    f: impl Fn(&Rc<BrowserWindow>) -> T + Send + Clone + 'static,
+) -> Result<T, String> {
+    for _ in 0..100 {
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        let (label, f) = (label.to_string(), f.clone());
+        app.run_on_main_thread(move || {
+            let _ = tx.send(window::find(&label).map(|win| f(&win)));
+        })
+        .map_err(|e| e.to_string())?;
+        match rx.await.map_err(|e| e.to_string())? {
+            Some(value) => return Ok(value),
+            None => tokio::time::sleep(Duration::from_millis(20)).await,
+        }
+    }
+    Err("the window isn't ready".into())
 }
 
 #[tauri::command]
@@ -34,23 +49,13 @@ pub async fn pw_invoke(
     args: Vec<Value>,
 ) -> Result<Value, String> {
     let label = webview.label().to_string();
-    for _ in 0..100 {
-        let (tx, rx) = tokio::sync::oneshot::channel();
-        let (label, method, args) = (label.clone(), method.clone(), args.clone());
-        app.run_on_main_thread(move || {
-            let reply = match window::find(&label) {
-                Some(win) => Reply::Done(invoke(&win, &method, &args)),
-                None => Reply::NotReady,
-            };
-            let _ = tx.send(reply);
-        })
-        .map_err(|e| e.to_string())?;
-        match rx.await.map_err(|e| e.to_string())? {
-            Reply::Done(result) => return result,
-            Reply::NotReady => tokio::time::sleep(Duration::from_millis(20)).await,
-        }
+    if method == "suggest" {
+        // The search engine's suggestions are fetched here, off the main thread.
+        let input = short(args.first(), 500);
+        let local = on_main(&app, &label, move |win| omnibox::suggest_local(win, &input)).await?;
+        return to_json(omnibox::finish(local).await);
     }
-    Err(format!("{method}: the window isn't ready"))
+    on_main(&app, &label, move |win| invoke(win, &method, &args)).await?
 }
 
 #[tauri::command]
@@ -117,7 +122,30 @@ pub(crate) fn invoke(
         }
         "appInfo" => to_json(window::app_info())?,
         "siteZooms" => to_json(zoom::site_zooms())?,
-        "palette" => palette(win, &short(args.first(), 200)),
+        "palette" => to_json(omnibox::palette(win, &short(args.first(), 200)))?,
+        "historyQuery" => {
+            let query = |key: &str| args.first().and_then(|q| q.get(key));
+            let text: String = query("text")
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .chars()
+                .take(200)
+                .collect();
+            let before = query("before").and_then(Value::as_i64);
+            let limit = query("limit").and_then(Value::as_i64);
+            if win.incognito {
+                json!([])
+            } else {
+                to_json(history::query(&text, before, limit))?
+            }
+        }
+        "topSites" => {
+            if win.incognito {
+                json!([])
+            } else {
+                to_json(history::top_sites(8))?
+            }
+        }
         "stats" => {
             json!({ "blockedToday": 0, "blockedWeek": 0, "blockedTotal": 0, "focusMinutesToday": 0, "focusMinutesWeek": 0 })
         }
@@ -126,10 +154,7 @@ pub(crate) fn invoke(
             json!({ "history": 0, "downloads": 0, "cookies": 0, "permissions": 0, "forms": 0, "passwords": 0 })
         }
         "formEntryCount" => json!(0),
-        "suggest"
-        | "historyQuery"
-        | "topSites"
-        | "extensionsList"
+        "extensionsList"
         | "permissionsList"
         | "shieldReport"
         | "importSources"
@@ -146,47 +171,6 @@ pub(crate) fn invoke(
         }
     };
     Ok(value)
-}
-
-/// Lower case for matching, with the Turkish dotted and dotless i.
-fn fold(text: &str, lang: Lang) -> String {
-    match lang {
-        Lang::Tr => text
-            .chars()
-            .map(|c| match c {
-                'I' => 'ı',
-                'İ' => 'i',
-                c => c,
-            })
-            .collect::<String>()
-            .to_lowercase(),
-        Lang::En => text.to_lowercase(),
-    }
-}
-
-/// The command bar: commands, then open tabs.
-fn palette(win: &Rc<BrowserWindow>, input: &str) -> Value {
-    let lang = settings::get().language;
-    let needle = fold(input.trim(), lang);
-    let matches = |text: &str| needle.is_empty() || fold(text, lang).contains(&needle);
-    let commands = COMMANDS
-        .iter()
-        .filter(|id| actions::is_available(win, id))
-        .map(|id| (id, t(&format!("cmd.{id}"))))
-        .filter(|(_, title)| matches(title))
-        .take(if needle.is_empty() { 8 } else { 6 })
-        .map(
-            |(id, title)| json!({ "kind": "command", "title": title, "value": id, "command": id }),
-        );
-    let tabs = win
-        .all_tabs()
-        .into_iter()
-        .filter(|tab| matches(&tab.display_title()) || tab.url().to_lowercase().contains(&needle))
-        .take(8)
-        .map(|tab| {
-            json!({ "kind": "tab", "title": tab.display_title(), "value": tab.display_url(), "favicon": tab.favicon(), "tabId": tab.id })
-        });
-    Value::Array(commands.chain(tabs).collect())
 }
 
 pub(crate) fn send(win: &Rc<BrowserWindow>, method: &str, args: &[Value]) {
@@ -377,21 +361,27 @@ pub(crate) fn send(win: &Rc<BrowserWindow>, method: &str, args: &[Value]) {
             settings::update(&json!({ "onboarded": true }));
             window::settings_changed();
         }
+        "historyRemove" => {
+            if win.incognito {
+                return;
+            }
+            let ids: Vec<i64> = arg(0)
+                .and_then(Value::as_array)
+                .map(|list| list.iter().filter_map(Value::as_i64).take(5000).collect())
+                .unwrap_or_default();
+            history::remove_visits(&ids);
+        }
+        "historyMenu" => {
+            if !win.incognito
+                && let Some(id) = arg(0).and_then(Value::as_i64)
+            {
+                menus::history_menu(win, id, text(arg(1)), float(arg(2)), float(arg(3)));
+            }
+        }
         "forgetZoom" => {
             zoom::forget(arg(0).and_then(Value::as_str));
             window::zoom_changed();
         }
         _ => eprintln!("[ipc] not ported yet: send {method}"),
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn folds_turkish_letters() {
-        assert_eq!(fold("IŞIK İzmir", Lang::Tr), "ışık izmir");
-        assert_eq!(fold("Issue", Lang::En), "issue");
     }
 }

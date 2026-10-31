@@ -53,6 +53,9 @@ thread_local! {
     /// Shared by private windows while any is open; nothing is written to disk.
     static PRIVATE: RefCell<Option<WebContext>> = const { RefCell::new(None) };
     static LAST_FOCUSED: Cell<u32> = const { Cell::new(0) };
+    /// Sent with "favicon": the UI's peepwick://favicon/ images carry it, to load again.
+    static FAVICON_VERSION: Cell<u32> = const { Cell::new(0) };
+    static FAVICON_PENDING: Cell<bool> = const { Cell::new(false) };
 }
 
 static NEXT_WINDOW: AtomicU32 = AtomicU32::new(1);
@@ -268,6 +271,9 @@ fn private_context() -> WebContext {
 }
 
 fn configure_context(context: &WebContext, manager: &WebsiteDataManager) {
+    // WebKit's own icon store, for the tabs' icons. Private windows only read it.
+    let icons = paths::user_path("web").join("icons");
+    context.set_favicon_database_directory(Some(icons.to_string_lossy().as_ref()));
     // Intelligent Tracking Prevention, and no third-party cookies unless switched off.
     manager.set_itp_enabled(true);
     apply_cookie_policy(manager);
@@ -1589,6 +1595,23 @@ pub fn settings_changed() {
         win.emit("settings", &prefs);
         win.mark_dirty();
     }
+}
+
+/// New site icons were stored: every UI loads its icon images again, once for a burst.
+pub fn favicons_changed() {
+    if FAVICON_PENDING.with(|pending| pending.replace(true)) {
+        return;
+    }
+    glib::timeout_add_local_once(Duration::from_millis(300), || {
+        FAVICON_PENDING.with(|pending| pending.set(false));
+        let version = FAVICON_VERSION.with(|v| {
+            v.set(v.get() + 1);
+            v.get()
+        });
+        for win in all() {
+            win.emit("favicon", version);
+        }
+    });
 }
 
 /// Zoom levels changed in Settings: open pages take the new sizes.

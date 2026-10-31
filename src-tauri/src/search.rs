@@ -35,6 +35,21 @@ pub fn search_url(engine: SearchEngine, query: &str) -> String {
     template(engine).replace("{q}", &encode_component(query))
 }
 
+/// Where the engine answers with suggestions (OpenSearch JSON), if it does.
+pub fn suggest_url(engine: SearchEngine, query: &str) -> Option<String> {
+    let template = match engine {
+        SearchEngine::Duckduckgo => "https://duckduckgo.com/ac/?q={q}&type=list",
+        SearchEngine::Brave => "https://search.brave.com/api/suggest?q={q}",
+        SearchEngine::Startpage => return None,
+        SearchEngine::Google => {
+            "https://suggestqueries.google.com/complete/search?client=firefox&q={q}"
+        }
+        SearchEngine::Ecosia => "https://ac.ecosia.org/autocomplete?q={q}&type=list",
+        SearchEngine::Bing => "https://api.bing.com/osjson.aspx?query={q}",
+    };
+    Some(template.replace("{q}", &encode_component(query)))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

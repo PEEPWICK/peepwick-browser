@@ -91,7 +91,14 @@ JavaScript verisinden geliyor.
   görüşmeleri çalışmaz.
 - Resim içinde resim yok: WebKitGTK'da `requestPictureInPicture` tanımsız.
 - DRM yok (beklenen).
-- Kullanıcı aracısı `Version/60.5 Safari` bildiriyor; düzeltilmeli.
+- Kullanıcı aracısı `Version/60.5 Safari` bildiriyor; düzeltildi (`Version/26.0 Safari`).
+- Çok dilli sayfalar yavaş: `www.wikipedia.org` giriş sayfası bu makinede 20–35 saniyede açılıyor, o sırada
+  sayfa işlemi yüzde 100 işlemci kullanıyor. Tetikleyici, uzun bir yazı tipi listesi
+  (`-apple-system, "Segoe UI", Roboto, Inter, Helvetica, Arial, sans-serif`) ile yüzlerce farklı `lang`
+  özniteliğinin birleşimi: WebKitGTK (Skia) yazı tipi listesini her dil için baştan çözüyor ve yazı tipi
+  dosyalarını yeniden açıyor. İkisinden biri kaldırılınca sayfa hemen açılıyor; betikler, donanım
+  hızlandırma ve yazı tipi sayısı (2.944 ya da 22) sonucu değiştirmiyor. Electron'da sorun yok. WebKit'e
+  bildirilebilir; bizim tarafta bir çözüm yok.
 
 **Sistem sorunu**
 
@@ -107,11 +114,11 @@ Durum: ☐ yapılmadı · ◐ kısmen · ☑ tamam (Electron sürümüyle aynı 
 - ◐ Dikey sekmeler, alanlar, sabitleme, sürükle-bırak, alanlar arası taşıma (Rust tarafı hazır; sürükle-bırak elle denenecek)
 - ◐ Yan yana görünüm, kullanılmayan sekmeleri uyutma (yan yana görünüm testli; uyutma denenecek)
 - ◐ Oturumu geri yükleme, kapatılan sekmeyi yeniden açma (geri yükleme testli, ileri-geri geçmişiyle; session.json sürüm 2)
-- ☐ Adres çubuğu: öneriler (geçmiş, yer imleri, arama), arama motorları
+- ◐ Adres çubuğu: öneriler (geçmiş, açık sekmeler, arama motorunun önerileri; yer imleri onlar taşınınca), arama motorları
 - ◐ Komut çubuğu (Ctrl+K): komutlar ve açık sekmeler; geçmiş ve yer imleri onlar taşınınca
 - ☐ Yeni sekme sayfası, karşılama ekranı
 - ☐ Yer imleri: çubuk, yönetici, yıldız, klasör menüleri, HTML içe ve dışa aktarma
-- ☐ Geçmiş sayfası, site başına silme
+- ◐ Geçmiş sayfası, site başına silme, en çok ziyaret edilenler, site simgeleri (`peepwick://favicon/`); history.db Electron'la aynı şema. Aralıkla temizleme, tarama verileri taşınınca
 - ☐ İndirmeler: panel ve sayfa, duraklatma, sürdürme, yeniden deneme, klasörde gösterme
 - ◐ Sayfada bul, yazdırma, sayfayı kaydetme (MHTML), geliştirici araçları
 - ◐ Yakınlaştırma: site başına, varsayılan yakınlaştırma, yazı boyutu

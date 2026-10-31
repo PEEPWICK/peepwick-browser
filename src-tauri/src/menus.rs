@@ -1,5 +1,5 @@
-//! The browser's menus: the page's right-click menu, the tab menu in the sidebar and the app
-//! menu. The UI draws them (`menu.rs`). Entries for features that haven't moved over from
+//! The browser's menus: the page's right-click menu, the tab menu in the sidebar, the app
+//! menu and the history page's menu. The UI draws them (`menu.rs`). Entries for features that haven't moved over from
 //! Electron yet are left out until they have.
 
 use std::rc::Rc;
@@ -24,8 +24,9 @@ use crate::i18n::{Var, t, tv};
 use crate::menu::{self, ClickEvent, MenuSpec, item, separator, submenu};
 use crate::search::search_url;
 use crate::tab::Tab;
+use crate::window;
 use crate::window::{BrowserWindow, OpenOptions, USER_AGENT};
-use crate::{session, settings};
+use crate::{history, session, settings};
 
 fn on_window(
     win: &Rc<BrowserWindow>,
@@ -569,4 +570,81 @@ pub fn app_menu(win: &Rc<BrowserWindow>, x: f64, y: f64) {
         .accelerator("Ctrl+Q"),
     ];
     menu::popup(win, items, x, y, true, None);
+}
+
+// ── History ───────────────────────────────────────────────────────────────────
+
+/// Lets every window's history page know the list changed under it.
+pub fn history_changed() {
+    for win in window::all() {
+        win.emit("command", json!({ "type": "history-changed" }));
+    }
+}
+
+pub fn history_menu(win: &Rc<BrowserWindow>, id: i64, url: &str, x: f64, y: f64) {
+    if !(url.starts_with("http:") || url.starts_with("https:")) {
+        return;
+    }
+    let host = crate::pages::host_of(url);
+    let host = host.strip_prefix("www.").unwrap_or(&host).to_string();
+    let (a, b, c, d) = (
+        url.to_string(),
+        url.to_string(),
+        url.to_string(),
+        url.to_string(),
+    );
+    let site = host.clone();
+    let items = vec![
+        item(
+            t("bookmarks.openNewTab"),
+            on_window(win, move |win| {
+                win.open_tab(OpenOptions {
+                    url: Some(a.clone()),
+                    background: true,
+                    ..OpenOptions::default()
+                });
+            }),
+        ),
+        item(
+            t("bookmarks.openNewWindow"),
+            on_window(win, move |win| new_window(win, false, vec![b.clone()])),
+        ),
+        item(
+            t("bookmarks.openIncognito"),
+            on_window(win, move |win| new_window(win, true, vec![c.clone()])),
+        ),
+        item(t("ctx.copyLink"), move |_| copy_text(&d)),
+        separator(),
+        item(
+            t("history.moreFromSite"),
+            on_window(win, move |win| {
+                win.emit("command", json!({ "type": "history-search", "text": site }))
+            }),
+        ),
+        separator(),
+        item(t("history.remove"), move |_| {
+            history::remove_visits(&[id]);
+            history_changed();
+        }),
+        item(
+            t("history.removeSite"),
+            on_window(win, move |win| {
+                let question = menu::Question {
+                    title: tv("history.removeSiteConfirm", &[("site", Var::Text(&host))]),
+                    body: Some(t("history.removeSiteBody")),
+                    confirm: t("history.removeSiteRun"),
+                    cancel: t("common.cancel"),
+                    danger: true,
+                };
+                let host = host.clone();
+                menu::confirm(win, question, move |ok| {
+                    if ok {
+                        history::delete_host(&host);
+                        history_changed();
+                    }
+                });
+            }),
+        ),
+    ];
+    menu::popup(win, items, x, y, false, None);
 }

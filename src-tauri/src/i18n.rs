@@ -64,6 +64,22 @@ pub fn translate(lang: Lang, key: &str, vars: &[(&str, Var)]) -> String {
     text
 }
 
+/// Lower case for matching, with the Turkish dotted and dotless i.
+pub fn fold(text: &str, lang: Lang) -> String {
+    match lang {
+        Lang::Tr => text
+            .chars()
+            .map(|c| match c {
+                'I' => 'ı',
+                'İ' => 'i',
+                c => c,
+            })
+            .collect::<String>()
+            .to_lowercase(),
+        Lang::En => text.to_lowercase(),
+    }
+}
+
 /// In the language of the interface.
 pub fn t(key: &str) -> String {
     translate(settings::get().language, key, &[])
@@ -91,5 +107,7 @@ mod tests {
         assert_eq!(translate(Lang::Tr, "no.such.key", &[]), "no.such.key");
         assert_eq!(format_number(Lang::Tr, 1234567), "1.234.567");
         assert_eq!(format_number(Lang::En, -1234), "-1,234");
+        assert_eq!(fold("IŞIK İzmir", Lang::Tr), "ışık izmir");
+        assert_eq!(fold("Issue", Lang::En), "issue");
     }
 }
