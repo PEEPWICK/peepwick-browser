@@ -27,10 +27,10 @@ mod tab;
 mod window;
 mod zoom;
 
-/// Addresses and files given on the command line (the desktop's "open with").
-fn urls_from_args() -> Vec<String> {
-    std::env::args()
-        .skip(1)
+/// Addresses and files on a command line: the desktop's "open with", or a second launch.
+/// Relative paths are read from `cwd`, the folder that launch started in.
+fn urls_from(args: impl IntoIterator<Item = String>, cwd: &std::path::Path) -> Vec<String> {
+    args.into_iter()
         .filter(|arg| !arg.starts_with('-'))
         .filter_map(|arg| {
             if ["http://", "https://", "file://"]
@@ -39,7 +39,7 @@ fn urls_from_args() -> Vec<String> {
             {
                 return Some(arg);
             }
-            let path = std::fs::canonicalize(&arg).ok()?;
+            let path = std::fs::canonicalize(cwd.join(&arg)).ok()?;
             url::Url::from_file_path(path).ok().map(String::from)
         })
         .take(20)
@@ -69,7 +69,16 @@ fn favicon_response(uri: &tauri::http::Uri) -> tauri::http::Response<Vec<u8>> {
 
 pub fn run() {
     fonts::guard();
-    tauri::Builder::default()
+    let builder = tauri::Builder::default();
+    // One browser per profile: a second launch (a link opened from another app) hands its
+    // addresses to the running one and quits. Test runs with their own profiles are left apart.
+    #[cfg(not(any(debug_assertions, feature = "harness")))]
+    let builder = builder.plugin(tauri_plugin_single_instance::init(|app, args, cwd| {
+        let urls = urls_from(args.into_iter().skip(1), std::path::Path::new(&cwd));
+        let handle = app.clone();
+        let _ = app.run_on_main_thread(move || window::open_urls(&handle, urls));
+    }));
+    builder
         .invoke_handler(tauri::generate_handler![ipc::pw_invoke, ipc::pw_send])
         .register_uri_scheme_protocol("peepwick", |_, request| favicon_response(request.uri()))
         .setup(|app| {
@@ -78,7 +87,8 @@ pub fn run() {
             zoom::load();
             history::open();
             shield::start(app.handle().clone());
-            session::restore(app.handle(), urls_from_args())?;
+            let cwd = std::env::current_dir().unwrap_or_default();
+            session::restore(app.handle(), urls_from(std::env::args().skip(1), &cwd))?;
             #[cfg(any(debug_assertions, feature = "harness"))]
             harness::start(app.handle().clone());
             Ok(())

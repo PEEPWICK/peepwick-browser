@@ -162,7 +162,8 @@ impl Settings {
             restore_session: true,
             ask_where_to_save: false,
             sidebar_collapsed: false,
-            bookmarks_bar: BookmarksBar::Always,
+            // Hidden until bookmarks are back in the Tauri version; then `Always` again.
+            bookmarks_bar: BookmarksBar::Never,
             onboarded: false,
             error_log: false,
             clear_on_exit: Vec::new(),
@@ -423,7 +424,7 @@ mod tests {
         let value = serde_json::to_value(Settings::defaults(Lang::En)).unwrap();
         assert_eq!(value["searchEngine"], "duckduckgo");
         assert_eq!(value["secureDns"], "automatic");
-        assert_eq!(value["bookmarksBar"], "always");
+        assert_eq!(value["bookmarksBar"], "never");
         assert_eq!(value["defaultZoom"], 1.0);
     }
 

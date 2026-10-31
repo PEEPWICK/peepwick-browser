@@ -147,9 +147,14 @@ async fn run(app: &AppHandle, win: &Rc<BrowserWindow>, step: &Value, out: &str) 
                     ))
                 })
                 .collect();
+            let gtk = win.gtk_window();
+            let mapped = gtk.as_ref().is_some_and(|w| w.is_mapped());
+            let ui = win.ui_view().allocation();
             eprintln!(
-                "[harness] layout panes {panes:?} views {views:?} ui_on_top={}",
-                win.ui_on_top()
+                "[harness] layout panes {panes:?} views {views:?} ui_on_top={} mapped={mapped} ui={}x{}",
+                win.ui_on_top(),
+                ui.width(),
+                ui.height()
             );
         }
         "send" => {
@@ -187,6 +192,18 @@ async fn run(app: &AppHandle, win: &Rc<BrowserWindow>, step: &Value, out: &str) 
                 step["y"].as_f64().unwrap_or(200.0),
             );
             crate::menus::page_menu(&tab, &view, &ContextMenu::new(), &hit.build(), x, y);
+        }
+        // Links from outside, as a second launch hands them over.
+        "openUrls" => {
+            let urls = step["urls"]
+                .as_array()
+                .map(|list| {
+                    list.iter()
+                        .filter_map(|u| u.as_str().map(str::to_string))
+                        .collect()
+                })
+                .unwrap_or_default();
+            crate::window::open_urls(app, urls);
         }
         "quit" => crate::session::quit(app),
         other => eprintln!("[harness] unknown step {other}"),

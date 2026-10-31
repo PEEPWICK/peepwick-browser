@@ -429,10 +429,8 @@ function About() {
         <dl className="about-facts mono">
           <dt>{t('settings.engineInfo')}</dt>
           <dd>
-            Chromium {info.chrome} · Electron {info.electron}
+            WebKitGTK {info.webkit} · Tauri {info.tauri}
           </dd>
-          <dt>Node</dt>
-          <dd>{info.node}</dd>
           <dt>{t('settings.license')}</dt>
           <dd>GPL-3.0</dd>
         </dl>

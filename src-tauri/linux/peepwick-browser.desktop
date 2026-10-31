@@ -1,0 +1,15 @@
+[Desktop Entry]
+Type=Application
+Name={{name}}
+GenericName=Web Browser
+GenericName[tr]=Web Tarayıcısı
+Comment=A calm, private browser that guards your attention.
+Comment[tr]=Dikkatinizi koruyan, sakin ve gizli bir tarayıcı.
+Exec={{exec}} %U
+Icon={{icon}}
+Terminal=false
+StartupNotify=true
+StartupWMClass={{exec}}
+Categories=Network;WebBrowser;
+MimeType=text/html;application/xhtml+xml;x-scheme-handler/http;x-scheme-handler/https;
+Keywords=web;browser;internet;tarayıcı;

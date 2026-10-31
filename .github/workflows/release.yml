@@ -1,6 +1,9 @@
-# Pushing a tag like v0.1.3a (alpha), v0.2.0b (beta) or v1.0.0 builds the Linux
-# packages and publishes them as a GitHub release. Installed browsers pick the
-# release up through electron-updater.
+# Pushing a tag like v0.2.0a (alpha), v0.3.0b (beta) or v1.0.0 builds the Linux packages
+# (a .deb and an AppImage, with Tauri) and publishes them as a GitHub release.
+#
+# While package.json has "githubPrerelease": true the release is marked as a pre-release:
+# GitHub then keeps the last full release as "Latest", which is what installed 0.1.x
+# (Electron) copies update to, so they don't move to a version that lacks their features.
 name: Release
 
 on:
@@ -30,18 +33,48 @@ jobs:
             echo "Tag ${GITHUB_REF_NAME} does not match package.json (expected ${expected})" >&2
             exit 1
           fi
+      # The AppImage carries the GStreamer plugins WebKitGTK plays media with (patchelf is
+      # what linuxdeploy needs to bundle them); the .deb uses the system's.
+      - name: System libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libssl-dev libxdo-dev \
+            libayatana-appindicator3-dev librsvg2-dev patchelf \
+            gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-libav
+      - name: Rust
+        run: rustup toolchain install stable --profile minimal && rustup default stable
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+          key: cargo-${{ runner.os }}-${{ hashFiles('src-tauri/Cargo.lock') }}
+          restore-keys: cargo-${{ runner.os }}-
       - run: npm ci
       - run: npm run typecheck
       - run: npm test
+      - name: Rust tests
+        run: cargo test --locked --manifest-path src-tauri/Cargo.toml
       - name: Build
-        run: npm run dist
+        env:
+          # linuxdeploy, which makes the AppImage, runs without FUSE on the runners.
+          APPIMAGE_EXTRACT_AND_RUN: 1
+        run: npm run build
       - name: Publish
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           shown="${GITHUB_REF_NAME#v}"
-          gh release create "${GITHUB_REF_NAME}" \
-            dist/*.AppImage dist/*.deb dist/latest-linux.yml \
-            --verify-tag \
+          bundle=src-tauri/target/release/bundle
+          mkdir -p dist
+          cp "${bundle}"/deb/*.deb "dist/peepwick-browser-${shown}-amd64.deb"
+          cp "${bundle}"/appimage/*.AppImage "dist/peepwick-browser-${shown}-x86_64.AppImage"
+          flags=()
+          if [ "$(node -p "require('./package.json').githubPrerelease === true")" = "true" ]; then
+            flags+=(--prerelease)
+          fi
+          gh release create "${GITHUB_REF_NAME}" dist/*.deb dist/*.AppImage \
+            --verify-tag "${flags[@]}" \
             --title "PEEPWICK Browser ${shown}" \
             --generate-notes

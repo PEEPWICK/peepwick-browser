@@ -3,6 +3,7 @@
   "productName": "PEEPWICK Browser",
   "version": "0.1.9",
   "releaseStage": "alpha",
+  "githubPrerelease": true,
   "private": true,
   "description": "PEEPWICK Browser — a calm, private browser that guards your attention. First, we look.",
   "license": "GPL-3.0-only",

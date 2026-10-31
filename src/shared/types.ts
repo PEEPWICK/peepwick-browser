@@ -401,9 +401,10 @@ export interface AppInfo {
   /** The version people see, with the stage suffix (0.1.3a). */
   version: string
   stage: 'alpha' | 'beta' | 'stable'
-  electron: string
-  chrome: string
-  node: string
+  /** WebKitGTK, which draws the pages. */
+  webkit: string
+  /** Tauri, which runs the window. */
+  tauri: string
   platform: string
   packaged: boolean
   isDefaultBrowser: boolean

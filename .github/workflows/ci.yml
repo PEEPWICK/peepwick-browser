@@ -17,7 +17,28 @@ jobs:
         with:
           node-version: 24
           cache: npm
+      - name: System libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libssl-dev libxdo-dev \
+            libayatana-appindicator3-dev librsvg2-dev
+      - name: Rust
+        run: rustup toolchain install stable --profile minimal && rustup default stable
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            src-tauri/target
+          key: ci-${{ runner.os }}-${{ hashFiles('src-tauri/Cargo.lock') }}
+          restore-keys: ci-${{ runner.os }}-
       - run: npm ci
       - run: npm run typecheck
       - run: npm test
-      - run: npm run build
+      - run: npm run ui:build
+      - name: Rust
+        working-directory: src-tauri
+        run: |
+          cargo build --locked
+          cargo test --locked

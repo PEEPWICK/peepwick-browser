@@ -107,10 +107,9 @@ pub struct AppInfo {
     /// The version people see, with the stage suffix (0.2.0a).
     pub version: String,
     pub stage: &'static str,
-    /// The UI's About page still names these after Electron; they now carry Tauri and WebKitGTK.
-    pub electron: String,
-    pub chrome: String,
-    pub node: String,
+    /// The versions of WebKitGTK, which draws the pages, and Tauri, which runs the window.
+    pub webkit: String,
+    pub tauri: String,
     pub platform: &'static str,
     pub packaged: bool,
     pub is_default_browser: bool,

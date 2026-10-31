@@ -1,4 +1,4 @@
-# Keeps Electron and the rest of the toolchain current: one grouped pull request a week.
+# Keeps the toolchain current: one grouped pull request a week for each ecosystem.
 version: 2
 updates:
   - package-ecosystem: npm
@@ -8,16 +8,40 @@ updates:
       day: monday
     open-pull-requests-limit: 5
     ignore:
-      # Node types follow the Node version bundled in Electron (Node 24 in Electron 45);
-      # they move together with Electron's major version, by hand.
+      # Node types follow the Node version the build uses (Node 24), by hand.
       - dependency-name: '@types/node'
         update-types: ['version-update:semver-major']
     groups:
-      electron:
+      tauri:
         patterns:
-          - electron
-          - electron-*
-          - '@electron/*'
+          - '@tauri-apps/*'
+      dependencies:
+        patterns:
+          - '*'
+  - package-ecosystem: cargo
+    directory: /src-tauri
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    ignore:
+      # GTK 3 and WebKitGTK 4.1, which Tauri 2 builds on, end with these lines; newer ones
+      # are for GTK 4 and don't fit together with Tauri.
+      - dependency-name: gtk
+        update-types: ['version-update:semver-major', 'version-update:semver-minor']
+      - dependency-name: glib
+        update-types: ['version-update:semver-major', 'version-update:semver-minor']
+      - dependency-name: cairo-rs
+        update-types: ['version-update:semver-major', 'version-update:semver-minor']
+      - dependency-name: javascriptcore-rs
+        update-types: ['version-update:semver-major', 'version-update:semver-minor']
+      - dependency-name: webkit2gtk
+        update-types: ['version-update:semver-major', 'version-update:semver-minor']
+    groups:
+      tauri:
+        patterns:
+          - 'tauri'
+          - 'tauri-*'
       dependencies:
         patterns:
           - '*'

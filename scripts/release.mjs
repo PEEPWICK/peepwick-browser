@@ -1,4 +1,5 @@
-// Cuts a release: bumps the SemVer version, commits, and tags it with the stage suffix.
+// Cuts a release: bumps the SemVer version (package.json and the Rust crate), commits, and
+// tags it with the stage suffix.
 //
 //   npm run release -- patch      0.1.3 → 0.1.4, tag v0.1.4a while in alpha
 //   npm run release -- minor
@@ -6,7 +7,7 @@
 //
 // Push afterwards with `git push --follow-tags`; the Release workflow builds and publishes.
 import { execFileSync } from 'node:child_process'
-import { readFileSync } from 'node:fs'
+import { readFileSync, writeFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 
 const require = createRequire(import.meta.url)
@@ -31,9 +32,17 @@ if (git('status', '--porcelain')) {
 }
 
 execFileSync('npm', ['version', arg, '--no-git-tag-version'], { stdio: 'ignore' })
+// The Rust crate carries the same SemVer version, in its manifest and lock file.
+const cargoToml = new URL('../src-tauri/Cargo.toml', import.meta.url)
+const { version } = readPackage()
+writeFileSync(cargoToml, readFileSync(cargoToml, 'utf8').replace(/^version = ".*"$/m, `version = "${version}"`))
+execFileSync('cargo', ['update', '--workspace', '--offline'], {
+  cwd: new URL('../src-tauri/', import.meta.url),
+  stdio: 'ignore',
+})
 const shown = displayVersion(readPackage())
 const tag = `v${shown}`
-git('add', 'package.json', 'package-lock.json')
+git('add', 'package.json', 'package-lock.json', 'src-tauri/Cargo.toml', 'src-tauri/Cargo.lock')
 git('commit', '-m', `PEEPWICK Browser ${shown}`)
 git('tag', '-a', tag, '-m', `PEEPWICK Browser ${shown}`)
 console.log(`Tagged ${tag}. Publish it with: git push --follow-tags`)

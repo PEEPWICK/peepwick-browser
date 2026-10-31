@@ -220,15 +220,35 @@ pub fn all() -> Vec<Rc<BrowserWindow>> {
     WINDOWS.with(|windows| windows.borrow().clone())
 }
 
-/// The window last used, for actions that come from outside one (opening a link from the desktop).
-pub fn any_window() -> Option<Rc<BrowserWindow>> {
+/// The normal window used last, for links that come from outside (another app, a second
+/// launch). Private windows don't take them.
+fn last_normal_window() -> Option<Rc<BrowserWindow>> {
     let last = LAST_FOCUSED.with(Cell::get);
-    let windows = all();
+    let windows: Vec<Rc<BrowserWindow>> = all().into_iter().filter(|w| !w.incognito).collect();
     windows
         .iter()
         .find(|w| w.id == last)
         .cloned()
         .or_else(|| windows.last().cloned())
+}
+
+/// Opens addresses from outside in new tabs and brings the window forward; with no address,
+/// just brings it forward.
+pub fn open_urls(app: &AppHandle, urls: Vec<String>) {
+    let Some(win) = last_normal_window() else {
+        if let Err(error) = open(app, false, urls, None) {
+            eprintln!("[window] could not open a window: {error}");
+        }
+        return;
+    };
+    for url in urls {
+        win.open_tab(OpenOptions {
+            url: Some(url),
+            ..OpenOptions::default()
+        });
+    }
+    let _ = win.window.unminimize();
+    let _ = win.window.set_focus();
 }
 
 fn browsing_context(app: &AppHandle) -> WebContext {
@@ -1523,9 +1543,10 @@ pub fn global_state() -> GlobalState {
     }
 }
 
-/// 0.2.0 → "0.2.0a" while in alpha.
+/// The version people see (0.2.0a): package.json's version with the release stage's suffix,
+/// set by build.rs.
 pub fn display_version() -> String {
-    format!("{}a", env!("CARGO_PKG_VERSION"))
+    env!("PEEPWICK_VERSION").to_string()
 }
 
 pub fn app_info() -> AppInfo {
@@ -1539,10 +1560,9 @@ pub fn app_info() -> AppInfo {
     };
     AppInfo {
         version: display_version(),
-        stage: "alpha",
-        electron: format!("Tauri {}", tauri::VERSION),
-        chrome: format!("WebKitGTK {webkit}"),
-        node: String::new(),
+        stage: env!("PEEPWICK_STAGE"),
+        webkit,
+        tauri: tauri::VERSION.to_string(),
         platform: "linux",
         packaged: !cfg!(debug_assertions),
         is_default_browser: false,
