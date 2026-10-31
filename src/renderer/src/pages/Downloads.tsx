@@ -10,8 +10,6 @@ import {
   FileText,
   FileVideo,
   FolderOpen,
-  Pause,
-  Play,
   RotateCw,
   Search,
   X,
@@ -87,8 +85,6 @@ function DownloadItemRow({ item }: { item: DownloadState }) {
         )}
       </div>
       <span className="dl-actions">
-        {item.status === 'progressing' && <IconButton icon={Pause} label={t('downloads.pause')} onClick={() => api.download(item.id, 'pause')} />}
-        {item.status === 'paused' && <IconButton icon={Play} label={t('downloads.resume')} onClick={() => api.download(item.id, 'resume')} />}
         {active && <IconButton icon={X} label={t('downloads.cancel')} onClick={() => api.download(item.id, 'cancel')} />}
         {failed && (
           <Button onClick={() => api.download(item.id, 'retry')}>

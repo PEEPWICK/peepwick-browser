@@ -213,6 +213,16 @@ async fn run(app: &AppHandle, win: &Rc<BrowserWindow>, step: &Value, out: &str) 
                 tree["bar"]
             );
         }
+        // An action on the newest download, or its menu.
+        "downloadFirst" => {
+            let Some(first) = crate::downloads::all("").into_iter().next() else {
+                return;
+            };
+            match get("action") {
+                "menu" => crate::downloads::menu(win, &first.id, 400.0, 200.0),
+                action => crate::downloads::action(&first.id, action),
+            }
+        }
         // Links from outside, as a second launch hands them over.
         "openUrls" => {
             let urls = step["urls"]

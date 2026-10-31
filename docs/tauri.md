@@ -119,7 +119,7 @@ Durum: ☐ yapılmadı · ◐ kısmen · ☑ tamam (Electron sürümüyle aynı 
 - ☐ Yeni sekme sayfası, karşılama ekranı
 - ◐ Yer imleri: çubuk, yönetici, yıldız, klasör menüleri, HTML içe ve dışa aktarma (0.2.1a; bookmarks.json Electron'la aynı biçim). Başka tarayıcılardan aktarma "Veri" bölümünde
 - ◐ Geçmiş sayfası, site başına silme, en çok ziyaret edilenler, site simgeleri (`peepwick://favicon/`); history.db Electron'la aynı şema. Aralıkla temizleme, tarama verileri taşınınca
-- ☐ İndirmeler: panel ve sayfa, duraklatma, sürdürme, yeniden deneme, klasörde gösterme
+- ◐ İndirmeler: panel ve sayfa, yeniden deneme, klasörde gösterme, nereye kaydedileceğini sorma, bitince bildirim (0.2.1a). WebKitGTK duraklatıp sürdüremiyor; düğmeleri kaldırıldı, "yeniden dene" baştan indirir
 - ◐ Sayfada bul, yazdırma, sayfayı kaydetme (MHTML), geliştirici araçları
 - ◐ Yakınlaştırma: site başına, varsayılan yakınlaştırma, yazı boyutu
 - ◐ Sağ tık menüleri, sekme menüsü, uygulama menüsü (arayüzde çizilen; testli). Eksik: "sözlüğe ekle" (WebKitGTK'de API yok), resim içinde resim; yer imi ve okuma listesi girdileri onlar taşınınca

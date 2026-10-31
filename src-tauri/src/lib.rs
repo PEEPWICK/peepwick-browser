@@ -5,6 +5,7 @@
 
 mod actions;
 mod bookmarks;
+mod downloads;
 mod fonts;
 #[cfg(any(debug_assertions, feature = "harness"))]
 mod harness;
@@ -14,6 +15,7 @@ mod input;
 mod ipc;
 mod menu;
 mod menus;
+mod notify;
 mod omnibox;
 mod pages;
 mod paths;
@@ -89,6 +91,7 @@ pub fn run() {
             settings::load();
             zoom::load();
             bookmarks::load();
+            downloads::load();
             history::open();
             shield::start(app.handle().clone());
             let cwd = std::env::current_dir().unwrap_or_default();
@@ -103,6 +106,7 @@ pub fn run() {
         .run(|_, event| {
             if let tauri::RunEvent::Exit = event {
                 bookmarks::flush();
+                downloads::flush();
                 updater::install_on_exit();
             }
         });

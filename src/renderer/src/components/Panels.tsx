@@ -199,8 +199,6 @@ function DownloadRow({ item }: { item: DownloadState }) {
         </span>
       </button>
       <span className="download-actions">
-        {item.status === 'progressing' && <IconButton icon={Pause} label={t('downloads.pause')} onClick={() => api.download(item.id, 'pause')} />}
-        {item.status === 'paused' && <IconButton icon={Play} label={t('downloads.resume')} onClick={() => api.download(item.id, 'resume')} />}
         {(item.status === 'progressing' || item.status === 'paused') && (
           <IconButton icon={X} label={t('downloads.cancel')} onClick={() => api.download(item.id, 'cancel')} />
         )}

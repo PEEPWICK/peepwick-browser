@@ -120,6 +120,7 @@ pub fn save_before_exit() {
         save_now();
     }
     crate::bookmarks::flush();
+    crate::downloads::flush();
 }
 
 /// Before the browser quits (Ctrl+Q, the app menu).

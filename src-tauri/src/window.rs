@@ -27,7 +27,7 @@ use crate::state::{
     WorkspaceState,
 };
 use crate::tab::{SavedTab, Tab, now_ms};
-use crate::{bookmarks, pages, paths, session, shield, shortcuts, updater};
+use crate::{bookmarks, downloads, pages, paths, session, shield, shortcuts, updater};
 
 pub const WORKSPACE_ICONS: [&str; 12] = [
     "circle",
@@ -272,6 +272,7 @@ fn browsing_context(app: &AppHandle) -> WebContext {
         }
         let context = WebContext::with_website_data_manager(&manager);
         configure_context(&context, &manager);
+        downloads::attach(&context, false);
         cell.replace(Some(context.clone()));
         context
     })
@@ -285,8 +286,31 @@ fn private_context() -> WebContext {
         let manager = WebsiteDataManager::new_ephemeral();
         let context = WebContext::with_website_data_manager(&manager);
         configure_context(&context, &manager);
+        downloads::attach(&context, true);
         cell.replace(Some(context.clone()));
         context
+    })
+}
+
+/// The browsing context of normal or private windows, if one is open.
+pub fn web_context(incognito: bool) -> Option<WebContext> {
+    if incognito {
+        PRIVATE.with(|cell| cell.borrow().clone())
+    } else {
+        BROWSING.with(|cell| cell.borrow().clone())
+    }
+}
+
+/// The window and tab a view belongs to.
+pub fn tab_for_view(view: &WebView) -> Option<(Rc<BrowserWindow>, Rc<Tab>)> {
+    all().into_iter().find_map(|win| {
+        let tab = win
+            .tabs
+            .borrow()
+            .values()
+            .find(|tab| tab.view().as_ref() == Some(view))
+            .cloned()?;
+        Some((win, tab))
     })
 }
 
@@ -1525,7 +1549,7 @@ pub fn global_state() -> GlobalState {
             minutes: settings::get().focus_minutes,
         },
         update: updater::state(),
-        downloads: Vec::new(),
+        downloads: downloads::recent(),
         version: display_version(),
     }
 }
