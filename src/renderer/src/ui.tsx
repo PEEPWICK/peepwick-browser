@@ -164,16 +164,27 @@ export function useNow(interval = 1000, enabled = true): number {
 }
 
 let overlays = 0
+let lowering: ReturnType<typeof setTimeout> | undefined
 
 /** Raises the UI above the pages while something floating is open. */
 export function useOverlay(open: boolean): void {
   useEffect(() => {
     if (!open) return
     overlays++
-    if (overlays === 1) api.setOverlay(true)
+    if (overlays === 1) {
+      // One menu replacing another: the UI never went down, so focus stays here.
+      if (lowering) clearTimeout(lowering)
+      else api.setOverlay(true)
+      lowering = undefined
+    }
     return () => {
       overlays--
-      if (overlays === 0) api.setOverlay(false)
+      if (overlays > 0) return
+      // Lowering moves focus to the page; the blur would close a menu opening right after.
+      lowering = setTimeout(() => {
+        lowering = undefined
+        if (overlays === 0) api.setOverlay(false)
+      })
     }
   }, [open])
 }

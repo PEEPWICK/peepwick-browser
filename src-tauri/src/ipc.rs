@@ -5,12 +5,20 @@
 use std::rc::Rc;
 use std::time::Duration;
 
+use gtk::glib;
+use gtk::prelude::*;
+use serde::Serialize;
 use serde_json::{Value, json};
 use tauri::AppHandle;
 
-use crate::settings;
+use crate::actions::{self, COMMANDS};
+use crate::i18n::t;
+use crate::input::resolve_input;
+use crate::menu::{self, ClickEvent};
+use crate::settings::{self, Lang};
 use crate::state::PaneRect;
-use crate::window::{self, BrowserWindow};
+use crate::window::{self, BrowserWindow, OpenOptions};
+use crate::{menus, zoom};
 
 enum Reply {
     /// The window's UI asked before Rust finished setting the window up.
@@ -67,16 +75,49 @@ fn num(value: Option<&Value>) -> Option<u32> {
         .and_then(|n| u32::try_from(n).ok())
 }
 
+fn float(value: Option<&Value>) -> f64 {
+    value
+        .and_then(Value::as_f64)
+        .filter(|n| n.is_finite())
+        .unwrap_or(0.0)
+}
+
+fn flag(value: Option<&Value>) -> bool {
+    value.and_then(Value::as_bool).unwrap_or(false)
+}
+
 fn text(value: Option<&Value>) -> &str {
     value.and_then(Value::as_str).unwrap_or("")
 }
 
-fn invoke(win: &Rc<BrowserWindow>, method: &str, args: &[Value]) -> Result<Value, String> {
+/// At most `max` characters of a string from the UI.
+fn short(value: Option<&Value>, max: usize) -> String {
+    text(value).chars().take(max).collect()
+}
+
+fn to_json(value: impl Serialize) -> Result<Value, String> {
+    serde_json::to_value(value).map_err(|e| e.to_string())
+}
+
+pub(crate) fn invoke(
+    win: &Rc<BrowserWindow>,
+    method: &str,
+    args: &[Value],
+) -> Result<Value, String> {
     let value = match method {
-        "ready" => serde_json::to_value(win.initial_data()).map_err(|e| e.to_string())?,
-        "appInfo" => {
-            serde_json::to_value(window::app_info(&tauri_app(win))).map_err(|e| e.to_string())?
+        "ready" => {
+            // Shown once the UI has had a moment to draw its first state.
+            let weak = Rc::downgrade(win);
+            glib::timeout_add_local_once(Duration::from_millis(50), move || {
+                if let Some(win) = weak.upgrade() {
+                    win.ui_ready();
+                }
+            });
+            to_json(win.initial_data())?
         }
+        "appInfo" => to_json(window::app_info())?,
+        "siteZooms" => to_json(zoom::site_zooms())?,
+        "palette" => palette(win, &short(args.first(), 200)),
         "stats" => {
             json!({ "blockedToday": 0, "blockedWeek": 0, "blockedTotal": 0, "focusMinutesToday": 0, "focusMinutesWeek": 0 })
         }
@@ -86,7 +127,6 @@ fn invoke(win: &Rc<BrowserWindow>, method: &str, args: &[Value]) -> Result<Value
         }
         "formEntryCount" => json!(0),
         "suggest"
-        | "palette"
         | "historyQuery"
         | "topSites"
         | "extensionsList"
@@ -96,7 +136,6 @@ fn invoke(win: &Rc<BrowserWindow>, method: &str, args: &[Value]) -> Result<Value
         | "downloadsList"
         | "passwordsList"
         | "addressesList"
-        | "siteZooms"
         | "tasks"
         | "readingList"
         | "translationLanguages"
@@ -106,81 +145,253 @@ fn invoke(win: &Rc<BrowserWindow>, method: &str, args: &[Value]) -> Result<Value
             Value::Null
         }
     };
-    let _ = args;
     Ok(value)
 }
 
-fn send(win: &Rc<BrowserWindow>, method: &str, args: &[Value]) {
-    let tab = |i: usize| num(args.get(i)).and_then(|id| win.tab(id));
+/// Lower case for matching, with the Turkish dotted and dotless i.
+fn fold(text: &str, lang: Lang) -> String {
+    match lang {
+        Lang::Tr => text
+            .chars()
+            .map(|c| match c {
+                'I' => 'ı',
+                'İ' => 'i',
+                c => c,
+            })
+            .collect::<String>()
+            .to_lowercase(),
+        Lang::En => text.to_lowercase(),
+    }
+}
+
+/// The command bar: commands, then open tabs.
+fn palette(win: &Rc<BrowserWindow>, input: &str) -> Value {
+    let lang = settings::get().language;
+    let needle = fold(input.trim(), lang);
+    let matches = |text: &str| needle.is_empty() || fold(text, lang).contains(&needle);
+    let commands = COMMANDS
+        .iter()
+        .filter(|id| actions::is_available(win, id))
+        .map(|id| (id, t(&format!("cmd.{id}"))))
+        .filter(|(_, title)| matches(title))
+        .take(if needle.is_empty() { 8 } else { 6 })
+        .map(
+            |(id, title)| json!({ "kind": "command", "title": title, "value": id, "command": id }),
+        );
+    let tabs = win
+        .all_tabs()
+        .into_iter()
+        .filter(|tab| matches(&tab.display_title()) || tab.url().to_lowercase().contains(&needle))
+        .take(8)
+        .map(|tab| {
+            json!({ "kind": "tab", "title": tab.display_title(), "value": tab.display_url(), "favicon": tab.favicon(), "tabId": tab.id })
+        });
+    Value::Array(commands.chain(tabs).collect())
+}
+
+pub(crate) fn send(win: &Rc<BrowserWindow>, method: &str, args: &[Value]) {
+    let arg = |i: usize| args.get(i);
+    let tab = |i: usize| num(arg(i)).and_then(|id| win.tab(id));
     match method {
-        "windowControl" => win.window_control(text(args.first())),
+        "windowControl" => win.window_control(text(arg(0))),
         "setPanes" => {
-            let rects: Vec<PaneRect> = args
-                .first()
-                .and_then(|v| serde_json::from_value(v.clone()).ok())
+            let rects = arg(0)
+                .and_then(Value::as_array)
+                .map(|list| {
+                    list.iter()
+                        .take(4)
+                        .filter_map(|r| serde_json::from_value::<PaneRect>(r.clone()).ok())
+                        .collect()
+                })
                 .unwrap_or_default();
             win.set_panes(rects);
         }
-        "setOverlay" => win.set_overlay(args.first().and_then(Value::as_bool).unwrap_or(false)),
-        "setRaised" => win.set_raised(args.first().and_then(Value::as_bool).unwrap_or(false)),
-        "newTab" => {
-            let options = args.first();
-            let url = options
-                .and_then(|o| o.get("url"))
-                .and_then(Value::as_str)
-                .map(str::to_string);
-            let background = options
-                .and_then(|o| o.get("background"))
-                .and_then(Value::as_bool)
-                .unwrap_or(false);
-            win.new_tab(url, background);
-        }
-        "closeTab" => {
-            if let Some(id) = num(args.first()) {
-                win.close_tab(id);
+        "setOverlay" => win.set_overlay(flag(arg(0))),
+        "setRaised" => win.set_raised(flag(arg(0))),
+        "menuSelect" => {
+            let event: ClickEvent = arg(2)
+                .and_then(|e| serde_json::from_value(e.clone()).ok())
+                .unwrap_or_default();
+            if let (Some(menu_id), Some(item_id)) = (num(arg(0)), num(arg(1))) {
+                menu::select(win, menu_id, item_id, event);
             }
         }
-        "activateTab" | "focusTab" => {
-            if let Some(id) = num(args.first()) {
+        "menuClosed" => {
+            if let Some(id) = num(arg(0)) {
+                menu::closed(win, id);
+            }
+        }
+        "menuContext" => {
+            if let (Some(menu_id), Some(item_id)) = (num(arg(0)), num(arg(1))) {
+                menu::context(win, menu_id, item_id, float(arg(2)), float(arg(3)));
+            }
+        }
+        "confirmReply" => {
+            if let Some(id) = num(arg(0)) {
+                menu::confirm_reply(id, flag(arg(1)));
+            }
+        }
+        "appMenu" => menus::app_menu(win, float(arg(0)), float(arg(1))),
+        "tabMenu" => {
+            if let Some(id) = num(arg(0)) {
+                menus::tab_menu(win, id, float(arg(1)), float(arg(2)));
+            }
+        }
+        "newTab" => {
+            let option = |key: &str| arg(0).and_then(|o| o.get(key));
+            let url = option("url")
+                .and_then(Value::as_str)
+                .map(|url| resolve_input(url, settings::get().search_engine))
+                .filter(|url| !url.is_empty());
+            match url {
+                Some(url) => {
+                    let background = flag(option("background"));
+                    win.open_tab(OpenOptions {
+                        url: Some(url),
+                        background,
+                        ..OpenOptions::default()
+                    });
+                }
+                None => actions::new_tab(win),
+            }
+        }
+        "closeTab" => {
+            if let Some(id) = num(arg(0)) {
+                win.close_tab(id, true);
+            }
+        }
+        "activateTab" => {
+            if let Some(id) = num(arg(0)) {
                 win.activate_tab(id);
             }
         }
-        "navigate" => {
-            if let Some(id) = num(args.first()) {
-                win.navigate(id, text(args.get(1)));
+        "focusTab" => {
+            if let Some(tab) = tab(0) {
+                win.pane_focused(tab.id);
+                if let Some(view) = tab.view() {
+                    view.grab_focus();
+                }
             }
         }
-        "back" => tab(0).iter().for_each(|t| t.back()),
-        "forward" => tab(0).iter().for_each(|t| t.forward()),
-        "reload" => {
-            let hard = args.get(1).and_then(Value::as_bool).unwrap_or(false);
-            tab(0).iter().for_each(|t| t.reload(hard));
+        "navigate" => {
+            let url = resolve_input(&short(arg(1), 8192), settings::get().search_engine);
+            if let Some(tab) = tab(0)
+                && !url.is_empty()
+            {
+                tab.load(&url);
+                win.focus_active();
+            }
         }
-        "stop" => tab(0).iter().for_each(|t| t.stop()),
-        "toggleMute" => tab(0).iter().for_each(|t| t.set_muted(!t.is_muted())),
-        "togglePin" => tab(0).iter().for_each(|t| {
-            t.pinned.set(!t.pinned.get());
-            win.mark_dirty();
-        }),
-        "openURL" => win.open_url(
-            text(args.first()),
-            args.get(1).and_then(Value::as_bool).unwrap_or(false),
-        ),
-        "openPage" => win.open_page(text(args.first()), text(args.get(1))),
+        "back" => tab(0).iter().for_each(|tab| tab.back()),
+        "forward" => tab(0).iter().for_each(|tab| tab.forward()),
+        "reload" => tab(0).iter().for_each(|tab| tab.reload(flag(arg(1)))),
+        "stop" => tab(0).iter().for_each(|tab| tab.stop()),
+        "togglePin" => {
+            if let Some(id) = num(arg(0)) {
+                win.toggle_pin(id);
+            }
+        }
+        "toggleMute" => tab(0).iter().for_each(|tab| tab.set_muted(!tab.is_muted())),
+        "moveTab" => {
+            if let Some(id) = num(arg(0)) {
+                let index = num(arg(2)).unwrap_or(0) as usize;
+                win.move_tab(
+                    id,
+                    &short(arg(1), 64),
+                    index,
+                    arg(3).and_then(Value::as_bool),
+                );
+            }
+        }
+        "openPage" => actions::open_page(win, &short(arg(0), 40), &short(arg(1), 40)),
+        "openURL" => {
+            let url = text(arg(0));
+            if !["http:", "https:", "peepwick:"]
+                .iter()
+                .any(|s| url.starts_with(s))
+            {
+                return;
+            }
+            if flag(arg(1)) {
+                win.open_tab(OpenOptions {
+                    url: Some(url.to_string()),
+                    ..OpenOptions::default()
+                });
+            } else if let Some(tab) = win.active_tab() {
+                tab.load(url);
+            }
+        }
+        "split" => {
+            if let (Some(left), Some(right)) = (num(arg(0)), num(arg(1))) {
+                win.split(left, right);
+            }
+        }
+        "unsplit" => win.unsplit(),
+        "splitRatio" => win.set_split_ratio(float(arg(0))),
+        "createWorkspace" => win.create_workspace(&short(arg(0), 40), text(arg(1))),
+        "updateWorkspace" => {
+            let patch = |key: &str| arg(1).and_then(|p| p.get(key)).and_then(Value::as_str);
+            win.update_workspace(&short(arg(0), 64), patch("name"), patch("icon"));
+        }
+        "deleteWorkspace" => win.delete_workspace(&short(arg(0), 64)),
+        "activateWorkspace" => win.activate_workspace(&short(arg(0), 64)),
+        "find" => {
+            if let Some(tab) = win.active_tab() {
+                let forward = arg(1).and_then(Value::as_bool) != Some(false);
+                tab.find_in_page(&short(arg(0), 500), forward, flag(arg(2)));
+            }
+        }
+        "stopFind" => win.active_tab().iter().for_each(|tab| tab.stop_find()),
+        "zoom" => {
+            let direction = text(arg(0));
+            if matches!(direction, "in" | "out" | "reset")
+                && let Some(tab) = win.active_tab()
+            {
+                tab.zoom(direction);
+            }
+        }
+        "interstitial" => {
+            let Some(tab) = tab(0) else { return };
+            match text(arg(1)) {
+                "retry" => tab.reload(false),
+                "back" => tab.back(),
+                other => eprintln!("[ipc] not ported yet: interstitial {other}"),
+            }
+        }
+        "command" => {
+            let id = text(arg(0));
+            if actions::is_available(win, id) {
+                actions::run_command(win, id);
+            }
+        }
         "setSettings" => {
-            if let Some(patch) = args.first() {
+            if let Some(patch) = arg(0).filter(|p| p.is_object()) {
                 settings::update(patch);
                 window::settings_changed();
+                if patch.get("defaultZoom").is_some() {
+                    window::zoom_changed();
+                }
             }
         }
         "onboardingDone" => {
             settings::update(&json!({ "onboarded": true }));
             window::settings_changed();
         }
+        "forgetZoom" => {
+            zoom::forget(arg(0).and_then(Value::as_str));
+            window::zoom_changed();
+        }
         _ => eprintln!("[ipc] not ported yet: send {method}"),
     }
 }
 
-fn tauri_app(win: &BrowserWindow) -> AppHandle {
-    win.app_handle()
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn folds_turkish_letters() {
+        assert_eq!(fold("IŞIK İzmir", Lang::Tr), "ışık izmir");
+        assert_eq!(fold("Issue", Lang::En), "issue");
+    }
 }

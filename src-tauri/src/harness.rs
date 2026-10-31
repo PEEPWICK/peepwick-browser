@@ -11,10 +11,10 @@ use gtk::prelude::WidgetExt;
 use javascriptcore::ValueExt;
 use serde_json::Value;
 use tauri::AppHandle;
-use webkit2gtk::{SnapshotOptions, SnapshotRegion, WebViewExt, glib};
+use webkit2gtk::{ContextMenu, HitTestResult, SnapshotOptions, SnapshotRegion, WebViewExt, glib};
 
 use crate::settings;
-use crate::window::{self, BrowserWindow};
+use crate::window::{self, BrowserWindow, OpenOptions};
 
 pub fn start(app: AppHandle) {
     let Ok(file) = std::env::var("PEEPWICK_HARNESS") else {
@@ -52,11 +52,14 @@ async fn run(app: &AppHandle, win: &Rc<BrowserWindow>, step: &Value, out: &str) 
         }
         "navigate" => {
             if let Some(tab) = win.active_tab() {
-                win.navigate(tab.id, get("url"));
+                tab.load(get("url"));
             }
         }
         "newTab" => {
-            win.new_tab(Some(get("url").to_string()), false);
+            win.open_tab(OpenOptions {
+                url: Some(get("url").to_string()),
+                ..OpenOptions::default()
+            });
         }
         "settings" => {
             settings::update(&step["patch"]);
@@ -120,7 +123,64 @@ async fn run(app: &AppHandle, win: &Rc<BrowserWindow>, step: &Value, out: &str) 
             eprintln!("[harness] memory {} MB in {count} processes", kb / 1024);
         }
         "mark" => eprintln!("[harness] mark {}", get("name")),
-        "quit" => app.exit(0),
+        // Where each tab's view is, and where the UI asked for it.
+        "layout" => {
+            let panes: Vec<String> = win
+                .visible_views()
+                .iter()
+                .map(|(_, r)| format!("{} {}x{}+{}+{}", r.tab_id, r.width, r.height, r.x, r.y))
+                .collect();
+            let views: Vec<String> = win
+                .all_tabs()
+                .iter()
+                .filter_map(|tab| {
+                    let view = tab.view()?;
+                    let a = view.allocation();
+                    Some(format!(
+                        "{} {}x{}+{}+{} visible={}",
+                        tab.id,
+                        a.width(),
+                        a.height(),
+                        a.x(),
+                        a.y(),
+                        view.is_visible()
+                    ))
+                })
+                .collect();
+            eprintln!(
+                "[harness] layout panes {panes:?} views {views:?} ui_on_top={}",
+                win.ui_on_top()
+            );
+        }
+        "send" => {
+            let args = step["args"].as_array().cloned().unwrap_or_default();
+            crate::ipc::send(win, get("method"), &args);
+        }
+        "invoke" => {
+            let args = step["args"].as_array().cloned().unwrap_or_default();
+            let result = crate::ipc::invoke(win, get("method"), &args);
+            eprintln!(
+                "[harness] invoke {} {}",
+                get("method"),
+                result.map(|v| v.to_string()).unwrap_or_else(|e| e)
+            );
+        }
+        // A right-click without a mouse: `context` takes WebKit's hit test flags (2 page, 4 link…).
+        "pageMenu" => {
+            let Some(tab) = win.active_tab() else { return };
+            let Some(view) = tab.view() else { return };
+            let mut hit =
+                HitTestResult::builder().context(step["context"].as_u64().unwrap_or(2) as u32);
+            if !get("link").is_empty() {
+                hit = hit.link_uri(get("link"));
+            }
+            let (x, y) = (
+                step["x"].as_f64().unwrap_or(200.0),
+                step["y"].as_f64().unwrap_or(200.0),
+            );
+            crate::menus::page_menu(&tab, &view, &ContextMenu::new(), &hit.build(), x, y);
+        }
+        "quit" => crate::session::quit(app),
         other => eprintln!("[harness] unknown step {other}"),
     }
 }

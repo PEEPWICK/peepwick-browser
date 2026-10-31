@@ -104,28 +104,28 @@ sorun yok. Electron etkilenmiyordu.
 Durum: ☐ yapılmadı · ◐ kısmen · ☑ tamam (Electron sürümüyle aynı davranış, testli).
 
 ### Tarama
-- ☐ Dikey sekmeler, alanlar, sabitleme, sürükle-bırak, alanlar arası taşıma
-- ☐ Yan yana görünüm, kullanılmayan sekmeleri uyutma
-- ☐ Oturumu geri yükleme, kapatılan sekmeyi yeniden açma
+- ◐ Dikey sekmeler, alanlar, sabitleme, sürükle-bırak, alanlar arası taşıma (Rust tarafı hazır; sürükle-bırak elle denenecek)
+- ◐ Yan yana görünüm, kullanılmayan sekmeleri uyutma (yan yana görünüm testli; uyutma denenecek)
+- ◐ Oturumu geri yükleme, kapatılan sekmeyi yeniden açma (geri yükleme testli, ileri-geri geçmişiyle; session.json sürüm 2)
 - ☐ Adres çubuğu: öneriler (geçmiş, yer imleri, arama), arama motorları
-- ☐ Komut çubuğu (Ctrl+K)
+- ◐ Komut çubuğu (Ctrl+K): komutlar ve açık sekmeler; geçmiş ve yer imleri onlar taşınınca
 - ☐ Yeni sekme sayfası, karşılama ekranı
 - ☐ Yer imleri: çubuk, yönetici, yıldız, klasör menüleri, HTML içe ve dışa aktarma
 - ☐ Geçmiş sayfası, site başına silme
 - ☐ İndirmeler: panel ve sayfa, duraklatma, sürdürme, yeniden deneme, klasörde gösterme
-- ☐ Sayfada bul, yazdırma, sayfayı kaydetme, geliştirici araçları
-- ☐ Yakınlaştırma: site başına, varsayılan yakınlaştırma, yazı boyutu
-- ☐ Sağ tık menüleri, sekme menüsü, uygulama menüsü (arayüzde çizilen)
+- ◐ Sayfada bul, yazdırma, sayfayı kaydetme (MHTML), geliştirici araçları
+- ◐ Yakınlaştırma: site başına, varsayılan yakınlaştırma, yazı boyutu
+- ◐ Sağ tık menüleri, sekme menüsü, uygulama menüsü (arayüzde çizilen; testli). Eksik: "sözlüğe ekle" (WebKitGTK'de API yok), resim içinde resim; yer imi ve okuma listesi girdileri onlar taşınınca
 - ☐ Site izinleri (konum, kamera, mikrofon, bildirimler) ve izin çubuğu
 - ☐ Site güvenliği göstergesi ve sertifika görüntüleyici, sertifika hatası ekranı
-- ☐ Gizli pencere
+- ◐ Gizli pencere (diske yazmayan WebKit bağlamı; son gizli pencereyle silinir)
 - ☐ Ayarlar (bölüm bölüm), tema, dil, kısayollar
 - ☐ Odak modu
-- ☐ Hata ekranları (bağlantı, çökme)
+- ◐ Hata ekranları (bağlantı, çökme, sertifika hatası); "yine de devam et" henüz yok
 
 ### Gizlilik
 - ☐ Kalkan: standart, sıkı, kapalı; site istisnaları; kalkan paneli ve sayaçlar
-- ☐ Üçüncü taraf çerezleri engelleme, Global Privacy Control
+- ◐ Üçüncü taraf çerezleri engelleme (WebKit politikası ve ITP), Global Privacy Control henüz yok
 - ☐ HTTPS-Only modu
 - ☐ Zararlı site uyarısı
 - ☐ Parmak izi koruması
@@ -144,4 +144,4 @@ Durum: ☐ yapılmadı · ◐ kısmen · ☑ tamam (Electron sürümüyle aynı 
 - ☐ Görev yöneticisi (Shift+Esc), medya denetimleri
 - ☐ Hata bildir, hata günlüğü
 - ☐ Varsayılan tarayıcı olma, otomatik güncelleme
-- ☐ Türkçe ve İngilizce arayüz
+- ◐ Türkçe ve İngilizce arayüz (Rust tarafı aynı sözlükleri derlemede gömer)
