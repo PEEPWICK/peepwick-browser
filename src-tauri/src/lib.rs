@@ -19,6 +19,7 @@ mod notify;
 mod omnibox;
 mod pages;
 mod paths;
+mod permissions;
 mod search;
 mod session;
 mod settings;
@@ -92,6 +93,7 @@ pub fn run() {
             zoom::load();
             bookmarks::load();
             downloads::load();
+            permissions::load();
             history::open();
             shield::start(app.handle().clone());
             let cwd = std::env::current_dir().unwrap_or_default();
@@ -107,6 +109,7 @@ pub fn run() {
             if let tauri::RunEvent::Exit = event {
                 bookmarks::flush();
                 downloads::flush();
+                permissions::flush();
                 updater::install_on_exit();
             }
         });

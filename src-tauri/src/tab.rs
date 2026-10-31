@@ -212,6 +212,7 @@ impl Tab {
     }
 
     fn destroy_view(&self) {
+        crate::permissions::deny_pending_for(self.id);
         if let Some(view) = self.view.take() {
             view.stop_loading();
             if let Some(parent) = view.parent() {
@@ -576,6 +577,7 @@ impl Tab {
             let Some(tab) = tab() else { return };
             match event {
                 LoadEvent::Started => {
+                    crate::permissions::deny_pending_for(tab.id);
                     tab.interstitial.replace(None);
                     if tab.find.borrow().is_some() {
                         tab.stop_find();
@@ -808,6 +810,8 @@ impl Tab {
             });
             true
         });
+
+        crate::permissions::attach(self, view);
 
         if let Some(finder) = view.find_controller() {
             let tab = tab_of.clone();

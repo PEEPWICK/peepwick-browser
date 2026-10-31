@@ -123,7 +123,7 @@ Durum: ☐ yapılmadı · ◐ kısmen · ☑ tamam (Electron sürümüyle aynı 
 - ◐ Sayfada bul, yazdırma, sayfayı kaydetme (MHTML), geliştirici araçları
 - ◐ Yakınlaştırma: site başına, varsayılan yakınlaştırma, yazı boyutu
 - ◐ Sağ tık menüleri, sekme menüsü, uygulama menüsü (arayüzde çizilen; testli). Eksik: "sözlüğe ekle" (WebKitGTK'de API yok), resim içinde resim; yer imi ve okuma listesi girdileri onlar taşınınca
-- ☐ Site izinleri (konum, kamera, mikrofon, bildirimler) ve izin çubuğu
+- ◐ Site izinleri (konum, kamera, mikrofon, bildirimler) ve izin çubuğu (0.2.1a; permissions.json Electron'la aynı). Ekran paylaşımı WebRTC'siz WebKitGTK'da yok, pano okuma izni bu WebKit sürümünün bağlamasında yok; ikisi de reddedilir
 - ☐ Site güvenliği göstergesi ve sertifika görüntüleyici, sertifika hatası ekranı
 - ◐ Gizli pencere (diske yazmayan WebKit bağlamı; son gizli pencereyle silinir)
 - ☐ Ayarlar (bölüm bölüm), tema, dil, kısayollar

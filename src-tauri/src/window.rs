@@ -27,7 +27,7 @@ use crate::state::{
     WorkspaceState,
 };
 use crate::tab::{SavedTab, Tab, now_ms};
-use crate::{bookmarks, downloads, pages, paths, session, shield, shortcuts, updater};
+use crate::{bookmarks, downloads, pages, paths, permissions, session, shield, shortcuts, updater};
 
 pub const WORKSPACE_ICONS: [&str; 12] = [
     "circle",
@@ -271,7 +271,7 @@ fn browsing_context(app: &AppHandle) -> WebContext {
                 .set_persistent_storage(&file.to_string_lossy(), CookiePersistentStorage::Sqlite);
         }
         let context = WebContext::with_website_data_manager(&manager);
-        configure_context(&context, &manager);
+        configure_context(&context, &manager, false);
         downloads::attach(&context, false);
         cell.replace(Some(context.clone()));
         context
@@ -285,7 +285,7 @@ fn private_context() -> WebContext {
         }
         let manager = WebsiteDataManager::new_ephemeral();
         let context = WebContext::with_website_data_manager(&manager);
-        configure_context(&context, &manager);
+        configure_context(&context, &manager, true);
         downloads::attach(&context, true);
         cell.replace(Some(context.clone()));
         context
@@ -314,7 +314,11 @@ pub fn tab_for_view(view: &WebView) -> Option<(Rc<BrowserWindow>, Rc<Tab>)> {
     })
 }
 
-fn configure_context(context: &WebContext, manager: &WebsiteDataManager) {
+fn configure_context(context: &WebContext, manager: &WebsiteDataManager, incognito: bool) {
+    // Which sites may notify, before a page asks.
+    context.connect_initialize_notification_permissions(move |context| {
+        permissions::init_notifications(context, incognito)
+    });
     // WebKit's own icon store, for the tabs' icons. Private windows only read it.
     let icons = paths::user_path("web").join("icons");
     context.set_favicon_database_directory(Some(icons.to_string_lossy().as_ref()));
@@ -540,6 +544,7 @@ impl BrowserWindow {
         // Private browsing data goes with the last private window.
         if self.incognito && !all().iter().any(|w| w.incognito) {
             PRIVATE.with(|cell| cell.replace(None));
+            permissions::forget_private();
         }
     }
 
@@ -1457,7 +1462,7 @@ impl BrowserWindow {
                 .iter()
                 .map(|(id, tab)| (*id, tab.state()))
                 .collect(),
-            permission: None,
+            permission: permissions::prompt_for(self),
             shield_paused: false,
             extensions_partition: None,
         }

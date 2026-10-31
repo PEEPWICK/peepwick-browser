@@ -17,7 +17,7 @@ use crate::menu::{self, ClickEvent};
 use crate::settings;
 use crate::state::PaneRect;
 use crate::window::{self, BrowserWindow, OpenOptions};
-use crate::{bookmarks, downloads, history, menus, omnibox, zoom};
+use crate::{bookmarks, downloads, history, menus, omnibox, permissions, zoom};
 
 /// Runs `f` on the main thread with the window whose UI called. The UI may ask before Rust
 /// has finished setting its window up; then it waits a little.
@@ -198,8 +198,8 @@ pub(crate) fn invoke(
         "exportBookmarks" => json!(!win.incognito && bookmarks::export(win)),
         "downloadsList" => to_json(downloads::all(&short(args.first(), 200)))?,
         "chooseDownloadFolder" => downloads::choose_folder(win),
+        "permissionsList" => permissions::list(),
         "extensionsList"
-        | "permissionsList"
         | "shieldReport"
         | "passwordsList"
         | "addressesList"
@@ -453,6 +453,17 @@ pub(crate) fn send(win: &Rc<BrowserWindow>, method: &str, args: &[Value]) {
         "downloadsClear" => downloads::clear(),
         "downloadsOpenFolder" => downloads::open_folder(),
         "downloadMenu" => downloads::menu(win, &short(arg(0), 64), float(arg(1)), float(arg(2))),
+        "permission" => {
+            if let Some(id) = num(arg(0)) {
+                permissions::respond(id, flag(arg(1)), flag(arg(2)));
+            }
+        }
+        "permissionRemove" => permissions::set(&short(arg(0), 500), text(arg(1)), None),
+        "sitePermission" => permissions::set(
+            &short(arg(0), 500),
+            text(arg(1)),
+            arg(2).and_then(Value::as_bool),
+        ),
         "updateCheck" => crate::updater::check(&win.app_handle()),
         "updateInstall" => crate::updater::install_and_restart(&win.app_handle()),
         "forgetZoom" => {
