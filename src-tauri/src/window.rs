@@ -23,11 +23,11 @@ use webkit2gtk::{
 use crate::i18n::t;
 use crate::settings::{self, Lang, Theme};
 use crate::state::{
-    AppInfo, FocusState, GlobalState, InitialData, PaneRect, SplitState, UpdateState, WindowState,
+    AppInfo, FocusState, GlobalState, InitialData, PaneRect, SplitState, WindowState,
     WorkspaceState,
 };
 use crate::tab::{SavedTab, Tab, now_ms};
-use crate::{pages, paths, session, shield, shortcuts};
+use crate::{pages, paths, session, shield, shortcuts, updater};
 
 pub const WORKSPACE_ICONS: [&str; 12] = [
     "circle",
@@ -1532,14 +1532,17 @@ pub fn global_state() -> GlobalState {
             ends_at: 0,
             minutes: settings::get().focus_minutes,
         },
-        update: UpdateState {
-            status: "idle",
-            version: None,
-            progress: 0.0,
-            error: None,
-        },
+        update: updater::state(),
         downloads: Vec::new(),
         version: display_version(),
+    }
+}
+
+/// Something every window shows changed (an update's progress, downloads): send it to them.
+pub fn global_changed() {
+    let global = global_state();
+    for win in all() {
+        win.emit("global", &global);
     }
 }
 

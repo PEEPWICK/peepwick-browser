@@ -113,10 +113,16 @@ pub fn window_closing(win: &Rc<BrowserWindow>) {
     }
 }
 
-/// Before the browser quits (Ctrl+Q, the app menu).
-pub fn quit(app: &AppHandle) {
+/// Saves the session as it is before the browser quits or restarts; the windows closing
+/// afterwards don't change it.
+pub fn save_before_exit() {
     if !QUITTING.with(|q| q.replace(true)) {
         save_now();
     }
+}
+
+/// Before the browser quits (Ctrl+Q, the app menu).
+pub fn quit(app: &AppHandle) {
+    save_before_exit();
     app.exit(0);
 }

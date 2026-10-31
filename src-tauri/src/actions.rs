@@ -139,7 +139,10 @@ pub fn run_command(win: &Rc<BrowserWindow>, id: &str) {
         "history" => open_page(win, "history", ""),
         "downloads" => open_page(win, "downloads", ""),
         "bookmarks" => open_page(win, "bookmarks", ""),
-        "check-updates" => open_page(win, "settings", "about"),
+        "check-updates" => {
+            open_page(win, "settings", "about");
+            crate::updater::check(&win.app_handle());
+        }
         "toggle-sidebar" => {
             settings::update(&json!({ "sidebarCollapsed": !settings::get().sidebar_collapsed }));
             window::settings_changed();

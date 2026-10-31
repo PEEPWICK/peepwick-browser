@@ -378,6 +378,8 @@ pub(crate) fn send(win: &Rc<BrowserWindow>, method: &str, args: &[Value]) {
                 menus::history_menu(win, id, text(arg(1)), float(arg(2)), float(arg(3)));
             }
         }
+        "updateCheck" => crate::updater::check(&win.app_handle()),
+        "updateInstall" => crate::updater::install_and_restart(&win.app_handle()),
         "forgetZoom" => {
             zoom::forget(arg(0).and_then(Value::as_str));
             window::zoom_changed();

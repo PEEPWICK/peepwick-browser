@@ -4,6 +4,9 @@
 # While package.json has "githubPrerelease": true the release is marked as a pre-release:
 # GitHub then keeps the last full release as "Latest", which is what installed 0.1.x
 # (Electron) copies update to, so they don't move to a version that lacks their features.
+#
+# The packages are signed with the TAURI_SIGNING_PRIVATE_KEY secret, and the update list
+# that installed 0.2.1a+ copies read (latest.json in the `updates` branch) points at them.
 name: Release
 
 on:
@@ -60,6 +63,8 @@ jobs:
         env:
           # linuxdeploy, which makes the AppImage, runs without FUSE on the runners.
           APPIMAGE_EXTRACT_AND_RUN: 1
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ''
         run: npm run build
       - name: Publish
         env:
@@ -69,12 +74,29 @@ jobs:
           bundle=src-tauri/target/release/bundle
           mkdir -p dist
           cp "${bundle}"/deb/*.deb "dist/peepwick-browser-${shown}-amd64.deb"
+          cp "${bundle}"/deb/*.deb.sig "dist/peepwick-browser-${shown}-amd64.deb.sig"
           cp "${bundle}"/appimage/*.AppImage "dist/peepwick-browser-${shown}-x86_64.AppImage"
+          cp "${bundle}"/appimage/*.AppImage.sig "dist/peepwick-browser-${shown}-x86_64.AppImage.sig"
           flags=()
           if [ "$(node -p "require('./package.json').githubPrerelease === true")" = "true" ]; then
             flags+=(--prerelease)
           fi
-          gh release create "${GITHUB_REF_NAME}" dist/*.deb dist/*.AppImage \
+          gh release create "${GITHUB_REF_NAME}" dist/* \
             --verify-tag "${flags[@]}" \
             --title "PEEPWICK Browser ${shown}" \
             --generate-notes
+      - name: Update list
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          shown="${GITHUB_REF_NAME#v}"
+          node scripts/update-manifest.mjs "${GITHUB_REF_NAME}" \
+            "dist/peepwick-browser-${shown}-amd64.deb.sig" \
+            "dist/peepwick-browser-${shown}-x86_64.AppImage.sig" > latest.json
+          args=(-X PUT "repos/${GITHUB_REPOSITORY}/contents/latest.json"
+            -f "message=Update list for ${GITHUB_REF_NAME}"
+            -f "content=$(base64 -w0 latest.json)"
+            -f branch=updates)
+          sha="$(gh api "repos/${GITHUB_REPOSITORY}/contents/latest.json?ref=updates" --jq .sha 2>/dev/null || true)"
+          if [ -n "${sha}" ]; then args+=(-f "sha=${sha}"); fi
+          gh api "${args[@]}" > /dev/null

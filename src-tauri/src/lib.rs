@@ -24,6 +24,7 @@ mod shortcuts;
 mod state;
 mod store;
 mod tab;
+mod updater;
 mod window;
 mod zoom;
 
@@ -79,6 +80,7 @@ pub fn run() {
         let _ = app.run_on_main_thread(move || window::open_urls(&handle, urls));
     }));
     builder
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .invoke_handler(tauri::generate_handler![ipc::pw_invoke, ipc::pw_send])
         .register_uri_scheme_protocol("peepwick", |_, request| favicon_response(request.uri()))
         .setup(|app| {
@@ -89,10 +91,16 @@ pub fn run() {
             shield::start(app.handle().clone());
             let cwd = std::env::current_dir().unwrap_or_default();
             session::restore(app.handle(), urls_from(std::env::args().skip(1), &cwd))?;
+            updater::start(app.handle());
             #[cfg(any(debug_assertions, feature = "harness"))]
             harness::start(app.handle().clone());
             Ok(())
         })
-        .run(tauri::generate_context!())
-        .expect("PEEPWICK Browser could not start");
+        .build(tauri::generate_context!())
+        .expect("PEEPWICK Browser could not start")
+        .run(|_, event| {
+            if let tauri::RunEvent::Exit = event {
+                updater::install_on_exit();
+            }
+        });
 }
