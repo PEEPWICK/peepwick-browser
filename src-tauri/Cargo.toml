@@ -1,6 +1,6 @@
 [package]
 name = "peepwick-browser"
-version = "0.1.9"
+version = "0.2.0"
 description = "PEEPWICK Browser: a calm, private browser that guards your attention."
 authors = ["PEEPWICK"]
 license = "GPL-3.0-only"
