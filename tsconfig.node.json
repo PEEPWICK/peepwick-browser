@@ -4,7 +4,7 @@
     "lib": ["ES2024"],
     "module": "ESNext",
     "moduleResolution": "bundler",
-    "types": ["node", "chrome"],
+    "types": ["node"],
     "strict": true,
     "noUnusedLocals": true,
     "noUnusedParameters": true,
@@ -15,5 +15,5 @@
     "noEmit": true,
     "paths": { "@shared/*": ["./src/shared/*"] }
   },
-  "include": ["electron.vite.config.ts", "vitest.config.ts", "src/main/**/*", "src/preload/**/*", "src/shared/**/*", "src/env.d.ts", "tests/**/*"]
+  "include": ["vite.config.ts", "vitest.config.ts", "src/shared/**/*", "tests/**/*", "src/renderer/src/downloads.ts"]
 }

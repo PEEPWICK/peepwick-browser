@@ -6,8 +6,8 @@ import '@fontsource/ibm-plex-mono/400.css'
 import './styles/tokens.css'
 import './styles/popup.css'
 import type { AutofillPopupState } from '@shared/types'
+import { bridge } from './bridge'
 
-const bridge = window.peepwick
 const list = document.getElementById('list')!
 
 const ICONS: Record<string, string> = {

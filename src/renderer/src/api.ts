@@ -1,10 +1,10 @@
-// Typed client over the preload bridge.
+// Typed client over the bridge to the Rust side.
 import type { EventMap, EventName, InvokeMethods, SendMethods } from '@shared/ipc'
+import { bridge } from './bridge'
 
 type Invoke = { [K in keyof InvokeMethods]: (...args: Parameters<InvokeMethods[K]>) => Promise<ReturnType<InvokeMethods[K]>> }
 type Send = { [K in keyof SendMethods]: (...args: Parameters<SendMethods[K]>) => void }
 
-const bridge = window.peepwick
 
 export const call = new Proxy({} as Invoke, {
   get: (_target, method: string) => (...args: unknown[]) => bridge.invoke(method, ...args),

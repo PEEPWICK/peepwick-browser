@@ -1,0 +1,49 @@
+[package]
+name = "peepwick-browser"
+version = "0.1.9"
+description = "PEEPWICK Browser: a calm, private browser that guards your attention."
+authors = ["PEEPWICK"]
+license = "GPL-3.0-only"
+repository = "https://github.com/PEEPWICK/peepwick-browser"
+edition = "2024"
+rust-version = "1.99"
+
+[lib]
+name = "peepwick"
+crate-type = ["rlib"]
+
+[[bin]]
+name = "peepwick-browser"
+path = "src/main.rs"
+
+[features]
+# The screenshot and measuring harness in release builds, for comparing with Electron.
+harness = []
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = "s"
+panic = "abort"
+strip = true
+
+[build-dependencies]
+tauri-build = { version = "2.7", features = [] }
+
+[dependencies]
+tauri = { version = "2.12", features = [] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["sync", "time"] }
+# The same GTK and WebKitGTK bindings Tauri uses, for the tab views it doesn't manage.
+gtk = "0.18"
+glib = "0.18"
+webkit2gtk = { version = "2.0", features = ["v2_40"] }
+cairo-rs = { version = "0.18", features = ["png"] }
+javascriptcore-rs = "1.1"
+adblock = { version = "0.13", default-features = false, features = ["content-blocking", "embedded-domain-resolver", "full-regex-handling"] }
+url = "2"
+percent-encoding = "2"
+psl = "2"
+reqwest = { version = "0.13", default-features = false, features = ["blocking", "native-tls", "gzip"] }
+base64 = "0.22"
