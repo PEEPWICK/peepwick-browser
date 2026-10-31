@@ -17,7 +17,7 @@ use crate::menu::{self, ClickEvent};
 use crate::settings;
 use crate::state::PaneRect;
 use crate::window::{self, BrowserWindow, OpenOptions};
-use crate::{history, menus, omnibox, zoom};
+use crate::{bookmarks, history, menus, omnibox, zoom};
 
 /// Runs `f` on the main thread with the window whose UI called. The UI may ask before Rust
 /// has finished setting its window up; then it waits a little.
@@ -95,6 +95,20 @@ fn text(value: Option<&Value>) -> &str {
     value.and_then(Value::as_str).unwrap_or("")
 }
 
+/// A list of ids from the UI, at most 5000 of them.
+fn ids(value: Option<&Value>) -> Vec<String> {
+    value
+        .and_then(Value::as_array)
+        .map(|list| {
+            list.iter()
+                .filter_map(Value::as_str)
+                .take(5000)
+                .map(|id| id.chars().take(64).collect())
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
 /// At most `max` characters of a string from the UI.
 fn short(value: Option<&Value>, max: usize) -> String {
     text(value).chars().take(max).collect()
@@ -154,10 +168,37 @@ pub(crate) fn invoke(
             json!({ "history": 0, "downloads": 0, "cookies": 0, "permissions": 0, "forms": 0, "passwords": 0 })
         }
         "formEntryCount" => json!(0),
+        "bookmarkCreate" => {
+            let input = |key: &str| args.first().and_then(|i| i.get(key));
+            let index = input("index").and_then(Value::as_u64).map(|i| i as usize);
+            let title: String = input("title")
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .chars()
+                .take(500)
+                .collect();
+            let url = input("url")
+                .and_then(Value::as_str)
+                .map(|u| u.chars().take(8192).collect::<String>());
+            let parent = input("parentId").and_then(Value::as_str).unwrap_or("");
+            json!(bookmarks::create(parent, index, &title, url.as_deref()))
+        }
+        "bookmarkPage" => match actions::bookmark_current_page(win) {
+            Some((id, created)) => json!({ "id": id, "created": created }),
+            None => Value::Null,
+        },
+        // Reading other browsers' profiles hasn't moved over yet; HTML files have.
+        "importSources" => json!([]),
+        "importBookmarks" => match text(args.first()) {
+            "html" if !win.incognito => {
+                bookmarks::import_html(win, args.get(1).and_then(Value::as_bool) != Some(false))
+            }
+            _ => Value::Null,
+        },
+        "exportBookmarks" => json!(!win.incognito && bookmarks::export(win)),
         "extensionsList"
         | "permissionsList"
         | "shieldReport"
-        | "importSources"
         | "downloadsList"
         | "passwordsList"
         | "addressesList"
@@ -378,6 +419,35 @@ pub(crate) fn send(win: &Rc<BrowserWindow>, method: &str, args: &[Value]) {
                 menus::history_menu(win, id, text(arg(1)), float(arg(2)), float(arg(3)));
             }
         }
+        "bookmarkUpdate" => {
+            let patch = |key: &str| arg(1).and_then(|p| p.get(key)).and_then(Value::as_str);
+            bookmarks::update(&short(arg(0), 64), patch("title"), patch("url"));
+        }
+        "bookmarkMove" => bookmarks::move_nodes(
+            &ids(arg(0)),
+            &short(arg(1), 64),
+            num(arg(2)).unwrap_or(0) as usize,
+        ),
+        "bookmarkRemove" => bookmarks::remove_and_tell(win, &ids(arg(0))),
+        "bookmarkUndo" => bookmarks::undo_remove(),
+        "bookmarkSort" => bookmarks::sort_folder(&short(arg(0), 64)),
+        "bookmarkOpen" => {
+            let how = text(arg(1));
+            if matches!(
+                how,
+                "current" | "tab" | "background" | "window" | "incognito"
+            ) {
+                bookmarks::open(win, &ids(arg(0)), how);
+            }
+        }
+        "bookmarkMenu" => {
+            bookmarks::bookmark_menu(win, &short(arg(0), 64), float(arg(1)), float(arg(2)))
+        }
+        "bookmarkFolderMenu" => {
+            let from = num(arg(3)).unwrap_or(0) as usize;
+            bookmarks::folder_menu(win, &short(arg(0), 64), float(arg(1)), float(arg(2)), from);
+        }
+        "bookmarkTabs" => actions::bookmark_space_tabs(win),
         "updateCheck" => crate::updater::check(&win.app_handle()),
         "updateInstall" => crate::updater::install_and_restart(&win.app_handle()),
         "forgetZoom" => {

@@ -21,13 +21,13 @@ use webkit2gtk::{
 };
 
 use crate::i18n::t;
-use crate::settings::{self, Lang, Theme};
+use crate::settings::{self, Theme};
 use crate::state::{
     AppInfo, FocusState, GlobalState, InitialData, PaneRect, SplitState, WindowState,
     WorkspaceState,
 };
 use crate::tab::{SavedTab, Tab, now_ms};
-use crate::{pages, paths, session, shield, shortcuts, updater};
+use crate::{bookmarks, pages, paths, session, shield, shortcuts, updater};
 
 pub const WORKSPACE_ICONS: [&str; 12] = [
     "circle",
@@ -1479,20 +1479,12 @@ impl BrowserWindow {
     }
 
     pub fn initial_data(&self) -> InitialData {
-        let prefs = settings::get();
-        let (bar, other) = match prefs.language {
-            Lang::Tr => ("Yer imi çubuğu", "Diğer yer imleri"),
-            Lang::En => ("Bookmarks bar", "Other bookmarks"),
-        };
         InitialData {
             state: self.state(),
             global: global_state(),
-            settings: prefs,
+            settings: settings::get(),
             app: app_info(),
-            bookmarks: json!({
-                "bar": { "type": "folder", "id": "bar", "title": bar, "addedAt": 0, "children": [] },
-                "other": { "type": "folder", "id": "other", "title": other, "addedAt": 0, "children": [] },
-            }),
+            bookmarks: serde_json::to_value(bookmarks::tree()).unwrap_or_default(),
         }
     }
 

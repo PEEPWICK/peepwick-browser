@@ -7,13 +7,13 @@ use std::time::Duration;
 use serde::Serialize;
 
 use crate::actions::{self, COMMANDS};
-use crate::history;
 use crate::i18n::{fold, t};
 use crate::input::resolve_input;
 use crate::search::{search_url, suggest_url};
 use crate::settings::{self, Lang, SearchEngine};
 use crate::tab::now_ms;
 use crate::window::{BrowserWindow, USER_AGENT};
+use crate::{bookmarks, history};
 
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -105,6 +105,22 @@ pub fn suggest_local(win: &Rc<BrowserWindow>, input: &str) -> Local {
         out.push(Suggestion::new("search", text, text));
     } else if host_match.is_none_or(|i| pages[i].url != resolved) {
         out.push(Suggestion::new("url", &resolved, &resolved));
+    }
+
+    if !win.incognito {
+        for link in bookmarks::matching(text, 4) {
+            if out.len() >= 6 {
+                break;
+            }
+            let url = link.url.clone().unwrap_or_default();
+            if out.iter().any(|s| s.value == url) {
+                continue;
+            }
+            out.push(Suggestion {
+                favicon: history::favicon_for_url(&url),
+                ..Suggestion::new("bookmark", &link.title, &url)
+            });
+        }
     }
 
     if !win.incognito {
@@ -247,5 +263,37 @@ pub fn palette(win: &Rc<BrowserWindow>, input: &str) -> Vec<Suggestion> {
             tab_id: Some(tab.id),
             ..Suggestion::new("tab", tab.display_title(), tab.display_url())
         });
-    commands.chain(tabs).collect()
+    // Bookmarks and visited pages, once something is typed.
+    let (marks, pages): (Vec<Suggestion>, Vec<Suggestion>) = if needle.is_empty() || win.incognito {
+        (Vec::new(), Vec::new())
+    } else {
+        let marks: Vec<Suggestion> = bookmarks::matching(input, 6)
+            .into_iter()
+            .map(|link| {
+                let url = link.url.clone().unwrap_or_default();
+                Suggestion {
+                    favicon: history::favicon_for_url(&url),
+                    ..Suggestion::new("bookmark", &link.title, &url)
+                }
+            })
+            .collect();
+        let pages = history::match_pages(input, 6)
+            .into_iter()
+            .filter(|page| !marks.iter().any(|m| m.value == page.url))
+            .map(|page| Suggestion {
+                favicon: history::favicon_for_url(&page.url),
+                ..Suggestion::new(
+                    "history",
+                    if page.title.is_empty() {
+                        &page.url
+                    } else {
+                        &page.title
+                    },
+                    &page.url,
+                )
+            })
+            .collect();
+        (marks, pages)
+    };
+    commands.chain(tabs).chain(marks).chain(pages).collect()
 }

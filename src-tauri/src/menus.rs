@@ -28,7 +28,7 @@ use crate::window;
 use crate::window::{BrowserWindow, OpenOptions, USER_AGENT};
 use crate::{history, session, settings};
 
-fn on_window(
+pub(crate) fn on_window(
     win: &Rc<BrowserWindow>,
     action: impl Fn(&Rc<BrowserWindow>) + 'static,
 ) -> impl Fn(ClickEvent) + 'static {
@@ -71,6 +71,7 @@ pub fn copy_text(text: &str) {
 /// What was right-clicked.
 struct Hit {
     link: Option<String>,
+    link_label: String,
     image: Option<String>,
     media: Option<String>,
     editable: bool,
@@ -91,6 +92,10 @@ pub fn page_menu(
         .unwrap_or((x as i32, y as i32));
     let uri = |value: Option<glib::GString>| value.map(|v| v.to_string()).filter(|v| !v.is_empty());
     let hit = Hit {
+        link_label: result
+            .link_label()
+            .map(|l| l.trim().to_string())
+            .unwrap_or_default(),
         link: if result.context_is_link() {
             uri(result.link_uri())
         } else {
@@ -215,7 +220,15 @@ fn show_page_menu(
             t("ctx.openLinkIncognito"),
             on_window(win, move |win| new_window(win, true, vec![url.clone()])),
         ));
+        let bookmarkable =
+            !win.incognito && crate::bookmarks::bookmarkable(&link) && !link.starts_with("mailto:");
+        let (url, title) = (link.clone(), hit.link_label.clone());
         items.push(item(t("ctx.copyLink"), move |_| copy_text(&link)));
+        if bookmarkable {
+            items.push(item(t("ctx.bookmarkLink"), move |_| {
+                crate::bookmarks::create("bar", None, &title, Some(&url));
+            }));
+        }
         items.push(separator());
     }
 
@@ -409,8 +422,20 @@ pub fn tab_menu(win: &Rc<BrowserWindow>, id: u32, x: f64, y: f64) {
             }),
             on_tab(win, id, |tab| tab.set_muted(!tab.is_muted())),
         ),
-        separator(),
     ];
+    if !win.incognito
+        && !internal
+        && crate::bookmarks::bookmarkable(&tab.url())
+        && !tab.url().starts_with("ftp:")
+    {
+        items.push(item(
+            t("tabmenu.bookmark"),
+            on_tab(win, id, |tab| {
+                crate::bookmarks::create("bar", None, &tab.display_title(), Some(&tab.url()));
+            }),
+        ));
+    }
+    items.push(separator());
     if let Some(active) = win
         .active_tab()
         .map(|t| t.id)
@@ -497,12 +522,47 @@ pub fn tab_menu(win: &Rc<BrowserWindow>, id: u32, x: f64, y: f64) {
 
 // ── App ───────────────────────────────────────────────────────────────────────
 
+fn bookmarks_submenu(win: &Rc<BrowserWindow>) -> MenuSpec {
+    let available = |id: &str| crate::actions::is_available(win, id);
+    let command = |id: &'static str| on_window(win, move |win| run_command(win, id));
+    submenu(
+        t("menu.bookmarks"),
+        vec![
+            item(t("cmd.bookmark-page"), command("bookmark-page"))
+                .accelerator("Ctrl+D")
+                .enabled(available("bookmark-page")),
+            item(t("cmd.bookmark-tabs"), command("bookmark-tabs"))
+                .accelerator("Ctrl+Shift+D")
+                .enabled(available("bookmark-tabs")),
+            separator(),
+            item(t("bookmarks.showBar"), command("toggle-bookmarks-bar"))
+                .checkbox(
+                    crate::settings::get().bookmarks_bar != crate::settings::BookmarksBar::Never,
+                )
+                .accelerator("Ctrl+Shift+B"),
+            item(
+                t("bookmarks.manager"),
+                on_window(win, |win| open_page(win, "bookmarks", "")),
+            )
+            .accelerator("Ctrl+Shift+O"),
+            separator(),
+            item(t("import.menu"), command("import-bookmarks")),
+            item(
+                t("bookmarks.exportMenu"),
+                on_window(win, |win| {
+                    crate::bookmarks::export(win);
+                }),
+            ),
+        ],
+    )
+}
+
 /// `x` is the menu button's right edge: the menu lines up with it.
 pub fn app_menu(win: &Rc<BrowserWindow>, x: f64, y: f64) {
     let web = win
         .active_tab()
         .is_some_and(|tab| tab.shows_web() && tab.view().is_some());
-    let items = vec![
+    let mut items = vec![
         item(t("menu.newTab"), on_window(win, new_tab)).accelerator("Ctrl+T"),
         item(
             t("menu.newWindow"),
@@ -520,6 +580,11 @@ pub fn app_menu(win: &Rc<BrowserWindow>, x: f64, y: f64) {
             on_window(win, |win| open_page(win, "history", "")),
         )
         .accelerator("Ctrl+H"),
+    ];
+    if !win.incognito {
+        items.push(bookmarks_submenu(win));
+    }
+    items.extend([
         item(
             t("menu.downloads"),
             on_window(win, |win| open_page(win, "downloads", "")),
@@ -568,7 +633,7 @@ pub fn app_menu(win: &Rc<BrowserWindow>, x: f64, y: f64) {
             on_window(win, |win| session::quit(&win.app_handle())),
         )
         .accelerator("Ctrl+Q"),
-    ];
+    ]);
     menu::popup(win, items, x, y, true, None);
 }
 

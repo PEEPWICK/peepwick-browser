@@ -162,8 +162,7 @@ impl Settings {
             restore_session: true,
             ask_where_to_save: false,
             sidebar_collapsed: false,
-            // Hidden until bookmarks are back in the Tauri version; then `Always` again.
-            bookmarks_bar: BookmarksBar::Never,
+            bookmarks_bar: BookmarksBar::Always,
             onboarded: false,
             error_log: false,
             clear_on_exit: Vec::new(),
@@ -357,10 +356,24 @@ fn file() -> std::path::PathBuf {
     paths::user_path("settings.json")
 }
 
+/// Written into settings.json; older files are brought up to date once when read.
+/// 2: 0.2.1a, where bookmarks came back.
+const PROFILE_VERSION: u64 = 2;
+
 pub fn load() {
     let mut settings = Settings::defaults(system_lang());
     if let Some(saved) = store::read_json::<Value>(&file()) {
         settings.apply_patch(&saved);
+        // 0.2.0a hid the bookmarks bar while there were no bookmarks to show.
+        if saved
+            .get("profileVersion")
+            .and_then(Value::as_u64)
+            .unwrap_or(0)
+            < 2
+            && settings.bookmarks_bar == BookmarksBar::Never
+        {
+            settings.bookmarks_bar = BookmarksBar::Always;
+        }
     }
     *SETTINGS.write().expect("settings lock") = Some(settings);
 }
@@ -378,7 +391,9 @@ pub fn update(patch: &Value) -> Settings {
     let mut guard = SETTINGS.write().expect("settings lock");
     let settings = guard.as_mut().expect("settings::load runs at startup");
     settings.apply_patch(patch);
-    if let Ok(json) = serde_json::to_vec_pretty(&*settings)
+    let mut saved = serde_json::to_value(&*settings).unwrap_or_default();
+    saved["profileVersion"] = Value::from(PROFILE_VERSION);
+    if let Ok(json) = serde_json::to_vec_pretty(&saved)
         && let Err(error) = store::write_atomic(&file(), &json)
     {
         eprintln!("[settings] could not save: {error}");
@@ -424,7 +439,7 @@ mod tests {
         let value = serde_json::to_value(Settings::defaults(Lang::En)).unwrap();
         assert_eq!(value["searchEngine"], "duckduckgo");
         assert_eq!(value["secureDns"], "automatic");
-        assert_eq!(value["bookmarksBar"], "never");
+        assert_eq!(value["bookmarksBar"], "always");
         assert_eq!(value["defaultZoom"], 1.0);
     }
 

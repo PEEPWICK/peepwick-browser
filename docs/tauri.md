@@ -117,7 +117,7 @@ Durum: ☐ yapılmadı · ◐ kısmen · ☑ tamam (Electron sürümüyle aynı 
 - ◐ Adres çubuğu: öneriler (geçmiş, açık sekmeler, arama motorunun önerileri; yer imleri onlar taşınınca), arama motorları
 - ◐ Komut çubuğu (Ctrl+K): komutlar ve açık sekmeler; geçmiş ve yer imleri onlar taşınınca
 - ☐ Yeni sekme sayfası, karşılama ekranı
-- ☐ Yer imleri: çubuk, yönetici, yıldız, klasör menüleri, HTML içe ve dışa aktarma
+- ◐ Yer imleri: çubuk, yönetici, yıldız, klasör menüleri, HTML içe ve dışa aktarma (0.2.1a; bookmarks.json Electron'la aynı biçim). Başka tarayıcılardan aktarma "Veri" bölümünde
 - ◐ Geçmiş sayfası, site başına silme, en çok ziyaret edilenler, site simgeleri (`peepwick://favicon/`); history.db Electron'la aynı şema. Aralıkla temizleme, tarama verileri taşınınca
 - ☐ İndirmeler: panel ve sayfa, duraklatma, sürdürme, yeniden deneme, klasörde gösterme
 - ◐ Sayfada bul, yazdırma, sayfayı kaydetme (MHTML), geliştirici araçları

@@ -119,6 +119,7 @@ pub fn save_before_exit() {
     if !QUITTING.with(|q| q.replace(true)) {
         save_now();
     }
+    crate::bookmarks::flush();
 }
 
 /// Before the browser quits (Ctrl+Q, the app menu).

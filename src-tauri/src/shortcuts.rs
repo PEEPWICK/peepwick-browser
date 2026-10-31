@@ -232,6 +232,7 @@ pub fn handle(win: &Rc<BrowserWindow>, event: &gdk::EventKey) -> bool {
                 }
             }
             's' => toggle_split(win),
+            'd' => run_command(win, "bookmark-tabs"),
             'b' => run_command(win, "toggle-bookmarks-bar"),
             'o' => open_page(win, "bookmarks", ""),
             _ => return false,
@@ -271,6 +272,7 @@ pub fn handle(win: &Rc<BrowserWindow>, event: &gdk::EventKey) -> bool {
             }
         }
         's' => save_page(win),
+        'd' => run_command(win, "bookmark-page"),
         'q' => session::quit(&win.app_handle()),
         _ => return false,
     }

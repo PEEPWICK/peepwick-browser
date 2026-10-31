@@ -193,6 +193,26 @@ async fn run(app: &AppHandle, win: &Rc<BrowserWindow>, step: &Value, out: &str) 
             );
             crate::menus::page_menu(&tab, &view, &ContextMenu::new(), &hit.build(), x, y);
         }
+        // Imports a bookmark file without the file dialog.
+        "importHtml" => {
+            let html = fs::read_to_string(get("path")).unwrap_or_default();
+            let result = crate::bookmarks::import_parsed(
+                crate::bookmarks::parse_netscape(&html),
+                true,
+                "Imported",
+            );
+            eprintln!("[harness] importHtml {result}");
+        }
+        "bookmarks" => {
+            let tree = serde_json::to_value(crate::bookmarks::tree()).unwrap_or_default();
+            let count = |root: &str| tree[root]["children"].as_array().map_or(0, Vec::len);
+            eprintln!(
+                "[harness] bookmarks bar={} other={} {}",
+                count("bar"),
+                count("other"),
+                tree["bar"]
+            );
+        }
         // Links from outside, as a second launch hands them over.
         "openUrls" => {
             let urls = step["urls"]

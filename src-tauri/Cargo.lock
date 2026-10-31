@@ -2752,6 +2752,7 @@ dependencies = [
  "javascriptcore-rs",
  "percent-encoding",
  "psl",
+ "regex",
  "reqwest",
  "rusqlite",
  "serde",

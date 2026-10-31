@@ -11,7 +11,7 @@ use webkit2gtk::{SaveMode, WebViewExt};
 use crate::i18n::t;
 use crate::settings::{self, BookmarksBar};
 use crate::window::{self, BrowserWindow, OpenOptions};
-use crate::{pages, session};
+use crate::{bookmarks, pages, session};
 
 pub fn new_tab(win: &Rc<BrowserWindow>) {
     win.open_tab(OpenOptions {
@@ -109,10 +109,53 @@ pub fn save_page(win: &Rc<BrowserWindow>) {
     dialog.show();
 }
 
+/// Ctrl+D: bookmarks the active page and opens the star panel to edit it.
+pub fn bookmark_current_page(win: &BrowserWindow) -> Option<(String, bool)> {
+    let tab = win
+        .active_tab()
+        .filter(|tab| tab.page().is_none() && !win.incognito)?;
+    let (id, created) = bookmarks::bookmark_page(&tab.url(), &tab.display_title())?;
+    win.command(json!({ "type": "bookmark-star", "created": created }));
+    Some((id, created))
+}
+
+/// Ctrl+Shift+D: every page of the space into a new folder in the bar.
+pub fn bookmark_space_tabs(win: &BrowserWindow) {
+    let tabs: Vec<(String, String)> = win
+        .tabs_in_order(None)
+        .iter()
+        .filter(|tab| tab.page().is_none())
+        .map(|tab| (tab.url(), tab.display_title()))
+        .collect();
+    let space = win
+        .workspace_list()
+        .into_iter()
+        .find(|(id, ..)| *id == win.active_workspace_id())
+        .map(|(_, name, _)| name)
+        .unwrap_or_default();
+    if let Some(id) = bookmarks::bookmark_tabs(tabs, &space) {
+        win.command(json!({ "type": "bookmark-edit", "id": id }));
+    }
+}
+
 pub fn is_available(win: &BrowserWindow, id: &str) -> bool {
     let active = win.active_tab();
     let web = active.as_ref().is_some_and(|tab| tab.shows_web());
     match id {
+        "bookmark-page" => {
+            !win.incognito
+                && active
+                    .as_ref()
+                    .is_some_and(|tab| tab.page().is_none() && bookmarks::bookmarkable(&tab.url()))
+        }
+        "bookmark-tabs" => {
+            !win.incognito
+                && win
+                    .tabs_in_order(None)
+                    .iter()
+                    .any(|tab| tab.page().is_none())
+        }
+        "import-bookmarks" => !win.incognito,
         "new-tab"
         | "new-window"
         | "new-incognito"
@@ -139,6 +182,11 @@ pub fn run_command(win: &Rc<BrowserWindow>, id: &str) {
         "history" => open_page(win, "history", ""),
         "downloads" => open_page(win, "downloads", ""),
         "bookmarks" => open_page(win, "bookmarks", ""),
+        "bookmark-page" => {
+            bookmark_current_page(win);
+        }
+        "bookmark-tabs" => bookmark_space_tabs(win),
+        "import-bookmarks" => win.command(json!({ "type": "import-bookmarks" })),
         "check-updates" => {
             open_page(win, "settings", "about");
             crate::updater::check(&win.app_handle());
@@ -168,7 +216,7 @@ pub fn run_command(win: &Rc<BrowserWindow>, id: &str) {
 }
 
 /// The commands the command bar offers, in order.
-pub const COMMANDS: [&str; 13] = [
+pub const COMMANDS: [&str; 16] = [
     "new-tab",
     "new-window",
     "new-incognito",
@@ -179,7 +227,10 @@ pub const COMMANDS: [&str; 13] = [
     "downloads",
     "history",
     "settings",
+    "bookmark-page",
+    "bookmark-tabs",
     "bookmarks",
     "toggle-bookmarks-bar",
+    "import-bookmarks",
     "check-updates",
 ];

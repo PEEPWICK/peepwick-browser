@@ -4,6 +4,7 @@
 //! views managed here. See `docs/tauri.md` for the plan of the move from Electron.
 
 mod actions;
+mod bookmarks;
 mod fonts;
 #[cfg(any(debug_assertions, feature = "harness"))]
 mod harness;
@@ -87,6 +88,7 @@ pub fn run() {
             paths::init(app.handle())?;
             settings::load();
             zoom::load();
+            bookmarks::load();
             history::open();
             shield::start(app.handle().clone());
             let cwd = std::env::current_dir().unwrap_or_default();
@@ -100,6 +102,7 @@ pub fn run() {
         .expect("PEEPWICK Browser could not start")
         .run(|_, event| {
             if let tauri::RunEvent::Exit = event {
+                bookmarks::flush();
                 updater::install_on_exit();
             }
         });
