@@ -1,0 +1,56 @@
+<!doctype html>
+<!--
+  The README banners: the PEEPWICK lockup (brand book §15) over the crowd pattern (§11).
+  ?line=BROWSER adds the descriptor; ?theme=light draws the light version.
+
+  Serve the repository root (python3 -m http.server 8770 --bind 127.0.0.1), open
+  http://127.0.0.1:8770/docs/brand/banners.html?line=BROWSER in the development harness and
+  save it with {"do":"snapshot","name":"banner-dark"}: the page is drawn at twice its size,
+  2560 × 720.
+-->
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<title>PEEPWICK banners</title>
+<style>
+@font-face { font-family: Archivo; src: url(/node_modules/@fontsource-variable/archivo/files/archivo-latin-standard-normal.woff2); font-weight: 100 900; font-stretch: 62% 125%; }
+@font-face { font-family: Archivo; src: url(/node_modules/@fontsource-variable/archivo/files/archivo-latin-ext-standard-normal.woff2); font-weight: 100 900; font-stretch: 62% 125%; unicode-range: U+0100-02BA; }
+@font-face { font-family: Plex; src: url(/node_modules/@fontsource/ibm-plex-mono/files/ibm-plex-mono-latin-400-normal.woff2); }
+:root { --ground: #0B0B0C; --dots: #1D1E20; --ink: #F4F3F0; --quiet: #8E8981; --rule: #3A3B3F; --eye: #F2A93B; --pupil: #0B0B0C; }
+:root.light { --ground: #FFFFFF; --dots: #E7E6E2; --ink: #0B0B0C; --quiet: #3A3B3F; --rule: #8E8981; --eye: #0B0B0C; --pupil: #FFFFFF; }
+html { zoom: 2; background: var(--ground); }
+body { margin: 0; width: 1280px; height: 360px; position: relative; overflow: hidden; font-family: Archivo; -webkit-font-smoothing: antialiased;
+  background: radial-gradient(circle, var(--dots) 2px, transparent 2.5px) 0 0 / 40px 40px, var(--ground); }
+.veil { position: absolute; inset: 0; background: radial-gradient(ellipse 62% 90% at 26% 52%, var(--ground) 48%, transparent 78%); }
+.eye { position: absolute; left: 1068px; top: 88px; width: 24px; height: 24px; border-radius: 50%; background: var(--eye); }
+.eye::after { content: ''; position: absolute; left: 10px; top: 5px; width: 10px; height: 10px; border-radius: 50%; background: var(--pupil); }
+.lockup { position: absolute; left: 96px; top: 112px; display: flex; align-items: center; gap: 26px; }
+.lockup svg { width: 440px; height: auto; display: block; }
+.rule { width: 2px; height: 62px; background: var(--rule); }
+.descriptor { font-family: Plex; font-size: 27px; letter-spacing: 0.08em; color: var(--ink); }
+.line { position: absolute; left: 96px; top: 228px; font-size: 28px; color: var(--quiet); letter-spacing: -0.005em; }
+.line b { color: var(--ink); font-weight: 700; font-stretch: 112%; }
+</style>
+</head>
+<body>
+<div class="veil"></div>
+<div class="eye"></div>
+<div class="lockup"></div>
+<div class="line"><b>Önce bakarız.</b> First, we look.</div>
+<script>
+const query = new URLSearchParams(location.search)
+const light = query.get('theme') === 'light'
+document.documentElement.classList.toggle('light', light)
+fetch('/build/brand/peepwick-logo-yatay-beyaz.svg')
+  .then((response) => response.text())
+  .then((svg) => {
+    const lockup = document.querySelector('.lockup')
+    lockup.innerHTML = svg.replace(/<\?xml[^>]*>/, '').replaceAll('#FFFFFF', light ? '#0B0B0C' : '#FFFFFF')
+    const line = query.get('line')
+    if (line) lockup.insertAdjacentHTML('beforeend', `<div class="rule"></div><div class="descriptor">${line}</div>`)
+    return document.fonts.ready
+  })
+  .then(() => document.body.setAttribute('data-ready', ''))
+</script>
+</body>
+</html>
