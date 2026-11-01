@@ -49,6 +49,25 @@ pub async fn pw_invoke(
     args: Vec<Value>,
 ) -> Result<Value, String> {
     let label = webview.label().to_string();
+    if matches!(method.as_str(), "siteInfo" | "siteClearData") {
+        // WebKit answers these later (cookies, site data): the reply waits for it.
+        let (tx, rx) = tokio::sync::oneshot::channel::<Value>();
+        let tx = std::sync::Arc::new(std::sync::Mutex::new(Some(tx)));
+        on_main(&app, &label, move |win| {
+            let tx = tx.clone();
+            let done = move |value: Value| {
+                if let Some(tx) = tx.lock().ok().and_then(|mut tx| tx.take()) {
+                    let _ = tx.send(value);
+                }
+            };
+            match method.as_str() {
+                "siteInfo" => crate::security::site_info(win, done),
+                _ => crate::security::clear_site_data(win, done),
+            }
+        })
+        .await?;
+        return rx.await.map_err(|e| e.to_string());
+    }
     if method == "suggest" {
         // The search engine's suggestions are fetched here, off the main thread.
         let input = short(args.first(), 500);
@@ -199,6 +218,7 @@ pub(crate) fn invoke(
         "downloadsList" => to_json(downloads::all(&short(args.first(), 200)))?,
         "chooseDownloadFolder" => downloads::choose_folder(win),
         "permissionsList" => permissions::list(),
+        "certificate" => crate::security::certificate(win, &short(args.first(), 300)),
         "extensionsList"
         | "shieldReport"
         | "passwordsList"
@@ -381,6 +401,8 @@ pub(crate) fn send(win: &Rc<BrowserWindow>, method: &str, args: &[Value]) {
             match text(arg(1)) {
                 "retry" => tab.reload(false),
                 "back" => tab.back(),
+                "http" => tab.continue_over_http(),
+                "proceed" => tab.proceed_insecure(),
                 other => eprintln!("[ipc] not ported yet: interstitial {other}"),
             }
         }
@@ -480,6 +502,12 @@ pub(crate) fn send(win: &Rc<BrowserWindow>, method: &str, args: &[Value]) {
             settings::update(&json!({ "shieldAllowlist": list }));
             window::settings_changed();
             tab.reload(false);
+        }
+        "certificateRevoke" => {
+            if let Some(tab) = win.active_tab() {
+                crate::security::revoke(&crate::pages::host_of(&tab.display_url()));
+                tab.reload(false);
+            }
         }
         "updateCheck" => crate::updater::check(&win.app_handle()),
         "updateInstall" => crate::updater::install_and_restart(&win.app_handle()),

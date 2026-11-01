@@ -51,3 +51,4 @@ rusqlite = { version = "0.41.1", features = ["bundled"] }
 tauri-plugin-single-instance = "2.5.5"
 tauri-plugin-updater = "2.14.1"
 regex = "1"
+x509-parser = "0.18.1"

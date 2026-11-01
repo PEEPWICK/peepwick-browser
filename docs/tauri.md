@@ -124,7 +124,7 @@ Durum: ☐ yapılmadı · ◐ kısmen · ☑ tamam (Electron sürümüyle aynı 
 - ◐ Yakınlaştırma: site başına, varsayılan yakınlaştırma, yazı boyutu
 - ◐ Sağ tık menüleri, sekme menüsü, uygulama menüsü (arayüzde çizilen; testli). Eksik: "sözlüğe ekle" (WebKitGTK'de API yok), resim içinde resim; yer imi ve okuma listesi girdileri onlar taşınınca
 - ◐ Site izinleri (konum, kamera, mikrofon, bildirimler) ve izin çubuğu (0.2.1a; permissions.json Electron'la aynı). Ekran paylaşımı WebRTC'siz WebKitGTK'da yok, pano okuma izni bu WebKit sürümünün bağlamasında yok; ikisi de reddedilir
-- ☐ Site güvenliği göstergesi ve sertifika görüntüleyici, sertifika hatası ekranı
+- ☑ Site güvenliği göstergesi, kilit paneli (sertifika, izinler, çerez sayısı, site verisini silme), sertifika görüntüleyici, sertifika hatası ekranı ve "yine de devam et" (0.2.1a). WebKit kabul ettiği sertifikayı unutamıyor; "uyarıyı geri al" sayfa yüklenince uyarıyı yeniden gösterir
 - ◐ Gizli pencere (diske yazmayan WebKit bağlamı; son gizli pencereyle silinir)
 - ☐ Ayarlar (bölüm bölüm), tema, dil, kısayollar
 - ☐ Odak modu
@@ -133,7 +133,7 @@ Durum: ☐ yapılmadı · ◐ kısmen · ☑ tamam (Electron sürümüyle aynı 
 ### Gizlilik
 - ◐ Kalkan: standart ve kapalı, site istisnaları ve paneldeki aç/kapat (0.2.1a; sekmenin içerik kuralları siteye göre takılıp çıkarılır, yeniden derleme yok). Sıkı düzey ve sayaçlar yok: WebKitGTK engellenenleri bildirmiyor, sayfa işlemi eklentisi gerekir
 - ◐ Üçüncü taraf çerezleri engelleme (WebKit politikası ve ITP), Global Privacy Control henüz yok
-- ☐ HTTPS-Only modu
+- ☑ HTTPS-Only modu (0.2.1a; üst düzey gezinmeler https'e yükseltilir, yanıt yoksa ya da başarısızsa uyarı, "HTTP ile devam et" oturum boyunca)
 - ☐ Zararlı site uyarısı
 - ☑ Parmak izi koruması (0.2.1a; sayfanın dünyasında WebKit kullanıcı betiği, tohum oturum anahtarı + üst sitenin adı)
 - ☑ Çerez bildirimlerini reddetme (0.2.1a; ayrı betik dünyasında, bütün çerçevelerde)

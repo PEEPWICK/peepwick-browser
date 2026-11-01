@@ -21,7 +21,7 @@ use webkit2gtk::{
 use crate::i18n::t;
 use crate::state::TabState;
 use crate::window::{BrowserWindow, OpenOptions};
-use crate::{history, menus, pages, settings, shortcuts, zoom};
+use crate::{history, menus, pages, security, settings, shortcuts, zoom};
 
 /// What a closed or restored tab needs to come back.
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -84,6 +84,8 @@ pub struct Tab {
     /// History to restore when the view is made: a tab restored from the last session, or
     /// one that slept.
     saved_history: RefCell<Option<Vec<u8>>>,
+    /// The certificate of the last load that failed with a certificate problem.
+    tls_failure: RefCell<Option<(gtk::gio::TlsCertificate, gtk::gio::TlsCertificateFlags)>>,
 }
 
 impl Tab {
@@ -108,6 +110,7 @@ impl Tab {
             last_active: Cell::new(now_ms()),
             opener_id: Cell::new(None),
             saved_history: RefCell::new(history),
+            tls_failure: RefCell::new(None),
         });
         tab.set_address(if saved.url.is_empty() {
             pages::NEW_TAB_URL
@@ -253,11 +256,16 @@ impl Tab {
             return;
         }
         self.set_address(url);
-        if self.view.borrow().is_none() {
+        let had_view = self.view.borrow().is_some();
+        if !had_view {
             // A sleeping tab's old history would be loaded instead of the new address.
             self.saved_history.replace(None);
         }
-        if let Some(view) = self.ensure_view() {
+        // A new view loads the address itself; loading it twice would look like a redirect
+        // loop to HTTPS-Only.
+        if let Some(view) = self.ensure_view()
+            && had_view
+        {
             view.load_uri(url);
         }
         self.relayout();
@@ -530,11 +538,7 @@ impl Tab {
         TabState {
             id: self.id,
             contents_id: None,
-            security: if web {
-                pages::security_of(&url)
-            } else {
-                "internal"
-            },
+            security: if web { self.security(&url) } else { "internal" },
             title: self.display_title(),
             url,
             favicon: if web {
@@ -584,6 +588,17 @@ impl Tab {
                     }
                 }
                 LoadEvent::Committed => {
+                    security::https_settled(tab.id);
+                    tab.tls_failure.replace(None);
+                    if let Some(uri) = view.uri()
+                        && uri.starts_with("https:")
+                        && let Some((certificate, flags)) =
+                            view.tls_info().filter(|(_, f)| !f.is_empty())
+                        && !security::has_exception(&pages::host_of(&uri))
+                    {
+                        tab.certificate_warning(&uri, &certificate, flags);
+                        return;
+                    }
                     if let Some(uri) = view.uri() {
                         let host_changed = pages::host_of(&uri) != pages::host_of(&tab.url());
                         tab.set_address(&uri);
@@ -678,14 +693,21 @@ impl Tab {
                 return false;
             }
             let Some(tab) = tab() else { return false };
-            tab.show_error(uri, error_code(error), &error.message(), false);
+            let code = error_code(error);
+            match security::https_fallback(tab.id, uri, code) {
+                Some(http) => tab.show_https_only(&http),
+                None => tab.show_error(uri, code, &error.message(), false),
+            }
             true
         });
 
         let tab = tab_of.clone();
-        view.connect_load_failed_with_tls_errors(move |_, uri, _, _| {
+        view.connect_load_failed_with_tls_errors(move |_, uri, certificate, flags| {
             let Some(tab) = tab() else { return false };
-            tab.show_error(uri, -202, "ERR_CERT_INVALID", true);
+            match security::https_fallback(tab.id, uri, -202) {
+                Some(http) => tab.show_https_only(&http),
+                None => tab.certificate_warning(uri, certificate, flags),
+            }
             true
         });
 
@@ -835,6 +857,75 @@ impl Tab {
         }
     }
 
+    fn security(&self, url: &str) -> &'static str {
+        let base = pages::security_of(url);
+        let problem = self.tls_failure.borrow().is_some()
+            || security::has_exception(&pages::host_of(url))
+            || self
+                .view()
+                .and_then(|v| v.tls_info())
+                .is_some_and(|(_, flags)| !flags.is_empty());
+        if base == "secure" && problem {
+            "unverified"
+        } else {
+            base
+        }
+    }
+
+    pub fn tls_failure(&self) -> Option<(gtk::gio::TlsCertificate, gtk::gio::TlsCertificateFlags)> {
+        self.tls_failure.borrow().clone()
+    }
+
+    /// HTTPS-Only: the secure version didn't work; ask before going on unencrypted.
+    pub fn show_https_only(&self, url: &str) {
+        self.stop();
+        self.interstitial
+            .replace(Some(json!({ "kind": "https-only", "url": url })));
+        self.relayout();
+        self.changed();
+    }
+
+    fn certificate_warning(
+        &self,
+        uri: &str,
+        certificate: &gtk::gio::TlsCertificate,
+        flags: gtk::gio::TlsCertificateFlags,
+    ) {
+        let (name, code) = security::verification(flags);
+        self.tls_failure.replace(Some((certificate.clone(), flags)));
+        self.show_error(uri, code, name.trim_start_matches("net::"), true);
+    }
+
+    /// "Continue over HTTP" on the HTTPS-Only warning: the site stays on HTTP this session.
+    pub fn continue_over_http(self: &Rc<Self>) {
+        let url = self
+            .interstitial
+            .borrow()
+            .as_ref()
+            .filter(|i| i["kind"] == "https-only")
+            .and_then(|i| i["url"].as_str().map(str::to_string));
+        if let Some(url) = url {
+            security::allow_http(&url);
+            self.load(&url);
+        }
+    }
+
+    /// "Continue anyway" on a certificate warning: this host's certificate is accepted this
+    /// session.
+    pub fn proceed_insecure(self: &Rc<Self>) {
+        let url = self
+            .interstitial
+            .borrow()
+            .as_ref()
+            .filter(|i| i["certificate"] == true)
+            .and_then(|i| i["url"].as_str().map(str::to_string));
+        let failure = self.tls_failure.borrow().clone();
+        if let (Some(url), Some((certificate, _)), Some(win)) = (url, failure, self.window()) {
+            security::allow_certificate(&win, &certificate, &pages::host_of(&url));
+            self.load(&url);
+        }
+    }
+
     fn show_error(&self, uri: &str, code: i32, description: &str, certificate: bool) {
         self.interstitial.replace(Some(json!({
             "kind": "error",
@@ -863,6 +954,21 @@ impl Tab {
                     return false;
                 };
                 if action.mouse_button() != 2 && !ctrl {
+                    match security::https_upgrade(self, &url) {
+                        Some(security::Upgrade::Https(secure)) => {
+                            decision.ignore();
+                            if let Some(view) = self.view() {
+                                view.load_uri(&secure);
+                            }
+                            return true;
+                        }
+                        Some(security::Upgrade::Warn) => {
+                            decision.ignore();
+                            self.show_https_only(&url);
+                            return true;
+                        }
+                        None => {}
+                    }
                     // The shield follows the site this tab is going to.
                     if let Some(manager) = self.view().and_then(|v| v.user_content_manager()) {
                         crate::shield::set_paused(&manager, crate::shield::paused_for(&url));

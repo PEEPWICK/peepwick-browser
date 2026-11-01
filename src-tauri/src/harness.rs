@@ -223,6 +223,17 @@ async fn run(app: &AppHandle, win: &Rc<BrowserWindow>, step: &Value, out: &str) 
                 action => crate::downloads::action(&first.id, action),
             }
         }
+        // The lock panel and its "delete site data", which answer later.
+        "siteInfo" => crate::security::site_info(win, |info| {
+            let mut info = info;
+            if let Some(cert) = info.get_mut("certificate").and_then(|c| c.as_object_mut()) {
+                cert.remove("chain");
+            }
+            eprintln!("[harness] siteInfo {info}");
+        }),
+        "siteClear" => {
+            crate::security::clear_site_data(win, |ok| eprintln!("[harness] siteClear {ok}"))
+        }
         // Links from outside, as a second launch hands them over.
         "openUrls" => {
             let urls = step["urls"]

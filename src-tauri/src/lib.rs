@@ -22,6 +22,7 @@ mod pagescripts;
 mod paths;
 mod permissions;
 mod search;
+mod security;
 mod session;
 mod settings;
 mod shield;
