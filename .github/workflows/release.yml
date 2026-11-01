@@ -97,6 +97,9 @@ jobs:
             -f "message=Update list for ${GITHUB_REF_NAME}"
             -f "content=$(base64 -w0 latest.json)"
             -f branch=updates)
-          sha="$(gh api "repos/${GITHUB_REPOSITORY}/contents/latest.json?ref=updates" --jq .sha 2>/dev/null || true)"
-          if [ -n "${sha}" ]; then args+=(-f "sha=${sha}"); fi
+          # Replacing the file needs its sha. The first release creates it: on that 404 gh
+          # prints the error body to stdout, so go by the exit status, not the output.
+          if sha="$(gh api "repos/${GITHUB_REPOSITORY}/contents/latest.json?ref=updates" --jq .sha 2>/dev/null)"; then
+            args+=(-f "sha=${sha}")
+          fi
           gh api "${args[@]}" > /dev/null
