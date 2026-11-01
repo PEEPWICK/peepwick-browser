@@ -150,5 +150,5 @@ Durum: ☐ yapılmadı · ◐ kısmen · ☑ tamam (Electron sürümüyle aynı 
 - ☐ Sayfa çevirisi (Bergamot)
 - ☐ Görev yöneticisi (Shift+Esc), medya denetimleri
 - ☐ Hata bildir, hata günlüğü
-- ☐ Varsayılan tarayıcı olma, otomatik güncelleme
+- ◐ Varsayılan tarayıcı olma, otomatik güncelleme. Güncelleme 0.2.1a'da: Tauri updater, minisign imzası (sürüm imzada, `requireSignedVersion`), liste `updates` dalında `latest.json`, AppImage hemen, deb yeniden başlatınca pkexec ile. Varsayılan tarayıcı düğmesi henüz yok
 - ◐ Türkçe ve İngilizce arayüz (Rust tarafı aynı sözlükleri derlemede gömer)

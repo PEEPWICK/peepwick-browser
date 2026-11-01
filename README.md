@@ -2,10 +2,10 @@
 
 **A calm, private browser that guards your attention. First, we look.**
 
-> **Alpha · 0.2.0a is a pre-release.** Version 0.2 moves PEEPWICK Browser from Electron to Tauri and
+> **Alpha · 0.2.1a is a pre-release.** Version 0.2 moves PEEPWICK Browser from Electron to Tauri and
 > Rust, with WebKitGTK drawing the pages. Not everything from 0.1.9a has come across yet; see
-> [Not in 0.2.0a yet](#not-in-020a-yet). 0.1.9a stays the latest full release, and installed 0.1.x
-> copies don't move to 0.2.0a on their own. Please
+> [Not in 0.2.1a yet](#not-in-021a-yet). 0.1.9a stays the latest full release, and installed 0.1.x
+> copies don't move to 0.2 on their own. Please
 > [report what you find](https://github.com/PEEPWICK/peepwick-browser/issues/new?template=bug_report.yml).
 
 PEEPWICK Browser is shaped by one idea from the PEEPWICK brand: attention is the scarcest thing
@@ -20,22 +20,41 @@ instead of 104 MB, because it uses the WebKitGTK already on your system.
 
 [Türkçe aşağıda](#türkçe)
 
-## What's in 0.2.0a
+## What's in 0.2.1a
 
 - **Spaces and vertical tabs.** Tabs live in a sidebar, grouped into spaces (work, personal…).
   Pin tabs, move them between spaces, open two side by side, and let unused tabs sleep. Windows,
   spaces and tabs come back when you start the browser again, each tab with its back and forward
   history.
 - **Shield.** Ads and trackers are blocked with the EasyList and EasyPrivacy lists, turned into
-  WebKit's own content blocking rules. Third-party cookies are blocked, and WebKit's Intelligent
-  Tracking Prevention is on.
+  WebKit's own content blocking rules, and the shield can be switched off for a site from its
+  panel. Third-party cookies are blocked, and WebKit's Intelligent Tracking Prevention is on.
+- **Fingerprinting protection.** Canvas, WebGL and audio readouts get tiny changes that differ for
+  every site and every session, the graphics card model is hidden and the processor count rounded,
+  so sites can't recognise you across sites.
+- **Cookie banners rejected.** Consent notices from common tools (OneTrust, Cookiebot, Didomi,
+  Usercentrics, Quantcast and more), and other clearly marked ones, get their "reject" button
+  pressed for you.
+- **Site security.** The button at the left of the address bar shows whether the connection is
+  secure. Open it to see the certificate (who issued it, the names it covers, validity,
+  fingerprints, chain), the site's permissions and cookies, and to delete the site's data.
+  Certificate problems stop the page behind a warning.
+- **HTTPS-Only mode.** Sites open over an encrypted connection; when one has no secure version,
+  the browser asks before continuing over HTTP. Addresses on your own network are left alone.
+- **Site permissions.** Sites that ask for your location, camera, microphone or notifications get
+  a question above the page; answers can be remembered per site and changed in Settings.
 - **Private windows** write nothing to disk; their data goes away with the last private window.
 - **Address bar and command bar.** Suggestions come from your history and open tabs, and from your
   search engine only if you turn that on. Search with DuckDuckGo, Brave Search, Startpage, Google,
   Ecosia or Bing. <kbd>Ctrl</kbd>+<kbd>K</kbd> finds commands and open tabs.
+- **Bookmarks.** A bookmarks bar with folders, a bookmark manager (folder tree, search, drag and
+  drop, undo) and the star in the address bar (<kbd>Ctrl</kbd>+<kbd>D</kbd>). Import from and export
+  to the HTML file every browser reads.
 - **History.** A history page with search, where you can remove single visits or everything from
   one site. The sites you visit most appear on the new tab page. Site icons are kept on your
   computer.
+- **Downloads.** A downloads page and panel with progress and speed; open, show in folder, retry,
+  move to the trash. Choose the folder, or be asked where to save each file.
 - **Per-site zoom**, with a default zoom and a font size.
 - **Find on page, print, save page** (as one .mhtml file) and the **Web Inspector**
   (<kbd>F12</kbd>).
@@ -44,28 +63,27 @@ instead of 104 MB, because it uses the WebKitGTK already on your system.
 - **Links from other apps** open as new tabs in the window you used last; a second launch never
   starts a second browser on the same profile.
 - **Keyboard shortcuts** that work with any keyboard layout.
+- **Updates in the browser.** 0.2.1a and later check GitHub at startup and every four hours,
+  download a new version in the background and install it when you restart the browser. Packages
+  are signed, and the browser installs nothing whose signature doesn't match.
 - Turkish and English interface; dark, light or system theme.
-- Files you download go straight to your Downloads folder (there is no downloads page yet).
 
-## Not in 0.2.0a yet
+## Not in 0.2.1a yet
 
 These were in 0.1.9a and come back over the next 0.2 releases:
 
-- Bookmarks: the bar, the manager, the star, import and export.
-- The downloads page.
-- Passwords and autofill, and importing from other browsers.
+- Passwords and autofill, and importing from other browsers (bookmarks from an HTML file already
+  work).
 - Encrypted backup, and clearing browsing data.
-- Site permissions. For now, sites that ask for your location, camera, microphone or
-  notifications are turned down.
-- The site security panel and the certificate viewer.
-- HTTPS-Only mode, dangerous site warnings, fingerprinting protection, rejecting cookie banners
-  and Global Privacy Control.
+- Dangerous site warnings and Global Privacy Control; the shield's strict level and its counts of
+  what it blocked.
 - Focus sessions.
 - Reader view, the reading list, read aloud and page translation.
 - Media controls, the task manager and Report a bug.
-- Automatic updates, and making PEEPWICK Browser the default browser from Settings.
+- Making PEEPWICK Browser the default browser from Settings.
 
-Some of their buttons and settings pages are already in place and don't do anything yet.
+Some of their buttons and settings pages are already in place and don't do anything yet. Downloads
+can't be paused, because WebKitGTK can't pause them.
 
 These are gone with the move, because WebKitGTK doesn't offer them:
 
@@ -81,26 +99,26 @@ These are gone with the move, because WebKitGTK doesn't offer them:
 - **Pages with a great many languages can open slowly.** The www.wikipedia.org portal takes 20–35
   seconds, as WebKitGTK looks fonts up again for every language on the page. Ordinary pages are not
   affected.
-- **A clean start.** 0.2.0a doesn't read the data of 0.1.x. Bookmarks, passwords and history from
+- **A clean start.** 0.2 doesn't read the data of 0.1.x. Bookmarks, passwords and history from
   0.1.x stay in `~/.config/PEEPWICK Browser`, where 0.1.9a still finds them.
 
 ## Install
 
-Download 0.2.0a from the
-[Releases page](https://github.com/PEEPWICK/peepwick-browser/releases/tag/v0.2.0a), where it is
+Download 0.2.1a from the
+[Releases page](https://github.com/PEEPWICK/peepwick-browser/releases/tag/v0.2.1a), where it is
 marked "Pre-release":
 
 - **AppImage** (any distribution; it carries its own WebKitGTK and GStreamer):
 
   ```bash
-  chmod +x peepwick-browser-0.2.0a-x86_64.AppImage
-  ./peepwick-browser-0.2.0a-x86_64.AppImage
+  chmod +x peepwick-browser-0.2.1a-x86_64.AppImage
+  ./peepwick-browser-0.2.1a-x86_64.AppImage
   ```
 
 - **.deb** (Ubuntu, Debian, Zorin, Mint…; it uses your system's WebKitGTK):
 
   ```bash
-  sudo apt install ./peepwick-browser-0.2.0a-amd64.deb
+  sudo apt install ./peepwick-browser-0.2.1a-amd64.deb
   ```
 
   The .deb replaces an installed 0.1.x .deb. To go back, install 0.1.9a again:
@@ -109,8 +127,12 @@ marked "Pre-release":
   sudo apt install --allow-downgrades ./peepwick-browser-0.1.9a-amd64.deb
   ```
 
-0.2.0a doesn't update itself yet; new versions appear on the Releases page. The browser keeps its
-data in `~/.local/share/com.peepwick.browser` and its cache in `~/.cache/com.peepwick.browser`.
+From 0.2.1a on, the browser updates itself: the AppImage replaces its own file, and the .deb asks
+for your password through the system dialog when you restart. **0.2.0a can't update itself**, so
+install 0.2.1a over it once by hand; your 0.2.0a data stays.
+
+The browser keeps its data in `~/.local/share/com.peepwick.browser` and its cache in
+`~/.cache/com.peepwick.browser`.
 
 ## Keyboard shortcuts
 
@@ -125,8 +147,12 @@ data in `~/.local/share/com.peepwick.browser` and its cache in `~/.cache/com.pee
 | <kbd>Ctrl</kbd>+<kbd>K</kbd> | Command bar |
 | <kbd>Ctrl</kbd>+<kbd>B</kbd> | Show or hide the sidebar |
 | <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>S</kbd> | Side by side with the previous tab |
+| <kbd>Ctrl</kbd>+<kbd>D</kbd> | Bookmark this page |
+| <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>D</kbd> | Bookmark all tabs of the space |
+| <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>B</kbd> | Show or hide the bookmarks bar |
+| <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>O</kbd> | Bookmark manager |
 | <kbd>Ctrl</kbd>+<kbd>F</kbd> | Find on page |
-| <kbd>Ctrl</kbd>+<kbd>H</kbd> | History |
+| <kbd>Ctrl</kbd>+<kbd>H</kbd> / <kbd>Ctrl</kbd>+<kbd>J</kbd> | History / downloads |
 | <kbd>Ctrl</kbd>+<kbd>S</kbd> / <kbd>Ctrl</kbd>+<kbd>P</kbd> | Save page / print |
 | <kbd>Ctrl</kbd>+<kbd>=</kbd> / <kbd>Ctrl</kbd>+<kbd>-</kbd> / <kbd>Ctrl</kbd>+<kbd>0</kbd> | Zoom in / out / reset |
 | <kbd>Ctrl</kbd>+<kbd>N</kbd> / <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>N</kbd> | New window / private window |
@@ -139,10 +165,13 @@ PEEPWICK Browser has no telemetry and no account. It talks to these services on 
 | Service | Why | When |
 | --- | --- | --- |
 | `easylist.to` | Filter lists for the shield | First start, then every three days |
+| `raw.githubusercontent.com` | The update list (the newest version and its signatures) | 15 seconds after start, then every four hours |
+| `github.com` (Releases) | Downloading an update | Only when there is a new version |
 | Your search engine | Search suggestions | Only if you turn suggestions on (off by default) |
 
 Pages you visit load as in any browser, and WebKit fetches their icons along with them. "Copy image"
-fetches the image again from its site. 0.2.0a doesn't check for updates.
+fetches the image again from its site. Desktop notifications from sites you allow go through your
+desktop's notification service.
 
 ## Build from source
 
@@ -174,9 +203,15 @@ themselves (`gstreamer1.0-plugins-base`, `gstreamer1.0-plugins-good`, `gstreamer
    `releaseStage` adds the suffix people see: `alpha` → `v0.2.0a`, `beta` → `v0.2.0b`,
    `stable` → `v0.2.0`.
 2. Push the commit and the tag: `git push --follow-tags`.
-3. The **Release** workflow builds the .deb and the AppImage and publishes a GitHub release. While
-   `githubPrerelease` is `true` in package.json, the release is marked as a pre-release, so it
-   doesn't become the "Latest" release that installed 0.1.x copies update to.
+3. The **Release** workflow builds the .deb and the AppImage, signs them with the
+   `TAURI_SIGNING_PRIVATE_KEY` secret (the matching public key is in `src-tauri/tauri.conf.json`),
+   publishes a GitHub release and writes the update list, `latest.json`, into the `updates` branch,
+   where installed 0.2.1a+ copies look. While `githubPrerelease` is `true` in package.json, the
+   release is marked as a pre-release, so it doesn't become the "Latest" release that installed
+   0.1.x copies update to.
+
+Keep a copy of the private signing key somewhere safe: without it no update can reach the copies
+already installed.
 
 ## How it is built
 
@@ -187,7 +222,12 @@ themselves (`gstreamer1.0-plugins-base`, `gstreamer1.0-plugins-good`, `gstreamer
   web content never reaches a privileged page.
 - The shield: adblock-rust turns the filter lists into WebKit content rules, which WebKit compiles
   once and keeps in the profile.
-- History and site icons are stored in SQLite (rusqlite).
+- History and site icons are stored in SQLite (rusqlite); bookmarks, downloads and site permissions
+  in JSON files, as the Electron version kept them.
+- Fingerprinting protection and cookie banner rejection are WebKit user scripts
+  (`src-tauri/scripts`), one in the page's own world and one in a world of its own.
+- Updates come through Tauri's updater; packages are checked against a minisign signature that has
+  to name the version the update list announces.
 - `src/renderer`: the interface in React, styled with the PEEPWICK brand tokens: Gece, Beyaz, warm
   greys and one Fitil amber accent; Archivo, Newsreader and IBM Plex Mono.
 - `src/shared`: types, the contract between the interface and Rust, and the translations. The Rust
@@ -214,10 +254,10 @@ If you distribute a modified version, please give it your own name and icon.
 
 **Dikkatinizi koruyan, sakin ve gizli bir tarayıcı. Önce bakarız.**
 
-> **Alpha · 0.2.0a bir ön sürümdür.** 0.2 ile PEEPWICK Browser Electron'dan Tauri ve Rust'a geçiyor;
+> **Alpha · 0.2.1a bir ön sürümdür.** 0.2 ile PEEPWICK Browser Electron'dan Tauri ve Rust'a geçiyor;
 > sayfaları WebKitGTK çiziyor. 0.1.9a'daki her şey henüz gelmedi; aşağıdaki
-> [0.2.0a'da henüz olmayanlar](#020ada-henüz-olmayanlar) bölümüne bakın. En son tam sürüm 0.1.9a
-> olarak kalıyor; kurulu 0.1.x kopyaları kendiliğinden 0.2.0a'ya geçmez.
+> [0.2.1a'da henüz olmayanlar](#021ada-henüz-olmayanlar) bölümüne bakın. En son tam sürüm 0.1.9a
+> olarak kalıyor; kurulu 0.1.x kopyaları kendiliğinden 0.2'ye geçmez.
 
 PEEPWICK Browser, PEEPWICK markasının bir fikrine dayanır: dijital dünyanın en kıt kaynağı dikkattir.
 Reklamları ve izleyicileri engeller, alanlarınızı ayrı tutar. Siyah-beyaz, sakin bir çerçeve sunar;
@@ -227,21 +267,41 @@ gezdiğiniz sayfalar kendi renkleriyle kalır.
 [WebKitGTK](https://webkitgtk.org/) çiziyor. Sistemdeki WebKitGTK'yı kullandığı için .deb paketi
 104 MB yerine yaklaşık 4 MB.
 
-### 0.2.0a'da olanlar
+### 0.2.1a'da olanlar
 
 - **Alanlar ve dikey sekmeler:** Sekmeler kenar çubuğunda, iş ve kişisel gibi alanlarda durur.
   Sabitleme, alanlar arası taşıma, yan yana görünüm ve kullanılmayan sekmeleri uyutma. Tarayıcıyı
   yeniden açtığınızda pencereler, alanlar ve sekmeler geri gelir; her sekme ileri ve geri geçmişiyle.
 - **Kalkan:** EasyList ve EasyPrivacy listeleriyle reklam ve izleyici engelleme; listeler WebKit'in
-  kendi içerik engelleme kurallarına çevrilir. Üçüncü taraf çerezler engellenir, WebKit'in akıllı
-  izleme önleme özelliği açıktır.
+  kendi içerik engelleme kurallarına çevrilir, kalkan panelinden site başına kapatılabilir. Üçüncü
+  taraf çerezler engellenir, WebKit'in akıllı izleme önleme özelliği açıktır.
+- **Parmak izi koruması:** Canvas, WebGL ve ses değerlerine her site ve her oturum için farklı,
+  fark edilmeyecek kadar küçük değişiklikler katılır; ekran kartı modeli gizlenir, işlemci sayısı
+  yuvarlanır. Siteler sizi başka sitelerde tanıyamaz.
+- **Çerez bildirimlerini reddetme:** Yaygın onay araçlarının (OneTrust, Cookiebot, Didomi,
+  Usercentrics, Quantcast ve diğerleri) ve açıkça işaretli diğer bildirimlerin "Reddet" düğmesine
+  sizin yerinize basılır.
+- **Site güvenliği:** Adres çubuğunun solundaki düğme bağlantının güvenli olup olmadığını gösterir.
+  Açınca sertifikayı (veren kuruluş, kapsadığı alan adları, geçerlilik, parmak izleri, zincir),
+  sitenin izinlerini ve çerezlerini görebilir, sitenin verilerini silebilirsiniz. Sertifika sorunu
+  olan sayfalar bir uyarının arkasında durur.
+- **HTTPS-Only modu:** Siteler şifreli bağlantıyla açılır; güvenli sürümü olmayan bir sitede HTTP
+  ile devam etmeden önce sorulur. Kendi ağınızdaki adresler etkilenmez.
+- **Site izinleri:** Konumunuzu, kameranızı, mikrofonunuzu ya da bildirim izni isteyen siteler için
+  sayfanın üstünde bir soru çıkar; yanıtlar site başına hatırlanabilir, Ayarlar'dan değiştirilir.
 - **Gizli pencereler** diske hiçbir şey yazmaz; verileri son gizli pencereyle birlikte silinir.
 - **Adres çubuğu ve komut çubuğu:** Öneriler geçmişinizden ve açık sekmelerden gelir, arama
   motorunuzdan ise yalnızca siz açarsanız. DuckDuckGo, Brave Search, Startpage, Google, Ecosia ya da
   Bing ile arama. <kbd>Ctrl</kbd>+<kbd>K</kbd> komutları ve açık sekmeleri bulur.
+- **Yer imleri:** Klasörlü yer imi çubuğu, yer imi yöneticisi (klasör ağacı, arama, sürükle-bırak,
+  geri alma) ve adres çubuğundaki yıldız (<kbd>Ctrl</kbd>+<kbd>D</kbd>). Her tarayıcının okuduğu
+  HTML dosyasından içe aktarma ve HTML olarak dışa aktarma.
 - **Geçmiş:** Aranabilir geçmiş sayfası; tek tek ziyaretleri ya da bir sitenin tümünü silebilirsiniz.
   En sık ziyaret ettiğiniz siteler yeni sekme sayfasında görünür. Site simgeleri bilgisayarınızda
   saklanır.
+- **İndirmeler:** İlerleme ve hızla indirmeler sayfası ve paneli; açma, klasörde gösterme, yeniden
+  deneme, çöp kutusuna taşıma. Klasörü seçebilir ya da her dosyada nereye kaydedileceğinin
+  sorulmasını isteyebilirsiniz.
 - **Site başına yakınlaştırma**, varsayılan yakınlaştırma ve yazı boyutuyla.
 - **Sayfada bulma, yazdırma, sayfayı kaydetme** (tek bir .mhtml dosyası olarak) ve
   **Web Denetçisi** (<kbd>F12</kbd>).
@@ -250,28 +310,26 @@ gezdiğiniz sayfalar kendi renkleriyle kalır.
 - **Başka uygulamalardan gelen bağlantılar** en son kullandığınız pencerede yeni sekmede açılır;
   ikinci bir açılış aynı profille ikinci bir tarayıcı başlatmaz.
 - Her klavye düzeninde çalışan **klavye kısayolları**.
+- **Tarayıcı içinden güncelleme:** 0.2.1a ve sonrası açılışta ve dört saatte bir GitHub'a bakar,
+  yeni sürümü arka planda indirir, tarayıcıyı yeniden başlatınca kurar. Paketler imzalıdır;
+  imzası tutmayan hiçbir şey kurulmaz.
 - Türkçe ve İngilizce arayüz; koyu, açık ya da sistem teması.
-- İndirdiğiniz dosyalar doğrudan İndirilenler klasörüne gider (indirmeler sayfası henüz yok).
 
-### 0.2.0a'da henüz olmayanlar
+### 0.2.1a'da henüz olmayanlar
 
 Bunlar 0.1.9a'da vardı ve sonraki 0.2 sürümlerinde geri gelecek:
 
-- Yer imleri: çubuk, yönetici, yıldız, içe ve dışa aktarma.
-- İndirmeler sayfası.
-- Parolalar ve otomatik doldurma, başka tarayıcılardan aktarma.
+- Parolalar ve otomatik doldurma, başka tarayıcılardan aktarma (HTML dosyasından yer imi aktarma
+  şimdiden çalışıyor).
 - Şifreli yedek ve tarama verilerini temizleme.
-- Site izinleri. Şimdilik konumunuzu, kameranızı, mikrofonunuzu ya da bildirim izni isteyen
-  siteler reddedilir.
-- Site güvenliği paneli ve sertifika görüntüleyici.
-- HTTPS-Only modu, zararlı site uyarısı, parmak izi koruması, çerez bildirimlerini reddetme ve
-  Global Privacy Control.
+- Zararlı site uyarısı ve Global Privacy Control; kalkanın sıkı düzeyi ve engellenenlerin sayısı.
 - Odak oturumları.
 - Okuma modu, okuma listesi, sesli okuma ve sayfa çevirisi.
 - Medya denetimleri, görev yöneticisi ve Hata bildir.
-- Otomatik güncelleme ve Ayarlar'dan varsayılan tarayıcı yapma.
+- Ayarlar'dan varsayılan tarayıcı yapma.
 
 Bunların bazı düğmeleri ve ayar sayfaları şimdiden yerinde, ancak henüz bir şey yapmıyor.
+İndirmeler duraklatılamaz, çünkü WebKitGTK bunu desteklemiyor.
 
 Geçişle birlikte bunlar kalktı, çünkü WebKitGTK sunmuyor:
 
@@ -287,34 +345,41 @@ Geçişle birlikte bunlar kalktı, çünkü WebKitGTK sunmuyor:
 - **Çok sayıda dil içeren sayfalar yavaş açılabilir.** www.wikipedia.org giriş sayfası 20–35
   saniyede açılıyor, çünkü WebKitGTK sayfadaki her dil için yazı tiplerini yeniden arıyor. Sıradan
   sayfalar etkilenmez.
-- **Temiz başlangıç:** 0.2.0a, 0.1.x'in verilerini okumaz. 0.1.x'teki yer imleri, parolalar ve
+- **Temiz başlangıç:** 0.2, 0.1.x'in verilerini okumaz. 0.1.x'teki yer imleri, parolalar ve
   geçmiş `~/.config/PEEPWICK Browser` klasöründe kalır; 0.1.9a onları orada bulmaya devam eder.
 
 ### Kurulum
 
-0.2.0a'yı [Releases sayfasından](https://github.com/PEEPWICK/peepwick-browser/releases/tag/v0.2.0a)
+0.2.1a'yı [Releases sayfasından](https://github.com/PEEPWICK/peepwick-browser/releases/tag/v0.2.1a)
 indirin; orada "Pre-release" olarak işaretli:
 
 - **AppImage** (her dağıtımda; kendi WebKitGTK ve GStreamer'ını taşır): dosyayı çalıştırılabilir
   yapıp açın.
 - **.deb** (Ubuntu, Debian, Zorin, Mint…; sistemdeki WebKitGTK'yı kullanır):
-  `sudo apt install ./peepwick-browser-0.2.0a-amd64.deb`. Kurulu bir 0.1.x .deb paketinin yerini
+  `sudo apt install ./peepwick-browser-0.2.1a-amd64.deb`. Kurulu bir 0.1.x .deb paketinin yerini
   alır; geri dönmek için 0.1.9a .deb paketini yeniden kurun
   (`sudo apt install --allow-downgrades ./peepwick-browser-0.1.9a-amd64.deb`).
 
-0.2.0a henüz kendini güncellemiyor; yeni sürümler Releases sayfasında yayınlanır. Tarayıcı
-verilerini `~/.local/share/com.peepwick.browser`, önbelleğini `~/.cache/com.peepwick.browser`
-klasöründe tutar.
+0.2.1a'dan itibaren tarayıcı kendini günceller: AppImage kendi dosyasını yeniler, .deb ise yeniden
+başlatınca sistem penceresinden parolanızı sorar. **0.2.0a kendini güncelleyemez**; 0.2.1a'yı bir
+kez elle üzerine kurun, 0.2.0a'daki verileriniz kalır.
+
+Tarayıcı verilerini `~/.local/share/com.peepwick.browser`, önbelleğini
+`~/.cache/com.peepwick.browser` klasöründe tutar.
 
 ### Tarayıcının bağlandığı hizmetler
 
 Telemetri yok, hesap yok. Tarayıcı kendiliğinden yalnızca şunlara bağlanır:
 
 - `easylist.to`: kalkanın filtre listeleri; ilk açılışta, sonra üç günde bir.
+- `raw.githubusercontent.com`: güncelleme listesi (en yeni sürüm ve imzaları); açılıştan 15 saniye
+  sonra, sonra dört saatte bir.
+- `github.com` (Releases): güncellemeyi indirmek; yalnızca yeni sürüm olduğunda.
 - Arama motorunuz: arama önerileri; yalnızca önerileri açarsanız (varsayılan olarak kapalı).
 
 Gezdiğiniz sayfalar her tarayıcıda olduğu gibi yüklenir; WebKit simgelerini de onlarla birlikte
-alır. "Resmi kopyala" resmi kendi sitesinden yeniden indirir. 0.2.0a güncelleme denetimi yapmaz.
+alır. "Resmi kopyala" resmi kendi sitesinden yeniden indirir. İzin verdiğiniz sitelerin
+bildirimleri masaüstünüzün bildirim hizmetinden geçer.
 
 ### Kaynaktan derleme ve sürüm yayınlama
 
@@ -327,9 +392,12 @@ npm run release -- patch
 git push --follow-tags
 ```
 
-Etiket gönderildiğinde **Release** iş akışı .deb ve AppImage paketlerini derleyip GitHub'da
-yayınlar. package.json'da `githubPrerelease` `true` olduğu sürece sürüm ön sürüm olarak işaretlenir;
-böylece kurulu 0.1.x kopyalarının güncellendiği "Latest" sürüm olmaz. Electron sürümü (0.1.x)
+Etiket gönderildiğinde **Release** iş akışı .deb ve AppImage paketlerini derler,
+`TAURI_SIGNING_PRIVATE_KEY` gizli değişkeniyle imzalar, GitHub'da yayınlar ve güncelleme listesini
+(`latest.json`) `updates` dalına yazar. package.json'da `githubPrerelease` `true` olduğu sürece sürüm
+ön sürüm olarak işaretlenir; böylece kurulu 0.1.x kopyalarının güncellendiği "Latest" sürüm olmaz.
+İmza anahtarının bir kopyasını güvenli bir yerde saklayın: o olmadan kurulu kopyalara güncelleme
+ulaşamaz. Electron sürümü (0.1.x)
 [`electron`](https://github.com/PEEPWICK/peepwick-browser/tree/electron) dalında duruyor.
 
 ### Lisans
