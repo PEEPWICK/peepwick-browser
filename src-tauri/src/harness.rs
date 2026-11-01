@@ -118,6 +118,10 @@ async fn run(app: &AppHandle, win: &Rc<BrowserWindow>, step: &Value, out: &str) 
             Ok(()) => eprintln!("[harness] captured {}", get("name")),
             Err(error) => eprintln!("[harness] capture failed: {error}"),
         },
+        "snapshot" => match snapshot(win, &format!("{out}/{}.png", get("name"))).await {
+            Ok(()) => eprintln!("[harness] snapshot {}", get("name")),
+            Err(error) => eprintln!("[harness] snapshot failed: {error}"),
+        },
         "measure" => {
             let (kb, count) = memory();
             eprintln!("[harness] memory {} MB in {count} processes", kb / 1024);
@@ -312,6 +316,21 @@ async fn capture(win: &Rc<BrowserWindow>, path: &str) -> Result<(), String> {
     drop(cr);
     let mut file = fs::File::create(path).map_err(|e| e.to_string())?;
     surface.write_to_png(&mut file).map_err(|e| e.to_string())
+}
+
+/// The whole page in the active tab, wider or taller than the window too: for images made
+/// from HTML, such as the README banners in docs/brand.
+async fn snapshot(win: &Rc<BrowserWindow>, path: &str) -> Result<(), String> {
+    let view = win.active_tab().and_then(|t| t.view()).ok_or("no page")?;
+    let shot = glib::future_with_timeout(
+        Duration::from_secs(10),
+        view.snapshot_future(SnapshotRegion::FullDocument, SnapshotOptions::NONE),
+    )
+    .await
+    .map_err(|_| "page snapshot timed out".to_string())?
+    .map_err(|e| e.message().to_string())?;
+    let mut file = fs::File::create(path).map_err(|e| e.to_string())?;
+    shot.write_to_png(&mut file).map_err(|e| e.to_string())
 }
 
 /// Memory (proportional set size) of this process and everything it started: WebKit's web,
