@@ -1,7 +1,7 @@
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/brand/banner-dark.png">
-    <img src="docs/brand/banner-light.png" alt="PEEPWICK Browser · Önce bakarız. First, we look." width="100%">
+    <img src="docs/brand/banner-light.png" alt="PEEPWICK Browser · First, we look." width="100%">
   </picture>
 </p>
 
@@ -15,8 +15,6 @@
   <a href="#keyboard-shortcuts">Shortcuts</a>
   &nbsp;·&nbsp;
   <a href="#build-from-source">Build from source</a>
-  &nbsp;·&nbsp;
-  <a href="#türkçe">Türkçe</a>
 </p>
 
 <p align="center"><sub>ALPHA · LINUX · OPEN SOURCE · GPL-3.0</sub></p>
@@ -212,8 +210,8 @@ already installed.
   (`src-tauri/scripts`), one in the page's own world and one in a world of its own.
 - Updates come through Tauri's updater; packages are checked against a minisign signature that has
   to name the version the update list announces.
-- `src/renderer`: the interface in React, styled with the PEEPWICK brand tokens: Gece, Beyaz, warm
-  greys and one Fitil amber accent; Archivo, Newsreader and IBM Plex Mono.
+- `src/renderer`: the interface in React, styled with the PEEPWICK brand tokens: near-black and
+  white, warm greys and a single amber accent; Archivo, Newsreader and IBM Plex Mono.
 - `src/shared`: types, the contract between the interface and Rust, and the translations. The Rust
   side builds the same dictionaries in.
 
@@ -229,176 +227,3 @@ The PEEPWICK name and the Double-Eye W mark identify PEEPWICK and are not part o
 If you distribute a modified version, please give it your own name and icon.
 
 PEEPWICK Browser is made by [PEEPWICK](https://github.com/PEEPWICK). First, we look.
-
----
-
-## Türkçe
-
-<h3 align="center">Dikkatinizi koruyan tarayıcı.</h3>
-
-<p align="center">
-  <a href="https://github.com/PEEPWICK/peepwick-browser/releases/tag/v0.2.1a"><b>Linux için indirin</b></a>
-  &nbsp;·&nbsp;
-  <a href="#tarayıcı-neyi-nereye-gönderir">Gizlilik</a>
-  &nbsp;·&nbsp;
-  <a href="#klavye-kısayolları">Kısayollar</a>
-  &nbsp;·&nbsp;
-  <a href="#kaynaktan-derleme">Kaynaktan derleme</a>
-</p>
-
-Günümüzün büyük kısmı bir tarayıcıda geçiyor ve internetin çoğu dikkatinizi dağıtmak için
-kurulmuş. PEEPWICK Browser reklamları ve izleyicileri ayıklar, işinizi ve kendinize ayırdığınız
-zamanı ayrı alanlarda tutar ve sessiz kalır: siyah-beyaz, sakin bir çerçeve; gezdiğiniz sayfalar
-kendi renkleriyle kalır.
-
-Rust ve [Tauri](https://tauri.app/) ile yazıldı; sayfaları GNOME Web'in motoru
-[WebKitGTK](https://webkitgtk.org/) çiziyor.
-
-### Sakin bir çerçeve
-
-- **Alanlar ve dikey sekmeler.** Sekmeler kenar çubuğunda, iş ve kişisel gibi alanlarda durur.
-  Sabitleyin, alanlar arasında taşıyın, iki sekmeyi yan yana açın; kullanmadıklarınız uyusun.
-  Tarayıcıyı kapattığınızda her şey bir sonraki açılışta geri gelir: pencereler, alanlar ve
-  sekmeler, her sekme ileri ve geri geçmişiyle.
-- **Her şey için tek çubuk.** Adres çubuğu geçmişinizden, yer imlerinizden ve açık sekmelerinizden
-  öneri getirir. <kbd>Ctrl</kbd>+<kbd>K</kbd> komutlar, sekmeler ve yer imleri için komut
-  çubuğunu açar. DuckDuckGo, Brave Search, Startpage, Google, Ecosia ya da Bing ile arayın; arama
-  motorunuzun önerileri yalnızca siz açarsanız gelir.
-- **Yer imleri.** Klasörlü yer imi çubuğu; arama, sürükle-bırak ve geri alma özellikli yer imi
-  yöneticisi; adres çubuğundaki yıldız (<kbd>Ctrl</kbd>+<kbd>D</kbd>). Yer imlerinizi her
-  tarayıcının dışa aktardığı HTML dosyasıyla getirin, aynı yolla yanınızda götürün.
-- **Kendi sayfaları da aynı sakinlikte.** Yeni sekme sayfası en sık ziyaret ettiğiniz siteleri
-  gösterir; geçmiş, indirmeler, yer imleri ve ayarlar aynı çerçevede durur. Türkçe ya da İngilizce;
-  koyu, açık ya da sisteminizin teması.
-
-### Varsayılan olarak gizli
-
-- **Kalkan.** Reklamlar ve izleyiciler EasyList ve EasyPrivacy listeleriyle engellenir; listeler
-  WebKit'in kendi içerik engelleme kurallarına çevrilir. Bir site gerektirirse kalkanı yalnızca o
-  site için kapatın.
-- **Parmak izi koruması.** Canvas, WebGL ve ses değerlerine her site ve her oturum için farklı,
-  fark edilmeyecek kadar küçük değişiklikler katılır. Ekran kartı modeli gizlenir, işlemci sayısı
-  yuvarlanır; siteler sizi bir siteden ötekine tanıyamaz.
-- **Çerez bildirimlerine "hayır".** Yaygın onay araçlarından bir bildirim çıktığında "Reddet"
-  düğmesine sizin yerinize basılır.
-- **Üçüncü taraf çerezler engelli,** WebKit'in akıllı izleme önleme özelliği açık.
-- **Gizli pencereler** diske hiçbir şey yazmaz; verileri son gizli pencereyle birlikte silinir.
-- **Telemetri yok, hesap yok.** Tarayıcı onu nasıl kullandığınızı ölçmez. Neyi nereye gönderdiği
-  [aşağıda](#tarayıcı-neyi-nereye-gönderir).
-
-### Görünür güvenlik
-
-- **Site bilgileri.** Adres çubuğunun solundaki düğme bağlantının güvenli olup olmadığını gösterir.
-  Açınca sertifikayı (veren kuruluş, kapsadığı alan adları, geçerlilik, parmak izleri, zincir),
-  sitenin izinlerini ve çerezlerini görür, sitenin sakladıklarını silebilirsiniz.
-- **HTTPS-Only.** Siteler şifreli bağlantıyla açılır. Güvenli sürümü olmayan bir sitede tarayıcı
-  HTTP ile devam etmeden önce size sorar. Kendi ağınızdaki adresler etkilenmez.
-- **Sertifika uyarıları.** Sertifikasında sorun olan bir sayfa, siz karar verene kadar bir
-  uyarının arkasında bekler.
-- **Site izinleri.** Konum, kamera, mikrofon ve bildirim izinleri sayfanın üstünde sorulur, hiçbiri
-  sessizce verilmez. Yanıtlar site başına hatırlanabilir, Ayarlar'dan değiştirilir.
-- **İmzalı güncellemeler.** Tarayıcı açılışta ve dört saatte bir yeni sürüme bakar, arka planda
-  indirir ve yeniden başlattığınızda kurar. İmzası tutmayan hiçbir şeyi kurmaz.
-
-### Her gün işinize yarayanlar
-
-İlerleme ve hız gösteren indirmeler: açma, klasörde gösterme, yeniden deneme, çöp kutusuna taşıma;
-klasörü seçin ya da her dosyada nereye kaydedileceği sorulsun. Varsayılan yakınlaştırma ve yazı
-boyutuyla site başına yakınlaştırma. Sayfada bulma, yazdırma, sayfayı tek bir .mhtml dosyası olarak
-kaydetme ve Web Denetçisi (<kbd>F12</kbd>). Metin alanlarında yazım önerileri. Başka
-uygulamalardan açılan bağlantılar en son kullandığınız pencerede yeni sekmede açılır; ikinci bir
-açılış aynı profille ikinci bir tarayıcı başlatmaz.
-
-### Kurulum
-
-En yeni sürümü, **0.2.1a**'yı
-[sürüm sayfasından](https://github.com/PEEPWICK/peepwick-browser/releases/tag/v0.2.1a) indirin:
-
-- **AppImage**, her dağıtım için; kendi WebKitGTK ve GStreamer'ını taşır:
-
-  ```bash
-  chmod +x peepwick-browser-0.2.1a-x86_64.AppImage
-  ./peepwick-browser-0.2.1a-x86_64.AppImage
-  ```
-
-- **.deb**, Ubuntu, Debian, Zorin, Mint ve benzerleri için. Sistemdeki WebKitGTK'yı kullandığı için
-  paket yaklaşık 5 MB:
-
-  ```bash
-  sudo apt install ./peepwick-browser-0.2.1a-amd64.deb
-  ```
-
-İkisi de kendini günceller: AppImage kendi dosyasını yeniler, .deb ise tarayıcıyı yeniden
-başlattığınızda parolanızı sistem penceresinden sorar.
-
-PEEPWICK Browser alpha aşamasında. Her sürümün notlarında neyin değiştiği ve bilinen sorunlar yazar.
-Bir şey beklediğiniz gibi çalışmazsa
-[bize yazın](https://github.com/PEEPWICK/peepwick-browser/issues/new?template=bug_report.yml).
-
-Tarayıcı verilerini `~/.local/share/com.peepwick.browser`, önbelleğini
-`~/.cache/com.peepwick.browser` klasöründe tutar.
-
-### Klavye kısayolları
-
-| Kısayol | İşlev |
-| --- | --- |
-| <kbd>Ctrl</kbd>+<kbd>T</kbd> / <kbd>Ctrl</kbd>+<kbd>W</kbd> | Yeni sekme / sekmeyi kapat |
-| <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>T</kbd> | Kapatılan sekmeyi yeniden aç |
-| <kbd>Ctrl</kbd>+<kbd>Tab</kbd> / <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Tab</kbd> | Sonraki / önceki sekme |
-| <kbd>Ctrl</kbd>+<kbd>1</kbd>…<kbd>9</kbd> | Sekmeye git |
-| <kbd>Alt</kbd>+<kbd>1</kbd>…<kbd>9</kbd> | Alana git |
-| <kbd>Ctrl</kbd>+<kbd>L</kbd> | Adres çubuğu |
-| <kbd>Ctrl</kbd>+<kbd>K</kbd> | Komut çubuğu |
-| <kbd>Ctrl</kbd>+<kbd>B</kbd> | Kenar çubuğunu göster ya da gizle |
-| <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>S</kbd> | Önceki sekmeyle yan yana |
-| <kbd>Ctrl</kbd>+<kbd>D</kbd> | Sayfayı yer imlerine ekle |
-| <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>D</kbd> | Alandaki tüm sekmeleri yer imlerine ekle |
-| <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>B</kbd> | Yer imi çubuğunu göster ya da gizle |
-| <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>O</kbd> | Yer imi yöneticisi |
-| <kbd>Ctrl</kbd>+<kbd>F</kbd> | Sayfada bul |
-| <kbd>Ctrl</kbd>+<kbd>H</kbd> / <kbd>Ctrl</kbd>+<kbd>J</kbd> | Geçmiş / indirmeler |
-| <kbd>Ctrl</kbd>+<kbd>S</kbd> / <kbd>Ctrl</kbd>+<kbd>P</kbd> | Sayfayı kaydet / yazdır |
-| <kbd>Ctrl</kbd>+<kbd>=</kbd> / <kbd>Ctrl</kbd>+<kbd>-</kbd> / <kbd>Ctrl</kbd>+<kbd>0</kbd> | Yakınlaştır / uzaklaştır / sıfırla |
-| <kbd>Ctrl</kbd>+<kbd>N</kbd> / <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>N</kbd> | Yeni pencere / gizli pencere |
-| <kbd>F11</kbd> / <kbd>F12</kbd> | Tam ekran / Web Denetçisi |
-
-Kiril, Yunan ya da başka bir klavye düzenine geçtiğinizde de kısayollar çalışmaya devam eder.
-
-### Tarayıcı neyi nereye gönderir?
-
-Telemetri yok, hesap yok. Tarayıcı kendiliğinden yalnızca şu hizmetlere bağlanır:
-
-| Hizmet | Neden | Ne zaman |
-| --- | --- | --- |
-| `easylist.to` | Kalkanın filtre listeleri | İlk açılışta, sonra üç günde bir |
-| `raw.githubusercontent.com` | Güncelleme listesi: en yeni sürüm ve imzaları | Açılıştan 15 saniye sonra, sonra dört saatte bir |
-| `github.com` (Releases) | Güncellemeyi indirmek | Yalnızca yeni sürüm olduğunda |
-| Arama motorunuz | Arama önerileri | Yalnızca önerileri açarsanız (varsayılan olarak kapalı) |
-
-Gezdiğiniz sayfalar her tarayıcıda olduğu gibi yüklenir; WebKit simgelerini de onlarla birlikte
-alır. "Resmi kopyala" resmi kendi sitesinden yeniden indirir. İzin verdiğiniz sitelerin
-bildirimleri masaüstünüzün bildirim hizmetinden geçer.
-
-### Kaynaktan derleme
-
-Gerekenler ve komutlar yukarıdaki [Build from source](#build-from-source) bölümünde; sürüm
-yayınlama adımları [Releasing](#releasing) bölümünde. Kısaca:
-
-```bash
-npm ci && npm run build
-npm run release -- patch
-git push --follow-tags
-```
-
-Etiket gönderildiğinde **Release** iş akışı .deb ve AppImage paketlerini derler,
-`TAURI_SIGNING_PRIVATE_KEY` gizli değişkeniyle imzalar, GitHub'da yayınlar ve güncelleme listesini
-(`latest.json`) `updates` dalına yazar. İmza anahtarının bir kopyasını güvenli bir yerde saklayın:
-o olmadan kurulu kopyalara güncelleme ulaşamaz.
-
-### Lisans
-
-PEEPWICK Browser, [GNU Genel Kamu Lisansı v3.0](LICENSE) ile yayınlanan özgür bir yazılımdır.
-PEEPWICK adı ve Çift Göz W işareti GPL kapsamında değildir; değiştirilmiş bir sürüm dağıtırsanız
-kendi ad ve simgenizi kullanın.
-
-PEEPWICK Browser'ı [PEEPWICK](https://github.com/PEEPWICK) yapıyor. Önce bakarız.

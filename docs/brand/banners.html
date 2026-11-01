@@ -1,14 +1,15 @@
 <!doctype html>
 <!--
-  The README banners: the PEEPWICK lockup (brand book §15) over the crowd pattern (§11).
-  ?line=BROWSER adds the descriptor; ?theme=light draws the light version.
+  The README banners and the social preview card: the PEEPWICK lockup (brand book §15) over
+  the crowd pattern (§11). ?line=BROWSER adds the descriptor, ?theme=light draws the light
+  version and ?card=social the 1280 × 640 card for the repository's social preview.
 
   Serve the repository root (python3 -m http.server 8770 --bind 127.0.0.1), open
   http://127.0.0.1:8770/docs/brand/banners.html?line=BROWSER in the development harness and
   save it with {"do":"snapshot","name":"banner-dark"}: the page is drawn at twice its size,
-  2560 × 720.
+  2560 × 720 (2560 × 1280 for the card).
 -->
-<html lang="tr">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <title>PEEPWICK banners</title>
@@ -30,17 +31,26 @@ body { margin: 0; width: 1280px; height: 360px; position: relative; overflow: hi
 .descriptor { font-family: Plex; font-size: 27px; letter-spacing: 0.08em; color: var(--ink); }
 .line { position: absolute; left: 96px; top: 228px; font-size: 28px; color: var(--quiet); letter-spacing: -0.005em; }
 .line b { color: var(--ink); font-weight: 700; font-stretch: 112%; }
+:root.card body { height: 640px; }
+.card .veil { background: radial-gradient(ellipse 70% 80% at 28% 55%, var(--ground) 45%, transparent 75%); }
+.card .eye { left: 1028px; top: 128px; }
+.card .lockup { top: 228px; gap: 28px; }
+.card .lockup svg { width: 520px; }
+.card .rule { height: 72px; }
+.card .descriptor { font-size: 30px; }
+.card .line { top: 388px; font-size: 30px; }
 </style>
 </head>
 <body>
 <div class="veil"></div>
 <div class="eye"></div>
 <div class="lockup"></div>
-<div class="line"><b>Önce bakarız.</b> First, we look.</div>
+<div class="line"><b>First, we look.</b></div>
 <script>
 const query = new URLSearchParams(location.search)
 const light = query.get('theme') === 'light'
 document.documentElement.classList.toggle('light', light)
+document.documentElement.classList.toggle('card', query.get('card') === 'social')
 fetch('/build/brand/peepwick-logo-yatay-beyaz.svg')
   .then((response) => response.text())
   .then((svg) => {
