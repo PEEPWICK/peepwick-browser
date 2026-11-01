@@ -1223,6 +1223,7 @@ impl BrowserWindow {
     pub fn create_view(&self, related: Option<&WebView>) -> WebView {
         let manager = UserContentManager::new();
         shield::attach(&manager);
+        crate::pagescripts::attach(&manager, self.incognito);
         let builder = WebView::builder()
             .user_content_manager(&manager)
             .settings(&self.web_settings);
@@ -1463,7 +1464,9 @@ impl BrowserWindow {
                 .map(|(id, tab)| (*id, tab.state()))
                 .collect(),
             permission: permissions::prompt_for(self),
-            shield_paused: false,
+            shield_paused: self
+                .active_tab()
+                .is_some_and(|tab| tab.page().is_none() && shield::paused_for(&tab.url())),
             extensions_partition: None,
         }
     }
@@ -1623,6 +1626,7 @@ pub fn apply_theme() {
 pub fn settings_changed() {
     let prefs = settings::get();
     apply_theme();
+    crate::pagescripts::refresh();
     for cell in [&BROWSING, &PRIVATE] {
         cell.with(|context| {
             if let Some(manager) = context

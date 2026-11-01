@@ -131,12 +131,12 @@ Durum: ☐ yapılmadı · ◐ kısmen · ☑ tamam (Electron sürümüyle aynı 
 - ◐ Hata ekranları (bağlantı, çökme, sertifika hatası); "yine de devam et" henüz yok
 
 ### Gizlilik
-- ☐ Kalkan: standart, sıkı, kapalı; site istisnaları; kalkan paneli ve sayaçlar
+- ◐ Kalkan: standart ve kapalı, site istisnaları ve paneldeki aç/kapat (0.2.1a; sekmenin içerik kuralları siteye göre takılıp çıkarılır, yeniden derleme yok). Sıkı düzey ve sayaçlar yok: WebKitGTK engellenenleri bildirmiyor, sayfa işlemi eklentisi gerekir
 - ◐ Üçüncü taraf çerezleri engelleme (WebKit politikası ve ITP), Global Privacy Control henüz yok
 - ☐ HTTPS-Only modu
 - ☐ Zararlı site uyarısı
-- ☐ Parmak izi koruması
-- ☐ Çerez bildirimlerini reddetme
+- ☑ Parmak izi koruması (0.2.1a; sayfanın dünyasında WebKit kullanıcı betiği, tohum oturum anahtarı + üst sitenin adı)
+- ☑ Çerez bildirimlerini reddetme (0.2.1a; ayrı betik dünyasında, bütün çerçevelerde)
 - ☐ Tarama verilerini temizleme (aralıkla, site başına, kapanışta)
 
 ### Veri

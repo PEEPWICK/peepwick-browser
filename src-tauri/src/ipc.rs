@@ -464,6 +464,23 @@ pub(crate) fn send(win: &Rc<BrowserWindow>, method: &str, args: &[Value]) {
             text(arg(1)),
             arg(2).and_then(Value::as_bool),
         ),
+        "shieldToggleSite" => {
+            let Some(tab) = win.active_tab().filter(|tab| tab.page().is_none()) else {
+                return;
+            };
+            let Some(site) = crate::shield::site_of(&tab.url()) else {
+                return;
+            };
+            let mut list = settings::get().shield_allowlist;
+            if list.contains(&site) {
+                list.retain(|s| *s != site);
+            } else {
+                list.push(site);
+            }
+            settings::update(&json!({ "shieldAllowlist": list }));
+            window::settings_changed();
+            tab.reload(false);
+        }
         "updateCheck" => crate::updater::check(&win.app_handle()),
         "updateInstall" => crate::updater::install_and_restart(&win.app_handle()),
         "forgetZoom" => {

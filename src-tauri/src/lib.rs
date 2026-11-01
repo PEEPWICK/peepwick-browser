@@ -18,6 +18,7 @@ mod menus;
 mod notify;
 mod omnibox;
 mod pages;
+mod pagescripts;
 mod paths;
 mod permissions;
 mod search;

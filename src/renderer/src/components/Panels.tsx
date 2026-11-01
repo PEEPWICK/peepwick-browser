@@ -1,6 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { FileDown, FolderOpen, PictureInPicture2, Pause, Play, RotateCw, Trash2, Volume2, VolumeX, X } from 'lucide-react'
-import { formatNumber } from '@shared/i18n'
 import { WORKSPACE_ICONS, type DownloadState, type Stats, type WorkspaceIcon } from '@shared/types'
 import { displayHost } from '@shared/url'
 import { api, call } from '../api'
@@ -54,11 +53,6 @@ export function ShieldPanel({ anchor }: { anchor: DOMRect }) {
   const { state, settings } = useSnapshot()
   const t = useT()
   const tab = activeTab(state)
-  const stats = useStats()
-  const [report, setReport] = useState<{ host: string; count: number }[]>([])
-  useEffect(() => {
-    void call.shieldReport().then(setReport)
-  }, [tab?.blocked])
 
   const web = !!tab && !tab.page && /^https?:/.test(tab.url)
   const off = settings.shieldLevel === 'off'
@@ -77,33 +71,14 @@ export function ShieldPanel({ anchor }: { anchor: DOMRect }) {
         </>
       ) : (
         <>
-          <div className="shield-count">
-            <span className="big-number">{formatNumber(settings.language, state.shieldPaused ? 0 : tab.blocked)}</span>
-            <span className="muted">{t('shield.blockedHere')}</span>
-          </div>
-          {!state.shieldPaused && report.length > 0 && (
-            <ul className="shield-hosts">
-              {report.map((row) => (
-                <li key={row.host}>
-                  <span className="mono">{row.host}</span>
-                  <span className="mono muted">{formatNumber(settings.language, row.count)}</span>
-                </li>
-              ))}
-            </ul>
-          )}
-          {!state.shieldPaused && report.length === 0 && <p className="panel-text muted">{t('shield.none')}</p>}
+          {/* WebKitGTK doesn't report what its content rules block, so there are no counts. */}
+          {!state.shieldPaused && <p className="panel-text">{t('shield.blocking')}</p>}
           <div className="panel-row">
             <span>{state.shieldPaused ? t('shield.paused') : t('shield.on')}</span>
             <Toggle checked={!state.shieldPaused} label={t('shield.title')} onChange={() => api.shieldToggleSite()} />
           </div>
           <p className="panel-hint muted">{t('shield.reloadHint')}</p>
         </>
-      )}
-      {stats && (
-        <p className="panel-foot">
-          <LookMark className="accent" />
-          <span>{t('shield.week', { n: stats.blockedWeek })}</span>
-        </p>
       )}
     </Popover>
   )

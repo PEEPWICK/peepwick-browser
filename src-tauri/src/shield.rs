@@ -10,7 +10,7 @@ use tauri::AppHandle;
 use webkit2gtk::glib;
 use webkit2gtk::{UserContentManager, UserContentManagerExt};
 
-use crate::paths;
+use crate::{pages, paths, settings};
 
 const LISTS: [(&str, &str); 2] = [
     ("easylist", "https://easylist.to/easylist/easylist.txt"),
@@ -25,6 +25,8 @@ const RULES_ID: &str = "peepwick-shield-standard";
 thread_local! {
     static FILTER: RefCell<Option<ffi::ContentFilter>> = const { RefCell::new(None) };
     static MANAGERS: RefCell<Vec<glib::WeakRef<UserContentManager>>> = const { RefCell::new(Vec::new()) };
+    /// Tabs showing a site with the shield off: their pages load without the rules.
+    static PAUSED: RefCell<Vec<glib::WeakRef<UserContentManager>>> = const { RefCell::new(Vec::new()) };
     static STORE: ffi::FilterStore = ffi::FilterStore::new(&paths::user_path("shield-rules"));
 }
 
@@ -46,11 +48,73 @@ pub fn attach(manager: &UserContentManager) {
 fn apply(filter: ffi::ContentFilter) {
     MANAGERS.with(|managers| {
         for manager in managers.borrow().iter().filter_map(|m| m.upgrade()) {
-            manager.remove_all_filters();
-            filter.add_to(&manager);
+            if !is_paused(&manager) {
+                manager.remove_all_filters();
+                filter.add_to(&manager);
+            }
         }
     });
     FILTER.with(|cell| cell.replace(Some(filter)));
+}
+
+fn is_paused(manager: &UserContentManager) -> bool {
+    PAUSED.with(|paused| {
+        paused
+            .borrow()
+            .iter()
+            .any(|m| m.upgrade().as_ref() == Some(manager))
+    })
+}
+
+/// Takes the rules off a tab's pages, or puts them back; a tab follows the site it navigates to.
+pub fn set_paused(manager: &UserContentManager, paused: bool) {
+    use glib::prelude::*;
+    if is_paused(manager) == paused {
+        return;
+    }
+    PAUSED.with(|list| {
+        let mut list = list.borrow_mut();
+        list.retain(|m| m.upgrade().is_some_and(|m| &m != manager));
+        if paused {
+            list.push(manager.downgrade());
+        }
+    });
+    manager.remove_all_filters();
+    if !paused {
+        FILTER.with(|filter| {
+            if let Some(filter) = filter.borrow().as_ref() {
+                filter.add_to(manager);
+            }
+        });
+    }
+}
+
+/// Whether the shield is off for an address: everywhere, or for its site.
+pub fn paused_for(url: &str) -> bool {
+    let prefs = settings::get();
+    if prefs.shield_level == settings::ShieldLevel::Off {
+        return true;
+    }
+    let host = pages::host_of(url);
+    !host.is_empty()
+        && prefs
+            .shield_allowlist
+            .iter()
+            .any(|site| host == *site || host.ends_with(&format!(".{site}")))
+}
+
+/// The site an address belongs to (example.com for www.example.com), for the shield's list.
+pub fn site_of(url: &str) -> Option<String> {
+    let host = pages::host_of(url);
+    if host.is_empty() {
+        return None;
+    }
+    // Addresses and names without a public suffix (localhost, a printer) are their own site.
+    let bare = host.trim_start_matches('[').trim_end_matches(']');
+    if bare.parse::<std::net::IpAddr>().is_ok() || !host.contains('.') {
+        return Some(host);
+    }
+    Some(psl::domain_str(&host).unwrap_or(&host).to_string())
 }
 
 fn list_path(name: &str) -> PathBuf {
@@ -302,5 +366,31 @@ mod ffi {
                 data,
             )
         }
+    }
+}
+
+#[cfg(test)]
+mod site_tests {
+    use super::site_of;
+
+    #[test]
+    fn finds_sites() {
+        assert_eq!(
+            site_of("https://www.example.co.uk/a").as_deref(),
+            Some("example.co.uk")
+        );
+        assert_eq!(
+            site_of("https://news.example.com/").as_deref(),
+            Some("example.com")
+        );
+        assert_eq!(
+            site_of("http://127.0.0.1:8767/test.html").as_deref(),
+            Some("127.0.0.1")
+        );
+        assert_eq!(
+            site_of("http://localhost:3000/").as_deref(),
+            Some("localhost")
+        );
+        assert_eq!(site_of("about:blank"), None);
     }
 }

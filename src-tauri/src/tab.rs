@@ -859,12 +859,16 @@ impl Tab {
                     return false;
                 };
                 let ctrl = action.modifiers() & gtk::gdk::ModifierType::CONTROL_MASK.bits() != 0;
-                if action.mouse_button() != 2 && !ctrl {
-                    return false;
-                }
                 let Some(url) = action.request().and_then(|r| r.uri()) else {
                     return false;
                 };
+                if action.mouse_button() != 2 && !ctrl {
+                    // The shield follows the site this tab is going to.
+                    if let Some(manager) = self.view().and_then(|v| v.user_content_manager()) {
+                        crate::shield::set_paused(&manager, crate::shield::paused_for(&url));
+                    }
+                    return false;
+                }
                 if let Some(win) = self.window() {
                     win.open_tab(OpenOptions {
                         url: Some(url.to_string()),

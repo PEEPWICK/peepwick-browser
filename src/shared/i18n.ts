@@ -51,6 +51,7 @@ const tr = {
 
   'shield.title': 'Kalkan',
   'shield.on': 'Kalkan açık',
+  'shield.blocking': 'Bu sitede reklamlar ve izleyiciler engelleniyor.',
   'shield.paused': 'Bu sitede kalkan kapalı',
   'shield.blockedHere': 'Bu sayfada engellenen istek',
   'shield.none': 'Bu sayfada engellenecek bir şey bulmadık.',
@@ -952,6 +953,7 @@ const en: Record<MessageKey, string> = {
 
   'shield.title': 'Shield',
   'shield.on': 'Shield is on',
+  'shield.blocking': 'Ads and trackers are blocked on this site.',
   'shield.paused': 'Shield is off for this site',
   'shield.blockedHere': 'Requests blocked on this page',
   'shield.none': 'Nothing to block on this page.',
