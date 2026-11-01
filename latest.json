@@ -1,0 +1,20 @@
+{
+  "version": "0.2.1",
+  "displayVersion": "0.2.1a",
+  "notes": "PEEPWICK Browser 0.2.1a",
+  "pub_date": "2026-11-01T08:57:11.090Z",
+  "platforms": {
+    "linux-x86_64-appimage": {
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVTd0JTcEVwZjJCNUdoQXh0RG5wZWJGYXBlOEpGSjMzYnJOWDhhZGRVeWsvVWRSd1IxQ1lYbXRFNkhGc1ZTeHY2Y1k3eTlGc2pxU3ZEVXgveWtPc3p6WDJRQkc2Sm1vemdnPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkzNTIzNDIyCWZpbGU6UEVFUFdJQ0sgQnJvd3Nlcl8wLjIuMV9hbWQ2NC5BcHBJbWFnZQl2ZXJzaW9uOjAuMi4xCkJheVc3V3hDZ2liWGRaeERYZ0ROU0d3KzhhVXRhMlVsSkYwRFRneWNEUUxPMWp3UEN2ZGgzcHVBQVEvMEdzNVErT05mc2tvY0N5ZnJtdlVRWVl4akFRPT0K",
+      "url": "https://github.com/PEEPWICK/peepwick-browser/releases/download/v0.2.1a/peepwick-browser-0.2.1a-x86_64.AppImage"
+    },
+    "linux-x86_64-deb": {
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVTd0JTcEVwZjJCNUV2WlJjYVZHTFd3c2RYWFdZTzFNUlBHK3NsaXNQSmxaNW9VK2JkaEpjemhCcUQ2bU5NcUZHUDdWTUJjSk1UZEx3THN1OHBUSXl6a2QvU09vdXhBM2dJPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkzNTIzNDIyCWZpbGU6UEVFUFdJQ0sgQnJvd3Nlcl8wLjIuMV9hbWQ2NC5kZWIJdmVyc2lvbjowLjIuMQo1OE4wenFGczZuS3NsZmNZQnBIM3RrcWZqZXZzeEhJeUEvTms5SHg3L3BKQXdJZTg3M0tYazY0MnM4SldMK21tMGgxOEsxb2E0Y0g1VjdvRjY1OFdEUT09Cg==",
+      "url": "https://github.com/PEEPWICK/peepwick-browser/releases/download/v0.2.1a/peepwick-browser-0.2.1a-amd64.deb"
+    },
+    "linux-x86_64": {
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVTd0JTcEVwZjJCNUdoQXh0RG5wZWJGYXBlOEpGSjMzYnJOWDhhZGRVeWsvVWRSd1IxQ1lYbXRFNkhGc1ZTeHY2Y1k3eTlGc2pxU3ZEVXgveWtPc3p6WDJRQkc2Sm1vemdnPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkzNTIzNDIyCWZpbGU6UEVFUFdJQ0sgQnJvd3Nlcl8wLjIuMV9hbWQ2NC5BcHBJbWFnZQl2ZXJzaW9uOjAuMi4xCkJheVc3V3hDZ2liWGRaeERYZ0ROU0d3KzhhVXRhMlVsSkYwRFRneWNEUUxPMWp3UEN2ZGgzcHVBQVEvMEdzNVErT05mc2tvY0N5ZnJtdlVRWVl4akFRPT0K",
+      "url": "https://github.com/PEEPWICK/peepwick-browser/releases/download/v0.2.1a/peepwick-browser-0.2.1a-x86_64.AppImage"
+    }
+  }
+}
