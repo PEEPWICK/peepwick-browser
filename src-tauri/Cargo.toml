@@ -46,7 +46,7 @@ url = "2"
 percent-encoding = "2"
 psl = "2"
 reqwest = { version = "0.13", default-features = false, features = ["blocking", "native-tls", "gzip"] }
-base64 = "0.22"
+base64 = "0.23"
 rusqlite = { version = "0.41.1", features = ["bundled"] }
 tauri-plugin-single-instance = "2.5.5"
 tauri-plugin-updater = "2.14.1"
