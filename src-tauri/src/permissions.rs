@@ -304,6 +304,17 @@ pub fn list() -> Value {
     Value::Array(rows)
 }
 
+/// How many answers are remembered, for clearing browsing data.
+pub fn count() -> usize {
+    SAVED.with(|cell| cell.borrow().values().map(|kinds| kinds.len()).sum())
+}
+
+/// Clearing browsing data: every remembered answer goes, and sites ask again.
+pub fn clear() {
+    SAVED.with(|cell| cell.borrow_mut().clear());
+    changed();
+}
+
 /// Sets one remembered answer for a site; `None` forgets it, so the site asks again.
 pub fn set(origin: &str, kind: &str, allow: Option<bool>) {
     if !KINDS.contains(&kind) || origin_of(origin) != origin {

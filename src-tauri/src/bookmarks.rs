@@ -331,6 +331,15 @@ pub fn bookmarked_keys() -> HashSet<String> {
     links().iter().map(|link| url_key(link.url())).collect()
 }
 
+/// The hosts of every bookmark: these sites keep their icons when the history is cleared.
+pub fn bookmarked_hosts() -> HashSet<String> {
+    links()
+        .iter()
+        .map(|link| crate::pages::host_of(link.url()))
+        .filter(|host| !host.is_empty())
+        .collect()
+}
+
 /// Folders as a flat list with their depth, for "Move to".
 fn folder_list(tree: &Tree) -> Vec<(Node, usize)> {
     fn go(folder: &Node, depth: usize, out: &mut Vec<(Node, usize)>) {

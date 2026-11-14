@@ -348,7 +348,12 @@ function Permissions() {
   const t = useT()
   const [list, setList] = useState<SitePermission[] | null>(null)
   const load = () => void call.permissionsList().then(setList)
-  useEffect(load, [])
+  // Again after "Clear browsing data", which may have cleared them.
+  useEffect(() => {
+    load()
+    window.addEventListener('pw-data-cleared', load)
+    return () => window.removeEventListener('pw-data-cleared', load)
+  }, [])
   if (!list) return null
   if (list.length === 0) return <p className="setting-hint">{t('settings.permissionsEmpty')}</p>
   return (

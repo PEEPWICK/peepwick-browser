@@ -239,16 +239,31 @@ pub fn install_and_restart(app: &AppHandle) {
     });
 }
 
-/// Starts the new version and quits. Unlike `AppHandle::restart`, the addresses this copy was
-/// opened with aren't passed on: the restored session already has them. For an AppImage the
-/// path is the AppImage file, which now holds the new version.
+/// "Restart" in Settings (after turning hardware acceleration on or off): the browser starts
+/// again with the same windows, as the new version if one is waiting.
+pub fn restart(app: &AppHandle) {
+    if state().status == "ready" {
+        install_and_restart(app);
+    } else {
+        relaunch(app);
+    }
+}
+
+/// Starts the browser again, as the new version after an update, and quits. Unlike
+/// `AppHandle::restart`, the addresses this copy was opened with aren't passed on: the
+/// restored session already has them. For an AppImage the path is the AppImage file, which
+/// holds the new version after an update. What Settings asks to clear when the browser
+/// closes goes first.
 fn relaunch(app: &AppHandle) {
     session::save_before_exit();
-    app.cleanup_before_exit();
-    if let Ok(path) = tauri::process::current_binary(&app.env()) {
-        let _ = std::process::Command::new(path).spawn();
-    }
-    std::process::exit(0);
+    let handle = app.clone();
+    crate::cleardata::before_exit(move || {
+        handle.cleanup_before_exit();
+        if let Ok(path) = tauri::process::current_binary(&handle.env()) {
+            let _ = std::process::Command::new(path).spawn();
+        }
+        std::process::exit(0);
+    });
 }
 
 /// The browser is quitting with a .deb waiting: install it now, as 0.1.x did.

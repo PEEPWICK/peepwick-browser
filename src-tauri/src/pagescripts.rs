@@ -1,6 +1,7 @@
 //! Scripts the browser puts into pages: fingerprinting protection (in the page's own world,
 //! before its scripts) and rejecting cookie banners (in a world of its own, in every frame).
 //! Both follow the shield: with the shield off, everywhere or for a site, pages get neither.
+//! Global Privacy Control has its own setting and goes into every page while it's on.
 
 use std::cell::RefCell;
 
@@ -16,6 +17,7 @@ use crate::tab::now_ms;
 
 const FINGERPRINT: &str = include_str!("../scripts/fingerprint.js");
 const CONSENT: &str = include_str!("../scripts/consent.js");
+const GPC: &str = include_str!("../scripts/gpc.js");
 
 thread_local! {
     /// A new key every launch, and another for private windows, so a site's seed never
@@ -47,6 +49,15 @@ fn with_config(source: &str, config: &serde_json::Value) -> String {
 
 fn add(manager: &UserContentManager, incognito: bool) {
     let prefs = settings::get();
+    if prefs.send_global_privacy_control {
+        manager.add_script(&UserScript::new(
+            GPC,
+            UserContentInjectedFrames::AllFrames,
+            UserScriptInjectionTime::Start,
+            &[],
+            &[],
+        ));
+    }
     if prefs.shield_level == ShieldLevel::Off {
         return;
     }

@@ -11,7 +11,7 @@ import { Button, IconButton } from '../ui'
 import { Modal } from './BookmarkDialogs'
 
 const RANGES: ClearRange[] = [1, 24, 168, 672, 0]
-/** Cleared for all time whatever the range says (Electron has no range for them). */
+/** Cleared for all time whatever the range says (WebKit can't clear cookies by age). */
 const ALL_TIME: ClearKind[] = ['cookies', 'cache', 'permissions', 'passwords']
 
 // Remembered while the browser runs, like Chrome's dialog.
@@ -57,6 +57,7 @@ export function ClearDataDialog() {
     lastRange = range
     lastKinds = kinds
     await call.clearData({ range, kinds })
+    window.dispatchEvent(new Event('pw-data-cleared'))
     setBusy(false)
     closePanel()
     showToast({ text: t('clear.done') })

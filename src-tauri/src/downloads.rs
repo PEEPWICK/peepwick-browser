@@ -235,23 +235,7 @@ fn file_uri(path: &Path) -> String {
 pub fn open_with_default(uri: &str) {
     let context = gio::AppLaunchContext::new();
     if std::env::var_os("APPIMAGE").is_some() {
-        for name in [
-            "LD_LIBRARY_PATH",
-            "GTK_PATH",
-            "GTK_EXE_PREFIX",
-            "GTK_DATA_PREFIX",
-            "GTK_IM_MODULE_FILE",
-            "GDK_PIXBUF_MODULE_FILE",
-            "GIO_MODULE_DIR",
-            "GST_PLUGIN_PATH",
-            "GST_PLUGIN_PATH_1_0",
-            "GST_PLUGIN_SYSTEM_PATH",
-            "GST_PLUGIN_SYSTEM_PATH_1_0",
-            "GST_PLUGIN_SCANNER",
-            "GST_PLUGIN_SCANNER_1_0",
-            "GST_REGISTRY",
-            "GST_REGISTRY_1_0",
-        ] {
+        for name in crate::desktop::APPIMAGE_ENV {
             context.unsetenv(name);
         }
     }
@@ -531,10 +515,24 @@ pub fn open_folder() {
     open_with_default(&file_uri(&folder()));
 }
 
-/// Clears finished downloads from the list; the files stay.
-pub fn clear() {
-    LIST.with(|cell| cell.borrow_mut().retain(DownloadState::active));
+/// Clears the finished downloads started since `since` (ms; 0 for all of them) from the
+/// list; the files stay.
+pub fn clear(since: u64) {
+    LIST.with(|cell| {
+        cell.borrow_mut()
+            .retain(|d| d.active() || d.started_at < since)
+    });
     changed(true);
+}
+
+/// Finished downloads from normal windows started since `since`, for clearing browsing data.
+pub fn count_since(since: u64) -> usize {
+    LIST.with(|cell| {
+        cell.borrow()
+            .iter()
+            .filter(|d| !d.active() && !d.incognito && d.started_at >= since)
+            .count()
+    })
 }
 
 pub fn menu(win: &Rc<BrowserWindow>, id: &str, x: f64, y: f64) {

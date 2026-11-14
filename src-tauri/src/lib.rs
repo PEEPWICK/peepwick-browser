@@ -5,6 +5,8 @@
 
 mod actions;
 mod bookmarks;
+mod cleardata;
+mod desktop;
 mod downloads;
 mod fonts;
 #[cfg(any(debug_assertions, feature = "harness"))]
@@ -97,22 +99,33 @@ pub fn run() {
             downloads::load();
             permissions::load();
             history::open();
+            // What the last run should have cleared as it closed goes before any page opens.
+            cleardata::at_startup();
             shield::start(app.handle().clone());
             let cwd = std::env::current_dir().unwrap_or_default();
             session::restore(app.handle(), urls_from(std::env::args().skip(1), &cwd))?;
             updater::start(app.handle());
+            // The AppImage's desktop file follows it when it moves or a newer one is started.
+            std::thread::spawn(|| desktop::sync_appimage_entry(false));
             #[cfg(any(debug_assertions, feature = "harness"))]
             harness::start(app.handle().clone());
             Ok(())
         })
         .build(tauri::generate_context!())
         .expect("PEEPWICK Browser could not start")
-        .run(|_, event| {
-            if let tauri::RunEvent::Exit = event {
+        .run(|app, event| match event {
+            // "Clear when the browser closes" holds the exit until it's done.
+            tauri::RunEvent::ExitRequested { api, .. } if cleardata::exit_waits() => {
+                api.prevent_exit();
+                let handle = app.clone();
+                cleardata::before_exit(move || handle.exit(0));
+            }
+            tauri::RunEvent::Exit => {
                 bookmarks::flush();
                 downloads::flush();
                 permissions::flush();
                 updater::install_on_exit();
             }
+            _ => {}
         });
 }

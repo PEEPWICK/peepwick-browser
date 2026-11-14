@@ -13,11 +13,11 @@ use gtk::glib;
 use gtk::prelude::*;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
-use tauri::{AppHandle, Emitter, Manager, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
+use tauri::{AppHandle, Emitter, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
 use webkit2gtk::{
-    CookieAcceptPolicy, CookieManagerExt, CookiePersistentStorage, HardwareAccelerationPolicy,
-    SettingsExt, UserContentManager, WebContext, WebContextExt, WebView, WebViewExt,
-    WebsiteDataManager, WebsiteDataManagerExt,
+    CookieAcceptPolicy, CookieManagerExt, CookiePersistentStorage, FaviconDatabaseExt,
+    HardwareAccelerationPolicy, SettingsExt, UserContentManager, UserMessage, WebContext,
+    WebContextExt, WebView, WebViewExt, WebsiteDataManager, WebsiteDataManagerExt,
 };
 
 use crate::i18n::t;
@@ -251,16 +251,13 @@ pub fn open_urls(app: &AppHandle, urls: Vec<String>) {
     let _ = win.window.set_focus();
 }
 
-fn browsing_context(app: &AppHandle) -> WebContext {
+fn browsing_context() -> WebContext {
     BROWSING.with(|cell| {
         if let Some(context) = cell.borrow().as_ref() {
             return context.clone();
         }
         let data = paths::user_path("web");
-        let cache = app
-            .path()
-            .app_cache_dir()
-            .unwrap_or_else(|_| paths::user_path("cache"));
+        let cache = paths::cache();
         let manager = WebsiteDataManager::builder()
             .base_data_directory(data.to_string_lossy().as_ref())
             .base_cache_directory(cache.to_string_lossy().as_ref())
@@ -301,6 +298,26 @@ pub fn web_context(incognito: bool) -> Option<WebContext> {
     }
 }
 
+/// What normal windows' sites keep (cookies, storage, the cache), for clearing browsing data.
+/// Set up if no window has needed it yet.
+pub fn browsing_data() -> Option<WebsiteDataManager> {
+    browsing_context().website_data_manager()
+}
+
+/// The browser is closing but has something left to do: no window stays on screen meanwhile.
+pub fn hide_all() {
+    for win in all() {
+        let _ = win.window.hide();
+    }
+}
+
+/// Empties WebKit's icon store, which keeps the address of every page it has an icon for.
+pub fn clear_page_icons() {
+    if let Some(icons) = browsing_context().favicon_database() {
+        icons.clear();
+    }
+}
+
 /// The window and tab a view belongs to.
 pub fn tab_for_view(view: &WebView) -> Option<(Rc<BrowserWindow>, Rc<Tab>)> {
     all().into_iter().find_map(|win| {
@@ -327,6 +344,20 @@ fn configure_context(context: &WebContext, manager: &WebsiteDataManager, incogni
     apply_cookie_policy(manager);
     context.set_spell_checking_enabled(true);
     context.set_spell_checking_languages(&["tr_TR", "en_US"]);
+    // Our extension in the web processes (webext/peepwick-webext.c) adds the Global Privacy
+    // Control header to their requests. Each new web process gets the setting as it starts.
+    match paths::resource("webext/libpeepwick-webext.so") {
+        Some(file) => {
+            if let Some(dir) = file.parent() {
+                context.set_web_extensions_directory(&dir.to_string_lossy());
+            }
+        }
+        None => eprintln!("[window] the web process extension is missing: no Sec-GPC header"),
+    }
+    context.connect_initialize_web_extensions(|context| {
+        let gpc = settings::get().send_global_privacy_control;
+        context.set_web_extensions_initialization_user_data(&gpc.to_variant());
+    });
 }
 
 fn apply_cookie_policy(manager: &WebsiteDataManager) {
@@ -403,7 +434,7 @@ impl BrowserWindow {
         let context = if incognito {
             private_context()
         } else {
-            browsing_context(&app)
+            browsing_context()
         };
         apply_theme();
 
@@ -1592,6 +1623,7 @@ pub fn app_info() -> AppInfo {
         tauri: tauri::VERSION.to_string(),
         platform: "linux",
         packaged: !cfg!(debug_assertions),
+        // Asking the desktop takes a moment: ipc fills this in off the main thread.
         is_default_browser: false,
         hardware_acceleration: settings::get().hardware_acceleration,
     }
@@ -1629,13 +1661,15 @@ pub fn settings_changed() {
     crate::pagescripts::refresh();
     for cell in [&BROWSING, &PRIVATE] {
         cell.with(|context| {
-            if let Some(manager) = context
-                .borrow()
-                .as_ref()
-                .and_then(|c| c.website_data_manager())
-            {
+            let Some(context) = context.borrow().clone() else {
+                return;
+            };
+            if let Some(manager) = context.website_data_manager() {
                 apply_cookie_policy(&manager);
             }
+            // The web processes already running hear it from here.
+            let gpc = prefs.send_global_privacy_control.to_variant();
+            context.send_message_to_all_extensions(&UserMessage::new("gpc", Some(&gpc)));
         });
     }
     for win in all() {

@@ -181,6 +181,14 @@ impl Settings {
         }
     }
 
+    /// The defaults, with this language and the welcome screen as it was.
+    fn reset(&self) -> Settings {
+        Settings {
+            onboarded: self.onboarded,
+            ..Settings::defaults(self.language)
+        }
+    }
+
     /// Takes the well-formed values from an untrusted patch and ignores the rest.
     pub fn apply_patch(&mut self, patch: &Value) {
         let Some(input) = patch.as_object() else {
@@ -391,14 +399,27 @@ pub fn update(patch: &Value) -> Settings {
     let mut guard = SETTINGS.write().expect("settings lock");
     let settings = guard.as_mut().expect("settings::load runs at startup");
     settings.apply_patch(patch);
-    let mut saved = serde_json::to_value(&*settings).unwrap_or_default();
+    save(settings);
+    settings.clone()
+}
+
+/// Back to the defaults, keeping the language and the welcome screen already seen.
+pub fn reset() -> Settings {
+    let mut guard = SETTINGS.write().expect("settings lock");
+    let settings = guard.as_mut().expect("settings::load runs at startup");
+    *settings = settings.reset();
+    save(settings);
+    settings.clone()
+}
+
+fn save(settings: &Settings) {
+    let mut saved = serde_json::to_value(settings).unwrap_or_default();
     saved["profileVersion"] = Value::from(PROFILE_VERSION);
     if let Ok(json) = serde_json::to_vec_pretty(&saved)
         && let Err(error) = store::write_atomic(&file(), &json)
     {
         eprintln!("[settings] could not save: {error}");
     }
-    settings.clone()
 }
 
 #[cfg(test)]
@@ -432,6 +453,25 @@ mod tests {
         assert!(s.https_only);
         assert_eq!(s.download_dir, "");
         assert_eq!(s.shield_allowlist, vec!["example.com".to_string()]);
+    }
+
+    #[test]
+    fn reset_keeps_the_language_and_the_welcome_screen() {
+        let mut s = Settings::defaults(Lang::En);
+        s.apply_patch(&json!({
+            "onboarded": true,
+            "theme": "light",
+            "sendGlobalPrivacyControl": false,
+            "shieldAllowlist": ["example.com"],
+            "defaultZoom": 1.25
+        }));
+        let fresh = s.reset();
+        assert_eq!(fresh.language, Lang::En);
+        assert!(fresh.onboarded);
+        assert_eq!(fresh.theme, Theme::Dark);
+        assert!(fresh.send_global_privacy_control);
+        assert!(fresh.shield_allowlist.is_empty());
+        assert_eq!(fresh.default_zoom, 1.0);
     }
 
     #[test]

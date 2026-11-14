@@ -25,8 +25,11 @@ mimariyi ve yayın ölçütü olan özellik eşitliği listesini tutar; geçiş 
   hâlâ `unstable` ve WebKit'in indirme, sertifika, içerik kuralı arayüzlerini açmadığı için kullanılmaz.
 - **Sayfa betikleri:** WebKit kullanıcı betikleri (otomatik doldurma ve çerez bildirimi için yalıtılmış
   dünyada, parmak izi koruması için sayfanın dünyasında) ve betik mesaj işleyicileri.
-- **Ağ kancaları:** WebKit'in sayfa işlemine yüklenen küçük bir Rust eklentisi (cdylib): kalkanın sayfa
-  başına sayaçları, Global Privacy Control başlığı.
+- **Ağ kancaları:** WebKit'in sayfa işlemine yüklenen küçük bir eklenti (`src-tauri/webext/peepwick-webext.c`;
+  `build.rs` derler, paketlere kaynak dosyası olarak girer). Şimdilik her HTTP isteğine Global Privacy
+  Control başlığını ekliyor: ayar her sayfa işlemine açılırken verilir, değişince mesajla bildirilir. Bu
+  kadar küçük bir parça için Rust bağlaması gerekmediğinden C ile yazıldı; kalkanın sayfa başına
+  sayaçlarını üstlenecek kadar büyürse Rust'a (cdylib) taşınabilir.
 - **Kalkan:** Brave'in adblock-rust motoru (MPL-2.0). Ağ kuralları WebKit içerik kurallarına
   dönüştürülür, kozmetik kurallar betik ve stil olarak eklenir.
 - **Veri:** geçmiş ve site simgeleri SQLite (rusqlite), ayarlar ve listeler JSON, parolalar sistem
@@ -118,7 +121,7 @@ Durum: ☐ yapılmadı · ◐ kısmen · ☑ tamam (Electron sürümüyle aynı 
 - ◐ Komut çubuğu (Ctrl+K): komutlar ve açık sekmeler; geçmiş ve yer imleri onlar taşınınca
 - ☐ Yeni sekme sayfası, karşılama ekranı
 - ◐ Yer imleri: çubuk, yönetici, yıldız, klasör menüleri, HTML içe ve dışa aktarma (0.2.1a; bookmarks.json Electron'la aynı biçim). Başka tarayıcılardan aktarma "Veri" bölümünde
-- ◐ Geçmiş sayfası, site başına silme, en çok ziyaret edilenler, site simgeleri (`peepwick://favicon/`); history.db Electron'la aynı şema. Aralıkla temizleme, tarama verileri taşınınca
+- ◐ Geçmiş sayfası, site başına silme, en çok ziyaret edilenler, site simgeleri (`peepwick://favicon/`); history.db Electron'la aynı şema. Aralıkla silme "Tarama verilerini temizleme"de
 - ◐ İndirmeler: panel ve sayfa, yeniden deneme, klasörde gösterme, nereye kaydedileceğini sorma, bitince bildirim (0.2.1a). WebKitGTK duraklatıp sürdüremiyor; düğmeleri kaldırıldı, "yeniden dene" baştan indirir
 - ◐ Sayfada bul, yazdırma, sayfayı kaydetme (MHTML), geliştirici araçları
 - ◐ Yakınlaştırma: site başına, varsayılan yakınlaştırma, yazı boyutu
@@ -126,18 +129,19 @@ Durum: ☐ yapılmadı · ◐ kısmen · ☑ tamam (Electron sürümüyle aynı 
 - ◐ Site izinleri (konum, kamera, mikrofon, bildirimler) ve izin çubuğu (0.2.1a; permissions.json Electron'la aynı). Ekran paylaşımı WebRTC'siz WebKitGTK'da yok, pano okuma izni bu WebKit sürümünün bağlamasında yok; ikisi de reddedilir
 - ☑ Site güvenliği göstergesi, kilit paneli (sertifika, izinler, çerez sayısı, site verisini silme), sertifika görüntüleyici, sertifika hatası ekranı ve "yine de devam et" (0.2.1a). WebKit kabul ettiği sertifikayı unutamıyor; "uyarıyı geri al" sayfa yüklenince uyarıyı yeniden gösterir
 - ◐ Gizli pencere (diske yazmayan WebKit bağlamı; son gizli pencereyle silinir)
-- ☐ Ayarlar (bölüm bölüm), tema, dil, kısayollar
+- ◐ Ayarlar (bölüm bölüm), tema, dil, kısayollar. Kaydetme, sıfırlama (0.2.2a; dil ve karşılama ekranı kalır) ve donanım hızlandırmasından sonra yeniden başlatma (0.2.2a) testli; parola, otomatik doldurma, odak ve çeviri bölümleri o özellikler taşınınca
 - ☐ Odak modu
-- ◐ Hata ekranları (bağlantı, çökme, sertifika hatası); "yine de devam et" henüz yok
+- ◐ Hata ekranları (bağlantı, çökme, sertifika hatası ve "yine de devam et")
 
 ### Gizlilik
-- ◐ Kalkan: standart ve kapalı, site istisnaları ve paneldeki aç/kapat (0.2.1a; sekmenin içerik kuralları siteye göre takılıp çıkarılır, yeniden derleme yok). Sıkı düzey ve sayaçlar yok: WebKitGTK engellenenleri bildirmiyor, sayfa işlemi eklentisi gerekir
-- ◐ Üçüncü taraf çerezleri engelleme (WebKit politikası ve ITP), Global Privacy Control henüz yok
+- ◐ Kalkan: standart ve kapalı, site istisnaları ve paneldeki aç/kapat (0.2.1a; sekmenin içerik kuralları siteye göre takılıp çıkarılır, yeniden derleme yok). Sıkı düzey ve sayaçlar yok: WebKitGTK engellenenleri bildirmiyor; bunu sayfa işlemi eklentisinin (şimdilik yalnızca GPC başlığını ekliyor) üstlenmesi gerekir
+- ◐ Üçüncü taraf çerezleri engelleme (WebKit politikası ve ITP)
+- ☑ Global Privacy Control (0.2.2a): `Sec-GPC: 1` her HTTP isteğinde (sayfa, alt kaynaklar, çerçeveler; sayfa işlemi eklentisinden) ve `navigator.globalPrivacyControl` sayfanın dünyasında, bütün çerçevelerde. Electron yalnızca başlığı gönderiyordu; çerez onay araçları çoğunlukla betikteki değeri okuduğu için ikisi birden
 - ☑ HTTPS-Only modu (0.2.1a; üst düzey gezinmeler https'e yükseltilir, yanıt yoksa ya da başarısızsa uyarı, "HTTP ile devam et" oturum boyunca)
 - ☐ Zararlı site uyarısı
 - ☑ Parmak izi koruması (0.2.1a; sayfanın dünyasında WebKit kullanıcı betiği, tohum oturum anahtarı + üst sitenin adı)
 - ☑ Çerez bildirimlerini reddetme (0.2.1a; ayrı betik dünyasında, bütün çerçevelerde)
-- ☐ Tarama verilerini temizleme (aralıkla, site başına, kapanışta)
+- ☑ Tarama verilerini temizleme (0.2.2a; Ctrl+Shift+Delete; `cleardata.rs`). Geçmiş ve indirmeler aralıkla; çerezler ve site verileri, önbellek ve izinler Electron'daki gibi tüm zamanlar için (WebKit çerezleri yaşına göre silemiyor; HSTS listesi kalır). Çerez sayısı yerine veri tutan site sayısı gösterilir. Tüm geçmiş silinince yer imli sitelerin simgeleri kalır, WebKit'in sayfa simgesi deposu boşalır. Site başına silme kilit panelinde ve geçmiş sayfasında. Kapanışta temizleme Ctrl+Q'yu, son pencerenin kapanmasını ve yeniden başlatmayı bekletir (pencereler gizli, en çok 4 sn); düzgün kapanmayan bir çalışmanın (çökme, bilgisayarı kapatma) bıraktığı, sonraki açılışta sayfalar açılmadan silinir. Form verisi ve parolalar o özelliklerle gelir (şimdilik 0). WebKit önbelleği geliştirme sürümünde `com.peepwick.browser.dev`, testte profilin `cache` klasöründe
 
 ### Veri
 - ☐ Parola yöneticisi: kaydetme, güncelleme, parolalar sayfası, zayıf ve tekrar eden denetimi, CSV
@@ -150,5 +154,5 @@ Durum: ☐ yapılmadı · ◐ kısmen · ☑ tamam (Electron sürümüyle aynı 
 - ☐ Sayfa çevirisi (Bergamot)
 - ☐ Görev yöneticisi (Shift+Esc), medya denetimleri
 - ☐ Hata bildir, hata günlüğü
-- ◐ Varsayılan tarayıcı olma, otomatik güncelleme. Güncelleme 0.2.1a'da: Tauri updater, minisign imzası (sürüm imzada, `requireSignedVersion`), liste `updates` dalında `latest.json`, AppImage hemen, deb yeniden başlatınca pkexec ile. Varsayılan tarayıcı düğmesi henüz yok
+- ☑ Varsayılan tarayıcı olma, otomatik güncelleme. Varsayılan tarayıcı (0.2.2a): deb'in "PEEPWICK Browser.desktop" dosyası; AppImage, 0.1.x gibi `~/.local/share/applications/peepwick-browser.desktop` dosyasını (ve simgesini) tutar, açılışta kendi yoluna çeker (0.1.x'ten kalan dosya da). xdg-settings ve xdg-mime arka planda, zaman sınırıyla çalışır; geliştirme sürümü "development" döner (testte `PEEPWICK_TEST_DEFAULT_BROWSER=1`, sahte XDG klasörleriyle). Güncelleme 0.2.1a'da: Tauri updater, minisign imzası (sürüm imzada, `requireSignedVersion`), liste `updates` dalında `latest.json`, AppImage hemen, deb yeniden başlatınca pkexec ile
 - ◐ Türkçe ve İngilizce arayüz (Rust tarafı aynı sözlükleri derlemede gömer)

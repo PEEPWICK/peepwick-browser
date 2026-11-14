@@ -2,7 +2,7 @@
 //! same tables the Electron version used. Private windows record nothing.
 
 use std::cell::RefCell;
-use std::collections::{HashMap, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::Mutex;
 
 use base64::Engine;
@@ -423,6 +423,66 @@ pub fn count_visits(since: i64) -> i64 {
     .unwrap_or(0)
 }
 
+/// Clearing browsing data: the visits since `since` (ms), or for 0 the whole history with the
+/// stored icons, except those of the hosts in `keep_icons` (bookmarked sites keep theirs).
+/// Returns how many visits went.
+pub fn delete_since(since: i64, keep_icons: &HashSet<String>) -> usize {
+    RECENT.with(|recent| recent.borrow_mut().clear());
+    with_db(|db| {
+        if since <= 0 {
+            clear_all(db, keep_icons)
+        } else {
+            delete_visits_since(db, since)
+        }
+    })
+    .unwrap_or(0)
+}
+
+fn delete_visits_since(db: &Connection, since: i64) -> rusqlite::Result<usize> {
+    let tx = db.unchecked_transaction()?;
+    let urls: Vec<String> = tx
+        .prepare_cached("SELECT DISTINCT url FROM visits WHERE visited_at >= ?1")?
+        .query_map([since], |row| row.get(0))?
+        .collect::<rusqlite::Result<_>>()?;
+    let removed = tx
+        .prepare_cached("DELETE FROM visits WHERE visited_at >= ?1")?
+        .execute([since])?;
+    refresh_pages(&tx, &urls)?;
+    tx.commit()?;
+    Ok(removed)
+}
+
+fn clear_all(db: &Connection, keep_icons: &HashSet<String>) -> rusqlite::Result<usize> {
+    let removed: i64 = db.query_row("SELECT COUNT(*) FROM visits", [], |row| row.get(0))?;
+    let pages: i64 = db.query_row("SELECT COUNT(*) FROM pages", [], |row| row.get(0))?;
+    let icons: Vec<String> = db
+        .prepare("SELECT host FROM favicons")?
+        .query_map([], |row| row.get::<_, String>(0))?
+        .filter_map(Result::ok)
+        .filter(|host| !keeps_icon(host, keep_icons))
+        .collect();
+    // Cleared on every start when Settings asks for it on exit: mostly there's nothing to do.
+    if removed == 0 && pages == 0 && icons.is_empty() {
+        return Ok(0);
+    }
+    let tx = db.unchecked_transaction()?;
+    tx.execute_batch("DELETE FROM visits; DELETE FROM pages;")?;
+    for host in &icons {
+        tx.prepare_cached("DELETE FROM favicons WHERE host = ?1")?
+            .execute([host])?;
+    }
+    tx.commit()?;
+    // Leaves nothing of the old rows in the file.
+    db.execute_batch("VACUUM;")?;
+    Ok(removed as usize)
+}
+
+/// A host keeps its icon when it, or its www. twin, is in `keep`.
+fn keeps_icon(host: &str, keep: &HashSet<String>) -> bool {
+    let bare = host.strip_prefix("www.").unwrap_or(host);
+    keep.contains(host) || keep.contains(bare) || keep.contains(&format!("www.{bare}"))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -431,5 +491,77 @@ mod tests {
     fn escapes_like_patterns() {
         assert_eq!(like(" 100%_a\\b "), "%100\\%\\_a\\\\b%");
         assert_eq!(like(""), "%%");
+    }
+
+    fn memory_db() -> Connection {
+        let db = Connection::open_in_memory().unwrap();
+        db.execute_batch(SCHEMA).unwrap();
+        db
+    }
+
+    fn visit(db: &Connection, url: &str, at: i64) {
+        db.execute(
+            "INSERT INTO visits (url, visited_at) VALUES (?1, ?2)",
+            params![url, at],
+        )
+        .unwrap();
+        db.execute(
+            "INSERT INTO pages (url, visits, last_visit) VALUES (?1, 1, ?2)
+             ON CONFLICT(url) DO UPDATE SET visits = visits + 1, last_visit = excluded.last_visit",
+            params![url, at],
+        )
+        .unwrap();
+    }
+
+    fn count(db: &Connection, table: &str) -> i64 {
+        db.query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |row| {
+            row.get(0)
+        })
+        .unwrap()
+    }
+
+    #[test]
+    fn deletes_the_visits_of_a_time_range() {
+        let db = memory_db();
+        visit(&db, "https://a.example/", 1_000);
+        visit(&db, "https://a.example/", 5_000);
+        visit(&db, "https://b.example/", 6_000);
+        assert_eq!(delete_visits_since(&db, 4_000).unwrap(), 2);
+        assert_eq!(count(&db, "visits"), 1);
+        // a.example keeps its older visit, b.example has none left.
+        let page: (i64, i64) = db
+            .query_row(
+                "SELECT visits, last_visit FROM pages WHERE url = 'https://a.example/'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(page, (1, 1_000));
+        assert_eq!(count(&db, "pages"), 1);
+    }
+
+    #[test]
+    fn clearing_it_all_keeps_the_icons_of_bookmarked_sites() {
+        let db = memory_db();
+        visit(&db, "https://a.example/", 1_000);
+        for host in ["a.example", "www.b.example", "c.example"] {
+            db.execute(
+                "INSERT INTO favicons (host, data, updated_at) VALUES (?1, 'data:', 0)",
+                [host],
+            )
+            .unwrap();
+        }
+        let keep: HashSet<String> = ["b.example".to_string()].into();
+        assert_eq!(clear_all(&db, &keep).unwrap(), 1);
+        assert_eq!(count(&db, "visits") + count(&db, "pages"), 0);
+        let icons: Vec<String> = db
+            .prepare("SELECT host FROM favicons")
+            .unwrap()
+            .query_map([], |row| row.get(0))
+            .unwrap()
+            .map(Result::unwrap)
+            .collect();
+        assert_eq!(icons, ["www.b.example"]);
+        assert_eq!(clear_all(&db, &keep).unwrap(), 0);
     }
 }

@@ -23,6 +23,9 @@
       "deb",
       "appimage"
     ],
+    "resources": {
+      "gen/webext/libpeepwick-webext.so": "webext/libpeepwick-webext.so"
+    },
     "shortDescription": "A calm, private browser that guards your attention.",
     "copyright": "Copyright © 2026 PEEPWICK",
     "license": "GPL-3.0-only",

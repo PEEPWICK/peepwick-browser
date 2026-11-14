@@ -17,7 +17,7 @@ use crate::menu::{self, ClickEvent};
 use crate::settings;
 use crate::state::PaneRect;
 use crate::window::{self, BrowserWindow, OpenOptions};
-use crate::{bookmarks, downloads, history, menus, omnibox, permissions, zoom};
+use crate::{bookmarks, cleardata, downloads, history, menus, omnibox, permissions, zoom};
 
 /// Runs `f` on the main thread with the window whose UI called. The UI may ask before Rust
 /// has finished setting its window up; then it waits a little.
@@ -49,7 +49,10 @@ pub async fn pw_invoke(
     args: Vec<Value>,
 ) -> Result<Value, String> {
     let label = webview.label().to_string();
-    if matches!(method.as_str(), "siteInfo" | "siteClearData") {
+    if matches!(
+        method.as_str(),
+        "siteInfo" | "siteClearData" | "clearData" | "clearDataCounts"
+    ) {
         // WebKit answers these later (cookies, site data): the reply waits for it.
         let (tx, rx) = tokio::sync::oneshot::channel::<Value>();
         let tx = std::sync::Arc::new(std::sync::Mutex::new(Some(tx)));
@@ -62,7 +65,9 @@ pub async fn pw_invoke(
             };
             match method.as_str() {
                 "siteInfo" => crate::security::site_info(win, done),
-                _ => crate::security::clear_site_data(win, done),
+                "siteClearData" => crate::security::clear_site_data(win, done),
+                "clearData" => cleardata::clear_request(cleardata::request(args.first()), done),
+                _ => cleardata::counts(cleardata::range(args.first()), done),
             }
         })
         .await?;
@@ -73,6 +78,17 @@ pub async fn pw_invoke(
         let input = short(args.first(), 500);
         let local = on_main(&app, &label, move |win| omnibox::suggest_local(win, &input)).await?;
         return to_json(omnibox::finish(local).await);
+    }
+    // The desktop's tools (xdg-settings) take a moment: they run off the main thread too.
+    if method == "setDefaultBrowser" {
+        let result = tauri::async_runtime::spawn_blocking(crate::desktop::make_default).await;
+        return Ok(json!(result.unwrap_or("failed")));
+    }
+    if method == "appInfo" {
+        let default = tauri::async_runtime::spawn_blocking(crate::desktop::is_default);
+        let mut info = on_main(&app, &label, |_| window::app_info()).await?;
+        info.is_default_browser = default.await.unwrap_or(false);
+        return to_json(info);
     }
     on_main(&app, &label, move |win| invoke(win, &method, &args)).await?
 }
@@ -183,9 +199,6 @@ pub(crate) fn invoke(
             json!({ "blockedToday": 0, "blockedWeek": 0, "blockedTotal": 0, "focusMinutesToday": 0, "focusMinutesWeek": 0 })
         }
         "passwordsStatus" => json!({ "count": 0, "backend": "", "never": [] }),
-        "clearDataCounts" => {
-            json!({ "history": 0, "downloads": 0, "cookies": 0, "permissions": 0, "forms": 0, "passwords": 0 })
-        }
         "formEntryCount" => json!(0),
         "bookmarkCreate" => {
             let input = |key: &str| args.first().and_then(|i| i.get(key));
@@ -219,6 +232,12 @@ pub(crate) fn invoke(
         "chooseDownloadFolder" => downloads::choose_folder(win),
         "permissionsList" => permissions::list(),
         "certificate" => crate::security::certificate(win, &short(args.first(), 300)),
+        "resetSettings" => {
+            settings::reset();
+            window::settings_changed();
+            window::zoom_changed();
+            Value::Null
+        }
         "extensionsList"
         | "shieldReport"
         | "passwordsList"
@@ -425,6 +444,7 @@ pub(crate) fn send(win: &Rc<BrowserWindow>, method: &str, args: &[Value]) {
             settings::update(&json!({ "onboarded": true }));
             window::settings_changed();
         }
+        "restart" => crate::updater::restart(&win.app_handle()),
         "historyRemove" => {
             if win.incognito {
                 return;
@@ -472,7 +492,7 @@ pub(crate) fn send(win: &Rc<BrowserWindow>, method: &str, args: &[Value]) {
         }
         "bookmarkTabs" => actions::bookmark_space_tabs(win),
         "download" => downloads::action(&short(arg(0), 64), text(arg(1))),
-        "downloadsClear" => downloads::clear(),
+        "downloadsClear" => downloads::clear(0),
         "downloadsOpenFolder" => downloads::open_folder(),
         "downloadMenu" => downloads::menu(win, &short(arg(0), 64), float(arg(1)), float(arg(2))),
         "permission" => {

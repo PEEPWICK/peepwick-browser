@@ -57,6 +57,12 @@ It is written in Rust with [Tauri](https://tauri.app/), and draws pages with
 - **Cookie banners, rejected.** When a consent notice from a common tool shows up, its "reject"
   button is pressed for you.
 - **Third-party cookies blocked,** and WebKit's Intelligent Tracking Prevention on.
+- **Global Privacy Control.** Every request asks sites not to sell or share your data
+  (`Sec-GPC: 1`), and pages that check in script get the same answer.
+- **Clear browsing data** with <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Delete</kbd>: history and
+  downloads from the last hour, day, week or four weeks, or from all time, along with cookies and
+  site data, the cache and site permissions. Choose what goes every time the browser closes; if
+  it was shut down before it could, that goes before any page opens next time.
 - **Private windows** write nothing to disk; their data is gone when the last one closes.
 - **No telemetry, no account.** The browser doesn't measure how you use it. See
   [what it sends, and where](#what-the-browser-sends-and-where).
@@ -83,8 +89,9 @@ It is written in Rust with [Tauri](https://tauri.app/), and draws pages with
 Downloads with progress and speed: open, show in folder, retry, move to the trash; choose the
 folder, or be asked where to save each file. Per-site zoom with a default zoom and font size.
 Find on page, print, save a page as one .mhtml file, and the Web Inspector (<kbd>F12</kbd>).
-Spelling suggestions in text fields. Links from other apps open as new tabs in the window you used
-last, and a second launch never starts a second browser on the same profile.
+Spelling suggestions in text fields. Make it your default browser from Settings or the welcome
+screen, from the .deb or the AppImage alike. Links from other apps open as new tabs in the window
+you used last, and a second launch never starts a second browser on the same profile.
 
 ## Install
 
@@ -134,6 +141,7 @@ The browser keeps its data in `~/.local/share/com.peepwick.browser` and its cach
 | <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>O</kbd> | Bookmark manager |
 | <kbd>Ctrl</kbd>+<kbd>F</kbd> | Find on page |
 | <kbd>Ctrl</kbd>+<kbd>H</kbd> / <kbd>Ctrl</kbd>+<kbd>J</kbd> | History / downloads |
+| <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Delete</kbd> | Clear browsing data |
 | <kbd>Ctrl</kbd>+<kbd>S</kbd> / <kbd>Ctrl</kbd>+<kbd>P</kbd> | Save page / print |
 | <kbd>Ctrl</kbd>+<kbd>=</kbd> / <kbd>Ctrl</kbd>+<kbd>-</kbd> / <kbd>Ctrl</kbd>+<kbd>0</kbd> | Zoom in / out / reset |
 | <kbd>Ctrl</kbd>+<kbd>N</kbd> / <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>N</kbd> | New window / private window |
@@ -206,8 +214,11 @@ already installed.
   once and keeps in the profile.
 - History and site icons are stored in SQLite (rusqlite); bookmarks, downloads and site permissions
   in JSON files.
-- Fingerprinting protection and cookie banner rejection are WebKit user scripts
-  (`src-tauri/scripts`), one in the page's own world and one in a world of its own.
+- Fingerprinting protection, cookie banner rejection and Global Privacy Control's
+  `navigator.globalPrivacyControl` are WebKit user scripts (`src-tauri/scripts`); cookie banners
+  are handled in a world of their own, the rest in the page's own world.
+- `src-tauri/webext`: a small extension WebKit loads into its web processes, which adds the
+  Global Privacy Control header to every request a page makes.
 - Updates come through Tauri's updater; packages are checked against a minisign signature that has
   to name the version the update list announces.
 - `src/renderer`: the interface in React, styled with the PEEPWICK brand tokens: near-black and
