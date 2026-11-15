@@ -24,8 +24,7 @@ use webkit2gtk::{
 use crate::i18n::t;
 use crate::settings::{self, Theme};
 use crate::state::{
-    AppInfo, FocusState, GlobalState, InitialData, PaneRect, SplitState, WindowState,
-    WorkspaceState,
+    AppInfo, GlobalState, InitialData, PaneRect, SplitState, WindowState, WorkspaceState,
 };
 use crate::tab::{SavedTab, Tab, now_ms};
 use crate::{bookmarks, downloads, pages, paths, permissions, session, shield, shortcuts, updater};
@@ -368,19 +367,45 @@ fn configure_context(context: &WebContext, manager: &WebsiteDataManager, incogni
     context.set_spell_checking_enabled(true);
     context.set_spell_checking_languages(&["tr_TR", "en_US"]);
     // Our extension in the web processes (webext/peepwick-webext.c) adds the Global Privacy
-    // Control header to their requests. Each new web process gets the setting as it starts.
+    // Control header to their requests and does HTTPS-Only's upgrading. Each new web process
+    // gets the settings as it starts.
     match paths::resource("webext/libpeepwick-webext.so") {
         Some(file) => {
             if let Some(dir) = file.parent() {
                 context.set_web_extensions_directory(&dir.to_string_lossy());
             }
         }
-        None => eprintln!("[window] the web process extension is missing: no Sec-GPC header"),
+        None => eprintln!(
+            "[window] the web process extension is missing: no Sec-GPC header, no HTTPS-Only"
+        ),
     }
     context.connect_initialize_web_extensions(|context| {
-        let gpc = settings::get().send_global_privacy_control;
-        context.set_web_extensions_initialization_user_data(&gpc.to_variant());
+        context.set_web_extensions_initialization_user_data(&extension_config());
     });
+}
+
+/// What the web process extension needs: (Global Privacy Control, HTTPS-Only, the sites
+/// opened over HTTP on purpose this session).
+fn extension_config() -> glib::Variant {
+    let prefs = settings::get();
+    (
+        prefs.send_global_privacy_control,
+        prefs.https_only,
+        crate::security::http_allowed(),
+    )
+        .to_variant()
+}
+
+/// Tells the web processes already running that their settings changed.
+pub fn extensions_changed() {
+    let config = extension_config();
+    for cell in [&BROWSING, &PRIVATE] {
+        cell.with(|context| {
+            if let Some(context) = context.borrow().as_ref() {
+                context.send_message_to_all_extensions(&UserMessage::new("config", Some(&config)));
+            }
+        });
+    }
 }
 
 fn apply_cookie_policy(manager: &WebsiteDataManager) {
@@ -1612,12 +1637,7 @@ fn new_id() -> String {
 
 pub fn global_state() -> GlobalState {
     GlobalState {
-        focus: FocusState {
-            active: false,
-            started_at: 0,
-            ends_at: 0,
-            minutes: settings::get().focus_minutes,
-        },
+        focus: crate::focus::state(),
         update: updater::state(),
         downloads: downloads::recent(),
         version: display_version(),
@@ -1698,11 +1718,9 @@ pub fn settings_changed() {
             if let Some(manager) = context.website_data_manager() {
                 apply_cookie_policy(&manager);
             }
-            // The web processes already running hear it from here.
-            let gpc = prefs.send_global_privacy_control.to_variant();
-            context.send_message_to_all_extensions(&UserMessage::new("gpc", Some(&gpc)));
         });
     }
+    extensions_changed();
     for win in all() {
         win.web_settings.set_default_font_size(prefs.font_size);
         win.emit("settings", &prefs);

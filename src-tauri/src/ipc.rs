@@ -17,7 +17,9 @@ use crate::menu::{self, ClickEvent};
 use crate::settings;
 use crate::state::PaneRect;
 use crate::window::{self, BrowserWindow, OpenOptions};
-use crate::{bookmarks, cleardata, downloads, history, menus, omnibox, permissions, zoom};
+use crate::{
+    bookmarks, cleardata, downloads, focus, history, menus, omnibox, permissions, stats, zoom,
+};
 
 /// Runs `f` on the main thread with the window whose UI called. The UI may ask before Rust
 /// has finished setting its window up; then it waits a little.
@@ -195,9 +197,7 @@ pub(crate) fn invoke(
                 to_json(history::top_sites(8))?
             }
         }
-        "stats" => {
-            json!({ "blockedToday": 0, "blockedWeek": 0, "blockedTotal": 0, "focusMinutesToday": 0, "focusMinutesWeek": 0 })
-        }
+        "stats" => stats::stats(),
         "passwordsStatus" => json!({ "count": 0, "backend": "", "never": [] }),
         "formEntryCount" => json!(0),
         "bookmarkCreate" => {
@@ -422,9 +422,19 @@ pub(crate) fn send(win: &Rc<BrowserWindow>, method: &str, args: &[Value]) {
                 "back" => tab.back(),
                 "http" => tab.continue_over_http(),
                 "proceed" => tab.proceed_insecure(),
+                "open-anyway" => tab.open_anyway(),
                 other => eprintln!("[ipc] not ported yet: interstitial {other}"),
             }
         }
+        "focusStart" => {
+            let minutes = float(arg(0));
+            focus::start(if minutes > 0.0 {
+                minutes
+            } else {
+                f64::from(settings::get().focus_minutes)
+            });
+        }
+        "focusStop" => focus::stop(),
         "command" => {
             let id = text(arg(0));
             if actions::is_available(win, id) {

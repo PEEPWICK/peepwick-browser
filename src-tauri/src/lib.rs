@@ -8,6 +8,7 @@ mod bookmarks;
 mod cleardata;
 mod desktop;
 mod downloads;
+mod focus;
 mod fonts;
 #[cfg(any(debug_assertions, feature = "harness"))]
 mod harness;
@@ -30,6 +31,7 @@ mod settings;
 mod shield;
 mod shortcuts;
 mod state;
+mod stats;
 mod store;
 mod tab;
 mod updater;
@@ -94,6 +96,9 @@ pub fn run() {
         .setup(|app| {
             paths::init(app.handle())?;
             settings::load();
+            stats::load();
+            // Before any window: a session that is still going gates the restored tabs.
+            focus::load();
             zoom::load();
             bookmarks::load();
             downloads::load();

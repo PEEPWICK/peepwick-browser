@@ -74,8 +74,9 @@ pub struct WindowState {
     pub extensions_partition: Option<String>,
 }
 
-#[derive(Clone, Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
+/// Also the shape of focus.json.
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
 pub struct FocusState {
     pub active: bool,
     pub started_at: u64,

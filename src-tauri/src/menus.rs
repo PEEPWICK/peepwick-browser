@@ -26,7 +26,7 @@ use crate::search::search_url;
 use crate::tab::Tab;
 use crate::window;
 use crate::window::{BrowserWindow, OpenOptions, USER_AGENT};
-use crate::{history, session, settings};
+use crate::{focus, history, session, settings};
 
 pub(crate) fn on_window(
     win: &Rc<BrowserWindow>,
@@ -557,6 +557,24 @@ fn bookmarks_submenu(win: &Rc<BrowserWindow>) -> MenuSpec {
     )
 }
 
+/// Starts a session of a usual length, or ends the one going.
+fn focus_submenu() -> MenuSpec {
+    let items = if focus::active() {
+        vec![item(t("focus.stop"), |_| focus::stop())]
+    } else {
+        [25, 50, 90]
+            .into_iter()
+            .map(|minutes| {
+                item(
+                    tv("focus.minutes", &[("n", Var::Number(minutes))]),
+                    move |_| focus::start(minutes as f64),
+                )
+            })
+            .collect()
+    };
+    submenu(t("menu.focus"), items)
+}
+
 /// `x` is the menu button's right edge: the menu lines up with it.
 pub fn app_menu(win: &Rc<BrowserWindow>, x: f64, y: f64) {
     let web = win
@@ -610,6 +628,7 @@ pub fn app_menu(win: &Rc<BrowserWindow>, x: f64, y: f64) {
         item(t("menu.print"), on_active(win, |tab| tab.print()))
             .accelerator("Ctrl+P")
             .enabled(web),
+        focus_submenu(),
         item(
             t("menu.fullscreen"),
             on_window(win, |win| win.toggle_fullscreen()),

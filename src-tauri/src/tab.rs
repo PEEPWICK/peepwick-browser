@@ -15,13 +15,14 @@ use webkit2gtk::{
     BackForwardListExt, FindControllerExt, LoadEvent, NavigationPolicyDecision,
     NavigationPolicyDecisionExt, NetworkError, PolicyDecision, PolicyDecisionExt,
     PolicyDecisionType, PolicyError, ResponsePolicyDecision, ResponsePolicyDecisionExt,
-    ScriptDialogType, URIRequestExt, WebView, WebViewExt, WebViewSessionState,
+    ScriptDialogType, URIRequestExt, URIResponseExt, UserMessageExt, WebView, WebViewExt,
+    WebViewSessionState,
 };
 
 use crate::i18n::t;
 use crate::state::TabState;
 use crate::window::{BrowserWindow, OpenOptions};
-use crate::{history, menus, pages, security, settings, shortcuts, zoom};
+use crate::{focus, history, menus, pages, security, settings, shortcuts, zoom};
 
 /// What a closed or restored tab needs to come back.
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -201,7 +202,9 @@ impl Tab {
             }
         });
         if !restored && self.shows_web() {
-            view.load_uri(&self.url());
+            let url = self.url();
+            self.follow_shield(&url);
+            view.load_uri(&url);
         }
         Some(view)
     }
@@ -256,6 +259,12 @@ impl Tab {
             return;
         }
         self.set_address(url);
+        if focus::should_gate(url) {
+            // Nothing is asked of the site; whatever was loading stops too.
+            self.stop();
+            self.hold_for_focus(url);
+            return;
+        }
         let had_view = self.view.borrow().is_some();
         if !had_view {
             // A sleeping tab's old history would be loaded instead of the new address.
@@ -266,6 +275,7 @@ impl Tab {
         if let Some(view) = self.ensure_view()
             && had_view
         {
+            self.follow_shield(url);
             view.load_uri(url);
         }
         self.relayout();
@@ -273,6 +283,8 @@ impl Tab {
     }
 
     pub fn show_page(&self, page: &'static str, subpage: &str) {
+        // An HTTPS attempt still going would offer HTTP over this page.
+        security::https_settled(self.id);
         self.set_address(&pages::internal_url(page, subpage));
         self.title.replace(String::new());
         self.favicon.replace(None);
@@ -299,7 +311,9 @@ impl Tab {
     }
 
     pub fn can_go_forward(&self) -> bool {
-        self.page.get().is_none() && self.view().is_some_and(|v| v.can_go_forward())
+        self.page.get().is_none()
+            && !self.holds_for_focus()
+            && self.view().is_some_and(|v| v.can_go_forward())
     }
 
     pub fn back(self: &Rc<Self>) {
@@ -319,12 +333,24 @@ impl Tab {
             self.changed();
             return;
         }
-        if self.interstitial.replace(None).is_some() {
+        if let Some(warning) = self.interstitial.replace(None) {
+            let was_focus = warning["kind"] == "focus";
+            let under = self.view_url();
             match &view {
+                // The gated link was clicked on a page that is still there underneath.
+                Some(view)
+                    if was_focus && under.as_ref().is_some_and(|u| !focus::should_gate(u)) =>
+                {
+                    if let Some(url) = &under {
+                        self.set_address(url);
+                    }
+                    self.title
+                        .replace(view.title().map(|t| t.to_string()).unwrap_or_default());
+                }
                 Some(view) if view.can_go_back() => view.go_back(),
-                Some(_) if self.view_url().is_some() => {
-                    if let Some(url) = self.view_url() {
-                        self.set_address(&url);
+                Some(_) if !was_focus && under.is_some() => {
+                    if let Some(url) = &under {
+                        self.set_address(url);
                     }
                 }
                 _ => {
@@ -582,10 +608,20 @@ impl Tab {
             match event {
                 LoadEvent::Started => {
                     crate::permissions::deny_pending_for(tab.id);
-                    tab.interstitial.replace(None);
+                    // A new load ends the last one's HTTPS attempt; the web process reports this
+                    // one's after this.
+                    security::https_settled(tab.id);
+                    // The page under the focus gate moving on doesn't lift the gate.
+                    if !tab.holds_for_focus() {
+                        tab.interstitial.replace(None);
+                    }
                     if tab.find.borrow().is_some() {
                         tab.stop_find();
                     }
+                }
+                LoadEvent::Committed if tab.holds_for_focus() => {
+                    // The gate keeps the address it waits for.
+                    security::https_settled(tab.id);
                 }
                 LoadEvent::Committed => {
                     security::https_settled(tab.id);
@@ -600,6 +636,8 @@ impl Tab {
                         return;
                     }
                     if let Some(uri) = view.uri() {
+                        // Pages back from WebKit's back-forward cache come without a reply.
+                        tab.follow_shield(&uri);
                         let host_changed = pages::host_of(&uri) != pages::host_of(&tab.url());
                         tab.set_address(&uri);
                         if host_changed {
@@ -693,6 +731,10 @@ impl Tab {
                 return false;
             }
             let Some(tab) = tab() else { return false };
+            // The page under the focus gate isn't what the tab shows.
+            if tab.holds_for_focus() {
+                return true;
+            }
             let code = error_code(error);
             match security::https_fallback(tab.id, uri, code) {
                 Some(http) => tab.show_https_only(&http),
@@ -704,6 +746,9 @@ impl Tab {
         let tab = tab_of.clone();
         view.connect_load_failed_with_tls_errors(move |_, uri, certificate, flags| {
             let Some(tab) = tab() else { return false };
+            if tab.holds_for_focus() {
+                return true;
+            }
             match security::https_fallback(tab.id, uri, -202) {
                 Some(http) => tab.show_https_only(&http),
                 None => tab.certificate_warning(uri, certificate, flags),
@@ -717,6 +762,32 @@ impl Tab {
             tab.interstitial.replace(Some(json!({ "kind": "crashed" })));
             tab.relayout();
             tab.changed();
+        });
+
+        // HTTPS-Only, from the web process (webext/peepwick-webext.c): the page was moved to
+        // HTTPS, or its secure version sent it back to HTTP and the load stopped.
+        let tab = tab_of.clone();
+        view.connect_user_message_received(move |_, message| {
+            let Some(tab) = tab() else { return false };
+            let parameters = message.parameters();
+            match message.name().as_deref() {
+                Some("https-upgraded") => {
+                    if let Some((http, secure)) =
+                        parameters.and_then(|p| p.get::<(String, String)>())
+                    {
+                        security::upgraded(&tab, &http, &secure);
+                    }
+                    true
+                }
+                Some("https-loop") => {
+                    if let Some(http) = parameters.and_then(|p| p.get::<String>()) {
+                        security::https_settled(tab.id);
+                        tab.show_https_only(&http);
+                    }
+                    true
+                }
+                _ => false,
+            }
         });
 
         // A page closed itself (window.close() after a sign-in popup, for example).
@@ -876,6 +947,38 @@ impl Tab {
         self.tls_failure.borrow().clone()
     }
 
+    /// Focus mode: the site waits behind a calm gate instead of loading.
+    fn hold_for_focus(&self, url: &str) {
+        let host = pages::host_of(url);
+        let host = host.strip_prefix("www.").unwrap_or(&host);
+        security::https_settled(self.id);
+        self.set_address(url);
+        self.interstitial
+            .replace(Some(json!({ "kind": "focus", "url": url, "host": host })));
+        self.relayout();
+        self.changed();
+    }
+
+    fn focus_gate_url(&self) -> Option<String> {
+        self.interstitial
+            .borrow()
+            .as_ref()
+            .filter(|i| i["kind"] == "focus")
+            .and_then(|i| i["url"].as_str().map(str::to_string))
+    }
+
+    fn holds_for_focus(&self) -> bool {
+        self.focus_gate_url().is_some()
+    }
+
+    /// "Open anyway" on the focus gate: the site may load for the next five minutes.
+    pub fn open_anyway(self: &Rc<Self>) {
+        if let Some(url) = self.focus_gate_url() {
+            focus::grant_pass(&url);
+            self.load(&url);
+        }
+    }
+
     /// HTTPS-Only: the secure version didn't work; ask before going on unencrypted.
     pub fn show_https_only(&self, url: &str) {
         self.stop();
@@ -939,7 +1042,9 @@ impl Tab {
     }
 
     /// Links opened with the middle button or Ctrl go to a new tab behind this one; replies
-    /// WebKit can't show become downloads.
+    /// WebKit can't show become downloads. What depends on where the tab's own page goes (the
+    /// focus gate, the shield) waits for the reply: before it, WebKit can't tell the page from
+    /// a frame in it. HTTPS-Only is done in the web process (webext/peepwick-webext.c).
     fn decide(self: &Rc<Self>, decision: &PolicyDecision, kind: PolicyDecisionType) -> bool {
         match kind {
             PolicyDecisionType::NavigationAction => {
@@ -950,31 +1055,12 @@ impl Tab {
                     return false;
                 };
                 let ctrl = action.modifiers() & gtk::gdk::ModifierType::CONTROL_MASK.bits() != 0;
+                if action.mouse_button() != 2 && !ctrl {
+                    return false;
+                }
                 let Some(url) = action.request().and_then(|r| r.uri()) else {
                     return false;
                 };
-                if action.mouse_button() != 2 && !ctrl {
-                    match security::https_upgrade(self, &url) {
-                        Some(security::Upgrade::Https(secure)) => {
-                            decision.ignore();
-                            if let Some(view) = self.view() {
-                                view.load_uri(&secure);
-                            }
-                            return true;
-                        }
-                        Some(security::Upgrade::Warn) => {
-                            decision.ignore();
-                            self.show_https_only(&url);
-                            return true;
-                        }
-                        None => {}
-                    }
-                    // The shield follows the site this tab is going to.
-                    if let Some(manager) = self.view().and_then(|v| v.user_content_manager()) {
-                        crate::shield::set_paused(&manager, crate::shield::paused_for(&url));
-                    }
-                    return false;
-                }
                 if let Some(win) = self.window() {
                     win.open_tab(OpenOptions {
                         url: Some(url.to_string()),
@@ -990,13 +1076,41 @@ impl Tab {
                 let Some(response) = decision.downcast_ref::<ResponsePolicyDecision>() else {
                     return false;
                 };
-                if response.is_mime_type_supported() {
-                    return false;
+                let page = response
+                    .is_main_frame_main_resource()
+                    .then(|| response.response().and_then(|r| r.uri()))
+                    .flatten();
+                // An embedded video in another page still plays.
+                if let Some(url) = &page
+                    && focus::should_gate(url)
+                {
+                    decision.ignore();
+                    self.hold_for_focus(url);
+                    return true;
                 }
-                decision.download();
-                true
+                if !response.is_mime_type_supported() {
+                    // A download leaves the page as it is; an upgrade to HTTPS that got this far
+                    // worked.
+                    if page.is_some() {
+                        security::https_settled(self.id);
+                    }
+                    decision.download();
+                    return true;
+                }
+                if let Some(url) = &page {
+                    self.follow_shield(url);
+                }
+                false
             }
             _ => false,
+        }
+    }
+
+    /// The shield's rules follow the site the tab's page is on, set before anything in the
+    /// page loads.
+    fn follow_shield(&self, url: &str) {
+        if let Some(manager) = self.view().and_then(|v| v.user_content_manager()) {
+            crate::shield::set_paused(&manager, crate::shield::paused_for(url));
         }
     }
 

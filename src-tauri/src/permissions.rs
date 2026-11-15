@@ -127,6 +127,10 @@ pub fn attach(tab: &Rc<Tab>, view: &WebView) {
         true
     });
     view.connect_show_notification(|_, notification| {
+        // A focus session holds sites' notifications back.
+        if crate::focus::silencing_notifications() {
+            return true;
+        }
         let title = notification
             .title()
             .map(|t| t.to_string())
@@ -196,8 +200,11 @@ fn handle(tab: &Rc<Tab>, view: &WebView, request: &PermissionRequest) {
     } else {
         Vec::new()
     };
-    // Screen sharing, codec installs, DRM and anything unknown are turned down.
-    if kinds.is_empty() {
+    // Screen sharing, codec installs, DRM and anything unknown are turned down. So is asking
+    // to send notifications during a focus session, without remembering the answer.
+    if kinds.is_empty()
+        || (kinds.contains(&"notifications") && crate::focus::silencing_notifications())
+    {
         request.deny();
         return;
     }

@@ -325,7 +325,7 @@ const tr = {
   'ext.incognito': 'Eklentiler gizli pencerede çalışmaz.',
 
   'onboard.title': 'Önce bakarız.',
-  'onboard.lead': 'PEEPWICK Browser reklamları ve izleyicileri ayıklar, işinizi ve akşamlarınızı ayrı alanlarda tutar ve sessiz kalır. Başlamadan önce üç küçük seçim.',
+  'onboard.lead': 'PEEPWICK Browser reklamları ve izleyicileri ayıklar, işinizi ve akşamlarınızı ayrı alanlarda tutar, odaklanırken dikkat dağıtan siteleri bekletir ve sessiz kalır. Başlamadan önce üç küçük seçim.',
   'onboard.theme': 'Tema',
   'onboard.engine': 'Arama motoru',
   'onboard.default': 'Bağlantılar PEEPWICK Browser’da açılsın',
@@ -1227,7 +1227,7 @@ const en: Record<MessageKey, string> = {
   'ext.incognito': 'Extensions don’t run in private windows.',
 
   'onboard.title': 'First, we look.',
-  'onboard.lead': 'PEEPWICK Browser filters out the ads and trackers, keeps your work and your evenings in separate spaces, and stays quiet. Three small choices before you start.',
+  'onboard.lead': 'PEEPWICK Browser filters out the ads and trackers, keeps your work and your evenings in separate spaces, holds distracting sites back while you focus, and stays quiet. Three small choices before you start.',
   'onboard.theme': 'Appearance',
   'onboard.engine': 'Search engine',
   'onboard.default': 'Open links in PEEPWICK Browser',

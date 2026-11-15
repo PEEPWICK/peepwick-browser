@@ -139,6 +139,15 @@ async fn run(app: &AppHandle, win: &Rc<BrowserWindow>, step: &Value, out: &str) 
                 win.ui_view().is_focus()
             );
         }
+        // Whether the shield's rules are off for the active tab's page.
+        "shield" => {
+            let paused = win
+                .active_tab()
+                .and_then(|t| t.view())
+                .and_then(|v| v.user_content_manager())
+                .map(|m| crate::shield::is_paused(&m));
+            eprintln!("[harness] shield paused={paused:?}");
+        }
         // Where each tab's view is, and where the UI asked for it.
         "layout" => {
             let panes: Vec<String> = win

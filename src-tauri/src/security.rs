@@ -19,13 +19,13 @@ use x509_parser::prelude::*;
 
 use crate::tab::Tab;
 use crate::window::{self, BrowserWindow};
-use crate::{pages, permissions, settings, shield};
+use crate::{pages, permissions, shield};
 
 /// How long an upgraded page gets to start answering before HTTP is offered.
 const ANSWER: Duration = Duration::from_secs(8);
 
 struct Attempt {
-    /// HTTP addresses upgraded since the last page was shown, to spot redirect loops.
+    /// HTTP addresses upgraded since the last page was shown, with where they went.
     upgraded: Vec<(String, String)>,
     timer: Option<glib::SourceId>,
 }
@@ -353,42 +353,18 @@ pub fn clear_site_data(win: &BrowserWindow, done: impl FnOnce(Value) + 'static) 
 
 // ── HTTPS-Only ────────────────────────────────────────────────────────────────
 
-pub enum Upgrade {
-    /// Load this HTTPS address instead.
-    Https(String),
-    /// The secure version sent the tab back to HTTP: ask.
-    Warn,
-}
-
-/// Opening a site over HTTP from the warning: its pages stay on HTTP this session.
+/// Opening a site over HTTP from the warning: its pages stay on HTTP this session. The web
+/// processes, which do the upgrading, hear of it before anything loads.
 pub fn allow_http(url: &str) {
     if let Some(site) = shield::site_of(url) {
         HTTP_ALLOWED.with(|set| set.borrow_mut().insert(site));
+        window::extensions_changed();
     }
 }
 
-fn upgradable(url: &str) -> bool {
-    if !url.starts_with("http:") || !settings::get().https_only {
-        return false;
-    }
-    let host = pages::host_of(url);
-    let allowed = shield::site_of(url)
-        .is_some_and(|site| HTTP_ALLOWED.with(|set| set.borrow().contains(&site)));
-    !host.is_empty() && !pages::is_local_host(&host) && !allowed
-}
-
-fn to_https(url: &str) -> String {
-    match url::Url::parse(url) {
-        Ok(mut parsed) => {
-            let _ = parsed.set_scheme("https");
-            // An explicit :80 belongs to HTTP; HTTPS on that port would never answer.
-            if parsed.port() == Some(80) {
-                let _ = parsed.set_port(None);
-            }
-            parsed.to_string()
-        }
-        Err(_) => url.replacen("http:", "https:", 1),
-    }
+/// The sites opened over HTTP on purpose this session, for the web processes.
+pub fn http_allowed() -> Vec<String> {
+    HTTP_ALLOWED.with(|set| set.borrow().iter().cloned().collect())
 }
 
 fn clear(tab_id: u32) {
@@ -399,25 +375,11 @@ fn clear(tab_id: u32) {
     }
 }
 
-/// For a top-level navigation: the HTTPS address to load instead, a warning when the secure
-/// version sent the tab back to HTTP, or nothing to leave it alone.
-pub fn https_upgrade(tab: &Rc<Tab>, url: &str) -> Option<Upgrade> {
-    if !upgradable(url) {
-        return None;
-    }
-    let looped = ATTEMPTS.with(|attempts| {
-        attempts
-            .borrow()
-            .get(&tab.id)
-            .is_some_and(|a| a.upgraded.iter().any(|(http, _)| http == url))
-    });
-    if looped {
-        clear(tab.id);
-        return Some(Upgrade::Warn);
-    }
-    let secure = to_https(url);
+/// The web process moved a tab's page from HTTP to HTTPS (webext/peepwick-webext.c). If the
+/// secure version doesn't start answering soon, or fails, HTTP is offered.
+pub fn upgraded(tab: &Rc<Tab>, http: &str, secure: &str) {
     let weak = Rc::downgrade(tab);
-    let http = url.to_string();
+    let offer = http.to_string();
     let timer = glib::timeout_add_local_once(ANSWER, move || {
         let Some(tab) = weak.upgrade() else { return };
         ATTEMPTS.with(|attempts| {
@@ -426,7 +388,7 @@ pub fn https_upgrade(tab: &Rc<Tab>, url: &str) -> Option<Upgrade> {
             }
         });
         clear(tab.id);
-        tab.show_https_only(&http);
+        tab.show_https_only(&offer);
     });
     ATTEMPTS.with(|attempts| {
         let mut attempts = attempts.borrow_mut();
@@ -437,9 +399,10 @@ pub fn https_upgrade(tab: &Rc<Tab>, url: &str) -> Option<Upgrade> {
         if let Some(old) = attempt.timer.replace(timer) {
             old.remove();
         }
-        attempt.upgraded.push((url.to_string(), secure.clone()));
+        attempt
+            .upgraded
+            .push((http.to_string(), secure.to_string()));
     });
-    Some(Upgrade::Https(secure))
 }
 
 /// The upgraded page answered and is showing: the attempt is over.
@@ -470,19 +433,6 @@ pub fn https_fallback(tab_id: u32, failed: &str, code: i32) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn upgrades_addresses() {
-        assert_eq!(
-            to_https("http://example.com/a?b=1"),
-            "https://example.com/a?b=1"
-        );
-        assert_eq!(to_https("http://example.com:80/"), "https://example.com/");
-        assert_eq!(
-            to_https("http://example.com:8080/"),
-            "https://example.com:8080/"
-        );
-    }
 
     #[test]
     fn names_certificate_problems() {

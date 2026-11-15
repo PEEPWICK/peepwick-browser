@@ -57,7 +57,7 @@ fn apply(filter: ffi::ContentFilter) {
     FILTER.with(|cell| cell.replace(Some(filter)));
 }
 
-fn is_paused(manager: &UserContentManager) -> bool {
+pub(crate) fn is_paused(manager: &UserContentManager) -> bool {
     PAUSED.with(|paused| {
         paused
             .borrow()

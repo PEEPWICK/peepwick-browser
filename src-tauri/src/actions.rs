@@ -11,7 +11,7 @@ use webkit2gtk::{SaveMode, WebViewExt};
 use crate::i18n::t;
 use crate::settings::{self, BookmarksBar};
 use crate::window::{self, BrowserWindow, OpenOptions};
-use crate::{bookmarks, pages, session};
+use crate::{bookmarks, focus, pages, session};
 
 pub fn new_tab(win: &Rc<BrowserWindow>) {
     win.open_tab(OpenOptions {
@@ -168,6 +168,8 @@ pub fn is_available(win: &BrowserWindow, id: &str) -> bool {
         | "bookmarks"
         | "toggle-bookmarks-bar"
         | "check-updates" => true,
+        "focus-start" => !focus::active(),
+        "focus-stop" => focus::active(),
         "split" => !win.has_split() && win.previous_tab().is_some(),
         "unsplit" => win.has_split(),
         "pin" => web,
@@ -180,6 +182,8 @@ pub fn run_command(win: &Rc<BrowserWindow>, id: &str) {
         "new-tab" => new_tab(win),
         "new-window" => new_window(win, false, Vec::new()),
         "new-incognito" => new_window(win, true, Vec::new()),
+        "focus-start" => focus::start(f64::from(settings::get().focus_minutes)),
+        "focus-stop" => focus::stop(),
         "settings" => open_page(win, "settings", ""),
         "history" => open_page(win, "history", ""),
         "downloads" => open_page(win, "downloads", ""),
@@ -218,10 +222,12 @@ pub fn run_command(win: &Rc<BrowserWindow>, id: &str) {
 }
 
 /// The commands the command bar offers, in order.
-pub const COMMANDS: [&str; 16] = [
+pub const COMMANDS: [&str; 18] = [
     "new-tab",
     "new-window",
     "new-incognito",
+    "focus-start",
+    "focus-stop",
     "split",
     "unsplit",
     "pin",

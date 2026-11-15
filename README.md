@@ -21,8 +21,8 @@
 
 Most of the day happens in a browser, and most of the web is built to pull your attention apart.
 PEEPWICK Browser filters out the ads and trackers, keeps your work and your evenings in separate
-spaces, and stays quiet: a black-and-white frame that lets the pages you visit keep their own
-color.
+spaces, holds distracting sites back while you focus, and stays quiet: a black-and-white frame
+that lets the pages you visit keep their own color.
 
 It is written in Rust with [Tauri](https://tauri.app/), and draws pages with
 [WebKitGTK](https://webkitgtk.org/), the engine of GNOME Web.
@@ -35,6 +35,10 @@ It is written in Rust with [Tauri](https://tauri.app/), and draws pages with
   personal. Pin them, move them between spaces, open two side by side, and let the ones you aren't
   using sleep. Close the browser and everything comes back next time: windows, spaces and tabs,
   each tab with its back and forward history.
+- **Focus sessions.** Start one for 25, 50 or 90 minutes from the sidebar, and the sites that pull
+  you away (YouTube, X, Instagram, TikTok, Reddit and a few more, or your own list) wait behind a
+  calm screen instead of loading. Need one anyway? It opens for five minutes after a short pause.
+  Sites stay quiet too: no notifications until the session ends.
 - **One bar for everything.** The address bar suggests from your history, your bookmarks and your
   open tabs. <kbd>Ctrl</kbd>+<kbd>K</kbd> opens the command bar for commands, tabs and bookmarks.
   Search with DuckDuckGo, Brave Search, Startpage, Google, Ecosia or Bing; suggestions from your
@@ -217,8 +221,9 @@ already installed.
 - Fingerprinting protection, cookie banner rejection and Global Privacy Control's
   `navigator.globalPrivacyControl` are WebKit user scripts (`src-tauri/scripts`); cookie banners
   are handled in a world of their own, the rest in the page's own world.
-- `src-tauri/webext`: a small extension WebKit loads into its web processes, which adds the
-  Global Privacy Control header to every request a page makes.
+- `src-tauri/webext`: a small extension WebKit loads into its web processes. It adds the Global
+  Privacy Control header to every request a page makes and moves a page's own HTTP address to
+  HTTPS before the request leaves, which WebKitGTK gives the browser itself no way to do.
 - Updates come through Tauri's updater; packages are checked against a minisign signature that has
   to name the version the update list announces.
 - `src/renderer`: the interface in React, styled with the PEEPWICK brand tokens: near-black and
