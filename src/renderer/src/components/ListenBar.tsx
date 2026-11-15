@@ -12,9 +12,9 @@ import { Icon, IconButton } from '../ui'
 
 const RATES = [0.75, 1, 1.25, 1.5, 1.75, 2]
 
-/** Whether read aloud has something to read in this tab. */
+/** Whether read aloud has something to read in this tab, and a speech engine to read it. */
 export function canListen(tab: TabState | null | undefined): boolean {
-  return !!tab && (tab.reader || tab.url.startsWith('peepwick://saved/'))
+  return typeof speechSynthesis !== 'undefined' && !!tab && (tab.reader || tab.url.startsWith('peepwick://saved/'))
 }
 
 function useVoices(): SpeechSynthesisVoice[] {

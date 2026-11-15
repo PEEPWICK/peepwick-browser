@@ -120,6 +120,7 @@ pub fn save_before_exit() {
         save_now();
     }
     crate::bookmarks::flush();
+    crate::readinglist::flush();
     crate::downloads::flush();
     crate::permissions::flush();
 }

@@ -211,7 +211,7 @@ fn changed() {
 }
 
 /// A random id in the UUID format the Electron version used.
-fn new_id() -> String {
+pub fn new_id() -> String {
     let mut bytes = [0u8; 16];
     if std::fs::File::open("/dev/urandom")
         .and_then(|mut f| std::io::Read::read_exact(&mut f, &mut bytes))

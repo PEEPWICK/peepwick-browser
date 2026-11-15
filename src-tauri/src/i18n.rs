@@ -19,7 +19,7 @@ pub enum Var<'a> {
     Number(i64),
 }
 
-fn code(lang: Lang) -> &'static str {
+pub fn code(lang: Lang) -> &'static str {
     match lang {
         Lang::Tr => "tr",
         Lang::En => "en",

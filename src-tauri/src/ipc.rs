@@ -18,8 +18,8 @@ use crate::settings;
 use crate::state::PaneRect;
 use crate::window::{self, BrowserWindow, OpenOptions};
 use crate::{
-    bookmarks, cleardata, downloads, focus, history, importers, menus, omnibox, permissions, stats,
-    zoom,
+    bookmarks, cleardata, downloads, focus, history, importers, menus, omnibox, permissions,
+    reader, readinglist, stats, zoom,
 };
 
 /// Runs `f` on the main thread with the window whose UI called. The UI may ask before Rust
@@ -270,12 +270,30 @@ pub(crate) fn invoke(
             window::zoom_changed();
             Value::Null
         }
+        "readingList" => {
+            if win.incognito {
+                json!([])
+            } else {
+                to_json(readinglist::list())?
+            }
+        }
+        // The article of reader view or of an offline copy, as paragraphs to read aloud.
+        "readAloud" => num(args.first())
+            .and_then(|id| win.tab(id))
+            .and_then(|tab| tab.article())
+            .map(|article| {
+                json!({
+                    "title": article.title,
+                    "lang": article.lang,
+                    "paragraphs": reader::paragraphs(&article.content),
+                })
+            })
+            .unwrap_or(Value::Null),
         "extensionsList"
         | "shieldReport"
         | "passwordsList"
         | "addressesList"
         | "tasks"
-        | "readingList"
         | "translationLanguages"
         | "translationModels" => json!([]),
         _ => {
@@ -439,6 +457,28 @@ pub(crate) fn send(win: &Rc<BrowserWindow>, method: &str, args: &[Value]) {
             }
         }
         "stopFind" => win.active_tab().iter().for_each(|tab| tab.stop_find()),
+        "toggleReader" => {
+            if let Some(tab) = win.active_tab() {
+                tab.toggle_reader();
+            }
+        }
+        "readingOpen" => {
+            let id = short(arg(0), 64);
+            let Some(url) = readinglist::url_for(&id).filter(|_| !win.incognito) else {
+                return;
+            };
+            readinglist::mark_read(&id, true);
+            if flag(arg(1)) {
+                win.open_tab(OpenOptions {
+                    url: Some(url),
+                    ..OpenOptions::default()
+                });
+            } else if let Some(tab) = win.active_tab() {
+                tab.load(&url);
+            }
+        }
+        "readingMark" => readinglist::mark_read(&short(arg(0), 64), flag(arg(1))),
+        "readingRemove" => readinglist::remove(&short(arg(0), 64)),
         "zoom" => {
             let direction = text(arg(0));
             if matches!(direction, "in" | "out" | "reset")

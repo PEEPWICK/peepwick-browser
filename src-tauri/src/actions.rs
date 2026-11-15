@@ -173,6 +173,18 @@ pub fn is_available(win: &BrowserWindow, id: &str) -> bool {
         "split" => !win.has_split() && win.previous_tab().is_some(),
         "unsplit" => win.has_split(),
         "pin" => web,
+        "reader" => active
+            .as_ref()
+            .is_some_and(|tab| tab.has_reader() || tab.reader_available()),
+        "reading-add" => {
+            !win.incognito
+                && web
+                && active.as_ref().is_some_and(|tab| {
+                    let url = tab.url();
+                    url.starts_with("http:") || url.starts_with("https:")
+                })
+        }
+        "reading-list" => true,
         _ => false,
     }
 }
@@ -216,18 +228,34 @@ pub fn run_command(win: &Rc<BrowserWindow>, id: &str) {
                 win.toggle_pin(tab.id);
             }
         }
+        "reader" => {
+            if is_available(win, "reader")
+                && let Some(tab) = win.active_tab()
+            {
+                tab.toggle_reader();
+            }
+        }
+        "reading-add" => {
+            if is_available(win, "reading-add")
+                && let Some(tab) = win.active_tab()
+            {
+                crate::readinglist::add_page(win, &tab);
+            }
+        }
+        "reading-list" => open_page(win, "reading", ""),
         "quit" => session::quit(&win.app_handle()),
         _ => eprintln!("[actions] not ported yet: {id}"),
     }
 }
 
 /// The commands the command bar offers, in order.
-pub const COMMANDS: [&str; 18] = [
+pub const COMMANDS: [&str; 21] = [
     "new-tab",
     "new-window",
     "new-incognito",
     "focus-start",
     "focus-stop",
+    "reader",
     "split",
     "unsplit",
     "pin",
@@ -240,5 +268,7 @@ pub const COMMANDS: [&str; 18] = [
     "bookmarks",
     "toggle-bookmarks-bar",
     "import-bookmarks",
+    "reading-add",
+    "reading-list",
     "check-updates",
 ];

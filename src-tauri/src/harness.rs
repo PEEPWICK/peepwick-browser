@@ -85,8 +85,9 @@ async fn run(app: &AppHandle, win: &Rc<BrowserWindow>, step: &Value, out: &str) 
                 result.map(describe).unwrap_or_else(|_| "timeout".into())
             );
         }
+        // In the view on screen: reader view while it's open.
         "evalTab" => {
-            let Some(view) = win.active_tab().and_then(|t| t.view()) else {
+            let Some(view) = win.active_tab().and_then(|t| t.shown_view()) else {
                 eprintln!("[harness] evalTab: no page");
                 return;
             };
@@ -107,8 +108,15 @@ async fn run(app: &AppHandle, win: &Rc<BrowserWindow>, step: &Value, out: &str) 
                 .values()
                 .map(|t| {
                     format!(
-                        "{} {} loading={} {:?}",
-                        t.id, t.url, t.loading, t.interstitial
+                        "{} {} loading={} {:?} reader={}/{} zoom={:.2} find={}",
+                        t.id,
+                        t.url,
+                        t.loading,
+                        t.interstitial,
+                        t.reader_available,
+                        t.reader,
+                        t.zoom,
+                        t.find.as_ref().map(|f| f.to_string()).unwrap_or_default()
                     )
                 })
                 .collect();
@@ -159,7 +167,7 @@ async fn run(app: &AppHandle, win: &Rc<BrowserWindow>, step: &Value, out: &str) 
                 .all_tabs()
                 .iter()
                 .filter_map(|tab| {
-                    let view = tab.view()?;
+                    let view = tab.shown_view()?;
                     let a = view.allocation();
                     Some(format!(
                         "{} {}x{}+{}+{} visible={}",

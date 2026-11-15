@@ -25,6 +25,8 @@ mod pages;
 mod pagescripts;
 mod paths;
 mod permissions;
+mod reader;
+mod readinglist;
 mod safebrowsing;
 mod search;
 mod security;
@@ -103,6 +105,7 @@ pub fn run() {
             focus::load();
             zoom::load();
             bookmarks::load();
+            readinglist::load();
             downloads::load();
             permissions::load();
             history::open();
@@ -130,6 +133,7 @@ pub fn run() {
             }
             tauri::RunEvent::Exit => {
                 bookmarks::flush();
+                readinglist::flush();
                 downloads::flush();
                 permissions::flush();
                 updater::install_on_exit();

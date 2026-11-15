@@ -20,9 +20,12 @@ use webkit2gtk::{
 };
 
 use crate::i18n::t;
+use crate::reader::{self, Article, Reader};
 use crate::state::TabState;
 use crate::window::{BrowserWindow, OpenOptions};
-use crate::{focus, history, menus, pages, safebrowsing, security, settings, shortcuts, zoom};
+use crate::{
+    focus, history, menus, pages, readinglist, safebrowsing, security, settings, shortcuts, zoom,
+};
 
 /// What a closed or restored tab needs to come back.
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -87,6 +90,13 @@ pub struct Tab {
     saved_history: RefCell<Option<Vec<u8>>>,
     /// The certificate of the last load that failed with a certificate problem.
     tls_failure: RefCell<Option<(gtk::gio::TlsCertificate, gtk::gio::TlsCertificateFlags)>>,
+    /// Reader view over the page, while it's open.
+    reader: RefCell<Option<Reader>>,
+    /// Whether the page has an article for reader view.
+    reader_available: Cell<bool>,
+    /// Moves on with every page and every reader view, so a late answer about an older one
+    /// is dropped.
+    reader_token: Cell<u32>,
 }
 
 impl Tab {
@@ -112,6 +122,9 @@ impl Tab {
             opener_id: Cell::new(None),
             saved_history: RefCell::new(history),
             tls_failure: RefCell::new(None),
+            reader: RefCell::new(None),
+            reader_available: Cell::new(false),
+            reader_token: Cell::new(0),
         });
         tab.set_address(if saved.url.is_empty() {
             pages::NEW_TAB_URL
@@ -139,6 +152,15 @@ impl Tab {
 
     pub fn view(&self) -> Option<WebView> {
         self.view.borrow().clone()
+    }
+
+    /// The view on screen: reader view while it's open, otherwise the page.
+    pub fn shown_view(&self) -> Option<WebView> {
+        self.reader
+            .borrow()
+            .as_ref()
+            .map(|r| r.view.clone())
+            .or_else(|| self.view())
     }
 
     pub fn page(&self) -> Option<&'static str> {
@@ -218,6 +240,7 @@ impl Tab {
     }
 
     fn destroy_view(&self) {
+        self.close_reader();
         crate::permissions::deny_pending_for(self.id);
         if let Some(view) = self.view.take() {
             view.stop_loading();
@@ -253,6 +276,7 @@ impl Tab {
 
     /// Loads an address; built-in pages are drawn by the UI.
     pub fn load(self: &Rc<Self>, url: &str) {
+        self.close_reader();
         self.interstitial.replace(None);
         if let Some(page) = pages::internal_page(url) {
             self.show_page(page, &pages::internal_subpage(url));
@@ -288,6 +312,7 @@ impl Tab {
     }
 
     pub fn show_page(&self, page: &'static str, subpage: &str) {
+        self.close_reader();
         // An HTTPS attempt still going would offer HTTP over this page.
         security::https_settled(self.id);
         self.set_address(&pages::internal_url(page, subpage));
@@ -438,20 +463,27 @@ impl Tab {
     }
 
     pub fn zoom(&self, direction: &str) {
-        let Some(view) = self.view() else { return };
+        let Some(view) = self.shown_view() else {
+            return;
+        };
         let next = match direction {
             "reset" => settings::get().default_zoom,
             _ => zoom::step(view.zoom_level(), direction),
         };
         view.set_zoom_level(next);
-        if let Some(url) = view.uri() {
+        // Reader view's size isn't the site's.
+        if self.reader.borrow().is_none()
+            && let Some(url) = view.uri()
+        {
             zoom::remember(&url, next, self.is_private());
         }
         self.changed();
     }
 
     pub fn find_in_page(&self, text: &str, forward: bool, find_next: bool) {
-        let Some(view) = self.view() else { return };
+        let Some(view) = self.shown_view() else {
+            return;
+        };
         let Some(finder) = view.find_controller() else {
             return;
         };
@@ -498,7 +530,7 @@ impl Tab {
     }
 
     pub fn stop_find(&self) {
-        if let Some(finder) = self.view().and_then(|v| v.find_controller()) {
+        if let Some(finder) = self.shown_view().and_then(|v| v.find_controller()) {
             finder.search_finish();
         }
         self.find.replace(None);
@@ -586,11 +618,11 @@ impl Tab {
             pinned: self.pinned.get(),
             sleeping: self.sleeping(),
             blocked: self.blocked.get(),
-            zoom: view.as_ref().map(|v| v.zoom_level()).unwrap_or(1.0),
+            zoom: self.shown_view().map(|v| v.zoom_level()).unwrap_or(1.0),
             page: self.page.get(),
             interstitial: self.interstitial.borrow().clone(),
-            reader_available: false,
-            reader: false,
+            reader_available: self.reader_available.get(),
+            reader: self.reader.borrow().is_some(),
             find: self.find.borrow().as_ref().map(|f| json!(f)),
             media: if view.as_ref().is_some_and(|v| v.is_playing_audio()) {
                 Some("playing")
@@ -625,7 +657,10 @@ impl Tab {
                     if tab.find.borrow().is_some() {
                         tab.stop_find();
                     }
+                    tab.close_reader();
+                    tab.reader_available.set(false);
                 }
+                LoadEvent::Finished if tab.shows_web() => tab.check_reader(view),
                 LoadEvent::Committed if tab.holds_page() => {
                     // The gate keeps the address it holds.
                     security::https_settled(tab.id);
@@ -648,8 +683,11 @@ impl Tab {
                         let host_changed = pages::host_of(&uri) != pages::host_of(&tab.url());
                         tab.set_address(&uri);
                         if host_changed {
-                            // The stored icon until the page's own arrives.
-                            tab.favicon.replace(history::favicon_for_url(&uri));
+                            // The stored icon until the page's own arrives; an offline copy
+                            // has its page's.
+                            let page = readinglist::saved_source(&uri);
+                            tab.favicon
+                                .replace(history::favicon_for_url(page.as_deref().unwrap_or(&uri)));
                         }
                         view.set_zoom_level(zoom::zoom_for(&uri, tab.is_private()));
                         if !tab.is_private() {
@@ -912,27 +950,234 @@ impl Tab {
         });
 
         crate::permissions::attach(self, view);
+        self.connect_finder(view);
+    }
 
-        if let Some(finder) = view.find_controller() {
-            let tab = tab_of.clone();
-            finder.connect_found_text(move |_, count| {
-                let Some(tab) = tab() else { return };
-                if let Some(find) = tab.find.borrow_mut().as_mut() {
-                    find.matches = count;
-                    find.active = find.active.clamp(1, count.max(1));
-                }
-                tab.changed();
-            });
-            let tab = tab_of.clone();
-            finder.connect_failed_to_find_text(move |_| {
-                let Some(tab) = tab() else { return };
-                if let Some(find) = tab.find.borrow_mut().as_mut() {
-                    find.matches = 0;
-                    find.active = 0;
-                }
-                tab.changed();
-            });
+    /// Find in page's counts, from the page or from reader view.
+    fn connect_finder(self: &Rc<Self>, view: &WebView) {
+        let Some(finder) = view.find_controller() else {
+            return;
+        };
+        let weak = Rc::downgrade(self);
+        finder.connect_found_text(move |_, count| {
+            let Some(tab) = weak.upgrade() else { return };
+            if let Some(find) = tab.find.borrow_mut().as_mut() {
+                find.matches = count;
+                find.active = find.active.clamp(1, count.max(1));
+            }
+            tab.changed();
+        });
+        let weak = Rc::downgrade(self);
+        finder.connect_failed_to_find_text(move |_| {
+            let Some(tab) = weak.upgrade() else { return };
+            if let Some(find) = tab.find.borrow_mut().as_mut() {
+                find.matches = 0;
+                find.active = 0;
+            }
+            tab.changed();
+        });
+    }
+
+    // ── Reader view ───────────────────────────────────────────────────────────
+
+    pub fn has_reader(&self) -> bool {
+        self.reader.borrow().is_some()
+    }
+
+    pub fn reader_available(&self) -> bool {
+        self.reader_available.get()
+    }
+
+    /// The article reader view shows, or the offline copy's, for reading it aloud.
+    pub fn article(&self) -> Option<Article> {
+        if let Some(reader) = self.reader.borrow().as_ref() {
+            return Some(reader.article.clone());
         }
+        readinglist::article_at(&self.url())
+    }
+
+    /// Looks whether the page that just loaded has an article.
+    fn check_reader(self: &Rc<Self>, view: &WebView) {
+        let Some(url) = view.uri().map(|u| u.to_string()) else {
+            return;
+        };
+        if !(url.starts_with("http:") || url.starts_with("https:")) {
+            return;
+        }
+        let token = self.reader_token.get();
+        let weak = Rc::downgrade(self);
+        reader::check(view, move |available| {
+            let Some(tab) = weak.upgrade() else { return };
+            if tab.reader_token.get() != token || tab.view_url().as_deref() != Some(url.as_str()) {
+                return;
+            }
+            if tab.reader_available.replace(available) != available {
+                tab.changed();
+            }
+        });
+    }
+
+    /// Opens reader view over the page, or closes it.
+    pub fn toggle_reader(self: &Rc<Self>) {
+        if self.reader.borrow().is_some() {
+            self.close_reader();
+            self.relayout();
+            self.changed();
+            if let Some(win) = self.window() {
+                win.focus_active();
+            }
+            return;
+        }
+        let Some(view) = self.view() else { return };
+        let url = self.url();
+        if !self.shows_web() || !(url.starts_with("http:") || url.starts_with("https:")) {
+            return;
+        }
+        let token = self.reader_token.get().wrapping_add(1);
+        self.reader_token.set(token);
+        let weak = Rc::downgrade(self);
+        reader::extract(&view, move |article| {
+            let Some(tab) = weak.upgrade() else { return };
+            if tab.reader_token.get() != token || !tab.shows_web() {
+                return;
+            }
+            match article {
+                Some(article) => tab.open_reader(article, &url),
+                None => {
+                    tab.reader_available.set(false);
+                    tab.changed();
+                }
+            }
+        });
+    }
+
+    fn open_reader(self: &Rc<Self>, article: Article, source: &str) {
+        let Some(win) = self.window() else { return };
+        if self.find.borrow().is_some() {
+            self.stop_find();
+        }
+        let zoom = self.view().map(|v| v.zoom_level()).unwrap_or(1.0);
+        let reader = Reader::new(article, source, reader::colors(win.incognito), zoom);
+        win.place_view(&reader.view);
+        self.connect_reader(&win, &reader.view);
+        self.reader.replace(Some(reader));
+        self.relayout();
+        self.changed();
+        if win.active_tab().is_some_and(|t| t.id == self.id) {
+            win.focus_active();
+        }
+    }
+
+    pub fn close_reader(&self) {
+        self.reader_token
+            .set(self.reader_token.get().wrapping_add(1));
+        if self.reader.borrow().is_none() {
+            return;
+        }
+        if self.find.borrow().is_some() {
+            self.stop_find();
+        }
+        if let Some(reader) = self.reader.take() {
+            reader.close();
+        }
+    }
+
+    /// Reader view's own signals: links open in the tab, and the menus, keys, zoom and find
+    /// work as on the page.
+    fn connect_reader(self: &Rc<Self>, win: &Rc<BrowserWindow>, view: &WebView) {
+        let weak = Rc::downgrade(self);
+        let tab_of = move || weak.upgrade();
+
+        let tab = tab_of.clone();
+        view.connect_decide_policy(move |_, decision, kind| {
+            let Some(tab) = tab() else { return false };
+            let new_window = kind == PolicyDecisionType::NewWindowAction;
+            if kind != PolicyDecisionType::NavigationAction && !new_window {
+                return false;
+            }
+            let Some(action) = decision
+                .downcast_ref::<NavigationPolicyDecision>()
+                .and_then(|d| d.navigation_action())
+            else {
+                return false;
+            };
+            let Some(url) = action
+                .request()
+                .and_then(|r| r.uri())
+                .map(|u| u.to_string())
+            else {
+                return false;
+            };
+            if !new_window && tab.reader.borrow().as_ref().is_some_and(|r| r.is_own(&url)) {
+                return false;
+            }
+            decision.ignore();
+            if !(url.starts_with("http:") || url.starts_with("https:")) {
+                return true;
+            }
+            let ctrl = action.modifiers() & gtk::gdk::ModifierType::CONTROL_MASK.bits() != 0;
+            if new_window || action.mouse_button() == 2 || ctrl {
+                if let Some(win) = tab.window() {
+                    win.open_tab(OpenOptions {
+                        url: Some(url),
+                        background: !new_window,
+                        opener: Some(tab.id),
+                        ..OpenOptions::default()
+                    });
+                }
+            } else {
+                // After the decision returns: loading closes this view.
+                glib::idle_add_local_once(move || tab.load(&url));
+            }
+            true
+        });
+
+        let tab = tab_of.clone();
+        view.connect_context_menu(move |view, proposed, event, hit| {
+            if let Some(tab) = tab() {
+                let (x, y) = event.coords().unwrap_or((0.0, 0.0));
+                menus::page_menu(&tab, view, proposed, hit, x, y);
+            }
+            true
+        });
+
+        let window = Rc::downgrade(win);
+        view.connect_key_press_event(move |_, event| match window.upgrade() {
+            Some(win) if shortcuts::handle(&win, event) => glib::Propagation::Stop,
+            _ => glib::Propagation::Proceed,
+        });
+
+        let tab = tab_of.clone();
+        view.connect_scroll_event(move |_, event| {
+            let Some(tab) = tab() else {
+                return glib::Propagation::Proceed;
+            };
+            if !event.state().contains(gtk::gdk::ModifierType::CONTROL_MASK) {
+                return glib::Propagation::Proceed;
+            }
+            match event.direction() {
+                gtk::gdk::ScrollDirection::Up => tab.zoom("in"),
+                gtk::gdk::ScrollDirection::Down => tab.zoom("out"),
+                _ => match event.delta() {
+                    (_, dy) if dy < 0.0 => tab.zoom("in"),
+                    (_, dy) if dy > 0.0 => tab.zoom("out"),
+                    _ => {}
+                },
+            }
+            glib::Propagation::Stop
+        });
+
+        let tab = tab_of.clone();
+        view.connect_focus_in_event(move |_, _| {
+            if let Some(tab) = tab()
+                && let Some(win) = tab.window()
+            {
+                win.pane_focused(tab.id);
+            }
+            glib::Propagation::Proceed
+        });
+
+        self.connect_finder(view);
     }
 
     fn security(&self, url: &str) -> &'static str {
@@ -1164,7 +1409,7 @@ impl Tab {
     }
 
     pub fn print(&self) {
-        let (Some(view), Some(win)) = (self.view(), self.window()) else {
+        let (Some(view), Some(win)) = (self.shown_view(), self.window()) else {
             return;
         };
         if self.page.get().is_some() {

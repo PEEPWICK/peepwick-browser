@@ -138,6 +138,10 @@ pub fn handle(win: &Rc<BrowserWindow>, event: &gdk::EventKey) -> bool {
 
     // ── With Ctrl ──
     if alt {
+        if l == Some('r') && !shift {
+            run_command(win, "reader");
+            return true;
+        }
         return false;
     }
 

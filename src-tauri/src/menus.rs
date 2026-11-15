@@ -19,7 +19,7 @@ use webkit2gtk::{
     HitTestResultExt, WebView, WebViewExt,
 };
 
-use crate::actions::{new_tab, new_window, open_page, run_command, save_page};
+use crate::actions::{is_available, new_tab, new_window, open_page, run_command, save_page};
 use crate::i18n::{Var, t, tv};
 use crate::menu::{self, ClickEvent, MenuSpec, item, separator, submenu};
 use crate::search::search_url;
@@ -170,6 +170,8 @@ fn show_page_menu(
     let id = tab.id;
     let has_selection = !selection.is_empty();
     let mut items: Vec<MenuSpec> = Vec::new();
+    // Reader view's context keeps nothing: what's saved from it goes through the page's.
+    let downloader = tab.view().unwrap_or_else(|| view.clone());
 
     for guess in guesses {
         let page = view.clone();
@@ -223,11 +225,21 @@ fn show_page_menu(
         let bookmarkable =
             !win.incognito && crate::bookmarks::bookmarkable(&link) && !link.starts_with("mailto:");
         let (url, title) = (link.clone(), hit.link_label.clone());
+        let later = (!win.incognito && (link.starts_with("http:") || link.starts_with("https:")))
+            .then(|| (link.clone(), hit.link_label.clone()));
         items.push(item(t("ctx.copyLink"), move |_| copy_text(&link)));
         if bookmarkable {
             items.push(item(t("ctx.bookmarkLink"), move |_| {
                 crate::bookmarks::create("bar", None, &title, Some(&url));
             }));
+        }
+        if let Some((url, title)) = later {
+            items.push(item(
+                t("ctx.readLater"),
+                on_window(win, move |win| {
+                    crate::readinglist::add_link(win, &url, &title);
+                }),
+            ));
         }
         items.push(separator());
     }
@@ -245,7 +257,7 @@ fn show_page_menu(
                 });
             }),
         ));
-        let (page, url) = (view.clone(), src.clone());
+        let (page, url) = (downloader.clone(), src.clone());
         items.push(item(t("ctx.saveImage"), move |_| {
             page.download_uri(&url);
         }));
@@ -259,7 +271,7 @@ fn show_page_menu(
         .filter(|s| s.starts_with("http:") || s.starts_with("https:"))
     {
         // blob: and MediaSource videos (most streaming sites) can't be saved as a file.
-        let page = view.clone();
+        let page = downloader.clone();
         items.push(item(t("ctx.saveMedia"), move |_| {
             page.download_uri(&src);
         }));
@@ -601,6 +613,20 @@ pub fn app_menu(win: &Rc<BrowserWindow>, x: f64, y: f64) {
     ];
     if !win.incognito {
         items.push(bookmarks_submenu(win));
+        items.push(submenu(
+            t("reading.title"),
+            vec![
+                item(
+                    t("cmd.reading-add"),
+                    on_window(win, |win| run_command(win, "reading-add")),
+                )
+                .enabled(is_available(win, "reading-add")),
+                item(
+                    t("reading.open"),
+                    on_window(win, |win| open_page(win, "reading", "")),
+                ),
+            ],
+        ));
     }
     items.extend([
         item(
@@ -628,6 +654,9 @@ pub fn app_menu(win: &Rc<BrowserWindow>, x: f64, y: f64) {
         item(t("menu.print"), on_active(win, |tab| tab.print()))
             .accelerator("Ctrl+P")
             .enabled(web),
+        item(t("menu.reader"), on_active(win, |tab| tab.toggle_reader()))
+            .accelerator("Ctrl+Alt+R")
+            .enabled(is_available(win, "reader")),
         focus_submenu(),
         item(
             t("menu.fullscreen"),

@@ -17,8 +17,8 @@ use tauri::webview::NewWindowResponse;
 use tauri::{AppHandle, Emitter, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
 use webkit2gtk::{
     CookieAcceptPolicy, CookieManagerExt, CookiePersistentStorage, FaviconDatabaseExt,
-    HardwareAccelerationPolicy, SettingsExt, UserContentManager, UserMessage, WebContext,
-    WebContextExt, WebView, WebViewExt, WebsiteDataManager, WebsiteDataManagerExt,
+    HardwareAccelerationPolicy, SecurityManagerExt, SettingsExt, UserContentManager, UserMessage,
+    WebContext, WebContextExt, WebView, WebViewExt, WebsiteDataManager, WebsiteDataManagerExt,
 };
 
 use crate::i18n::t;
@@ -292,6 +292,12 @@ fn browsing_context() -> WebContext {
         let context = WebContext::with_website_data_manager(&manager);
         configure_context(&context, &manager, false);
         downloads::attach(&context, false);
+        // The reading list's offline copies (peepwick://saved/…); other sites' pages can't
+        // show them.
+        if let Some(security) = context.security_manager() {
+            security.register_uri_scheme_as_display_isolated("peepwick");
+        }
+        context.register_uri_scheme("peepwick", crate::readinglist::respond);
         cell.replace(Some(context.clone()));
         context
     })
@@ -423,7 +429,7 @@ fn apply_cookie_policy(manager: &WebsiteDataManager) {
 /// sites turn away.
 pub const USER_AGENT: &str = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 Safari/605.1.15";
 
-fn web_settings() -> webkit2gtk::Settings {
+pub(crate) fn web_settings() -> webkit2gtk::Settings {
     let prefs = settings::get();
     let web = webkit2gtk::Settings::new();
     web.set_user_agent(Some(USER_AGENT));
@@ -1356,7 +1362,13 @@ impl BrowserWindow {
         let panes = self.panes.borrow().clone();
         let tabs: Vec<Rc<Tab>> = self.tabs.borrow().values().cloned().collect();
         for tab in tabs {
-            let Some(view) = tab.view() else { continue };
+            let Some(view) = tab.shown_view() else {
+                continue;
+            };
+            // Reader view stands in for the page.
+            if let Some(page) = tab.view().filter(|page| *page != view) {
+                page.hide();
+            }
             let rect = if fullscreen == Some(tab.id) {
                 Some((0, 0, width, height))
             } else if fullscreen.is_none() && tab.shows_web() && self.is_shown(tab.id) {
@@ -1413,7 +1425,7 @@ impl BrowserWindow {
         match self
             .active_tab()
             .filter(|t| t.shows_web())
-            .and_then(|t| t.view())
+            .and_then(|t| t.shown_view())
         {
             Some(view) if !self.overlay_open.get() => view.grab_focus(),
             _ => self.ui.grab_focus(),
@@ -1447,7 +1459,12 @@ impl BrowserWindow {
             .borrow()
             .values()
             .filter(|tab| tab.shows_web() && self.is_shown(tab.id))
-            .filter_map(|tab| Some((tab.view()?, *panes.iter().find(|p| p.tab_id == tab.id)?)))
+            .filter_map(|tab| {
+                Some((
+                    tab.shown_view()?,
+                    *panes.iter().find(|p| p.tab_id == tab.id)?,
+                ))
+            })
             .collect()
     }
 
