@@ -423,6 +423,7 @@ pub(crate) fn send(win: &Rc<BrowserWindow>, method: &str, args: &[Value]) {
                 "http" => tab.continue_over_http(),
                 "proceed" => tab.proceed_insecure(),
                 "open-anyway" => tab.open_anyway(),
+                "dangerous" => tab.continue_to_dangerous(),
                 other => eprintln!("[ipc] not ported yet: interstitial {other}"),
             }
         }

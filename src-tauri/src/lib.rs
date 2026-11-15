@@ -24,6 +24,7 @@ mod pages;
 mod pagescripts;
 mod paths;
 mod permissions;
+mod safebrowsing;
 mod search;
 mod security;
 mod session;
@@ -107,6 +108,7 @@ pub fn run() {
             // What the last run should have cleared as it closed goes before any page opens.
             cleardata::at_startup();
             shield::start(app.handle().clone());
+            safebrowsing::start();
             let cwd = std::env::current_dir().unwrap_or_default();
             session::restore(app.handle(), urls_from(std::env::args().skip(1), &cwd))?;
             updater::start(app.handle());

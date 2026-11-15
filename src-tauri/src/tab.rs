@@ -22,7 +22,7 @@ use webkit2gtk::{
 use crate::i18n::t;
 use crate::state::TabState;
 use crate::window::{BrowserWindow, OpenOptions};
-use crate::{focus, history, menus, pages, security, settings, shortcuts, zoom};
+use crate::{focus, history, menus, pages, safebrowsing, security, settings, shortcuts, zoom};
 
 /// What a closed or restored tab needs to come back.
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -265,6 +265,11 @@ impl Tab {
             self.hold_for_focus(url);
             return;
         }
+        if let Some(threat) = safebrowsing::threat_for(url) {
+            self.stop();
+            self.warn_dangerous(url, threat);
+            return;
+        }
         let had_view = self.view.borrow().is_some();
         if !had_view {
             // A sleeping tab's old history would be loaded instead of the new address.
@@ -312,7 +317,7 @@ impl Tab {
 
     pub fn can_go_forward(&self) -> bool {
         self.page.get().is_none()
-            && !self.holds_for_focus()
+            && !self.holds_page()
             && self.view().is_some_and(|v| v.can_go_forward())
     }
 
@@ -334,21 +339,22 @@ impl Tab {
             return;
         }
         if let Some(warning) = self.interstitial.replace(None) {
-            let was_focus = warning["kind"] == "focus";
+            let held = warning["kind"] == "focus" || warning["kind"] == "dangerous";
             let under = self.view_url();
             match &view {
-                // The gated link was clicked on a page that is still there underneath.
-                Some(view)
-                    if was_focus && under.as_ref().is_some_and(|u| !focus::should_gate(u)) =>
-                {
+                // The held link was clicked on a page that is still there underneath.
+                Some(view) if held && under.as_ref().is_some_and(|u| !is_held(u)) => {
                     if let Some(url) = &under {
                         self.set_address(url);
+                        if self.favicon.borrow().is_none() {
+                            self.favicon.replace(history::favicon_for_url(url));
+                        }
                     }
                     self.title
                         .replace(view.title().map(|t| t.to_string()).unwrap_or_default());
                 }
                 Some(view) if view.can_go_back() => view.go_back(),
-                Some(_) if !was_focus && under.is_some() => {
+                Some(_) if !held && under.is_some() => {
                     if let Some(url) = &under {
                         self.set_address(url);
                     }
@@ -611,16 +617,17 @@ impl Tab {
                     // A new load ends the last one's HTTPS attempt; the web process reports this
                     // one's after this.
                     security::https_settled(tab.id);
-                    // The page under the focus gate moving on doesn't lift the gate.
-                    if !tab.holds_for_focus() {
+                    // The page under the focus gate or a dangerous site warning moving on
+                    // doesn't lift it.
+                    if !tab.holds_page() {
                         tab.interstitial.replace(None);
                     }
                     if tab.find.borrow().is_some() {
                         tab.stop_find();
                     }
                 }
-                LoadEvent::Committed if tab.holds_for_focus() => {
-                    // The gate keeps the address it waits for.
+                LoadEvent::Committed if tab.holds_page() => {
+                    // The gate keeps the address it holds.
                     security::https_settled(tab.id);
                 }
                 LoadEvent::Committed => {
@@ -731,8 +738,8 @@ impl Tab {
                 return false;
             }
             let Some(tab) = tab() else { return false };
-            // The page under the focus gate isn't what the tab shows.
-            if tab.holds_for_focus() {
+            // The page under a gate isn't what the tab shows.
+            if tab.holds_page() {
                 return true;
             }
             let code = error_code(error);
@@ -746,7 +753,7 @@ impl Tab {
         let tab = tab_of.clone();
         view.connect_load_failed_with_tls_errors(move |_, uri, certificate, flags| {
             let Some(tab) = tab() else { return false };
-            if tab.holds_for_focus() {
+            if tab.holds_page() {
                 return true;
             }
             match security::https_fallback(tab.id, uri, -202) {
@@ -967,14 +974,47 @@ impl Tab {
             .and_then(|i| i["url"].as_str().map(str::to_string))
     }
 
-    fn holds_for_focus(&self) -> bool {
-        self.focus_gate_url().is_some()
+    /// The focus gate or a dangerous site warning stands in for a page that wasn't let through.
+    fn holds_page(&self) -> bool {
+        self.interstitial
+            .borrow()
+            .as_ref()
+            .is_some_and(|i| i["kind"] == "focus" || i["kind"] == "dangerous")
     }
 
     /// "Open anyway" on the focus gate: the site may load for the next five minutes.
     pub fn open_anyway(self: &Rc<Self>) {
         if let Some(url) = self.focus_gate_url() {
             focus::grant_pass(&url);
+            self.load(&url);
+        }
+    }
+
+    /// The dangerous site warning instead of the page: the address is on a malware or
+    /// phishing list.
+    fn warn_dangerous(&self, url: &str, threat: safebrowsing::Threat) {
+        security::https_settled(self.id);
+        self.set_address(url);
+        self.title.replace(String::new());
+        self.favicon.replace(None);
+        self.interstitial.replace(Some(
+            json!({ "kind": "dangerous", "url": url, "threat": threat.name() }),
+        ));
+        self.relayout();
+        self.changed();
+    }
+
+    /// "Continue anyway" on the dangerous site warning: the site opens until the browser
+    /// closes.
+    pub fn continue_to_dangerous(self: &Rc<Self>) {
+        let url = self
+            .interstitial
+            .borrow()
+            .as_ref()
+            .filter(|i| i["kind"] == "dangerous")
+            .and_then(|i| i["url"].as_str().map(str::to_string));
+        if let Some(url) = url {
+            safebrowsing::pass(&url);
             self.load(&url);
         }
     }
@@ -1080,12 +1120,21 @@ impl Tab {
                     .is_main_frame_main_resource()
                     .then(|| response.response().and_then(|r| r.uri()))
                     .flatten();
-                // An embedded video in another page still plays.
+                // An embedded video in another page still plays; frames aren't warned about
+                // either, as in 0.1.x.
                 if let Some(url) = &page
                     && focus::should_gate(url)
                 {
                     decision.ignore();
                     self.hold_for_focus(url);
+                    return true;
+                }
+                // Before a download too: a malware site's file isn't saved.
+                if let Some(url) = &page
+                    && let Some(threat) = safebrowsing::threat_for(url)
+                {
+                    decision.ignore();
+                    self.warn_dangerous(url, threat);
                     return true;
                 }
                 if !response.is_mime_type_supported() {
@@ -1142,6 +1191,12 @@ fn capture_history(view: &WebView) -> Option<Vec<u8>> {
 }
 
 /// The UI knows Chromium's error codes (-105 for "name not resolved"…); map WebKit's onto them.
+/// Whether an address would be held back instead of loading: by focus mode or a dangerous site
+/// warning.
+fn is_held(url: &str) -> bool {
+    focus::should_gate(url) || safebrowsing::threat_for(url).is_some()
+}
+
 fn error_code(error: &glib::Error) -> i32 {
     let message = error.message().to_lowercase();
     if message.contains("resolve") || message.contains("name or service") {

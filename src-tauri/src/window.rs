@@ -1710,6 +1710,8 @@ pub fn settings_changed() {
     let prefs = settings::get();
     apply_theme();
     crate::pagescripts::refresh();
+    // Dangerous site warnings turned on fetch the lists they don't have yet.
+    crate::safebrowsing::refresh();
     for cell in [&BROWSING, &PRIVATE] {
         cell.with(|context| {
             let Some(context) = context.borrow().clone() else {
