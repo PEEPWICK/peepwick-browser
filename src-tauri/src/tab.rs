@@ -252,7 +252,7 @@ impl Tab {
     pub fn load(self: &Rc<Self>, url: &str) {
         self.interstitial.replace(None);
         if let Some(page) = pages::internal_page(url) {
-            self.show_page(page, "");
+            self.show_page(page, &pages::internal_subpage(url));
             return;
         }
         self.set_address(url);

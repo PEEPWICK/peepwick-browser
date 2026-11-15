@@ -14,19 +14,47 @@ const INTERNAL_PAGES: [&str; 8] = [
 
 pub const NEW_TAB_URL: &str = "peepwick://newtab";
 
+/// What follows `peepwick://`, written in any case.
+fn after_scheme(url: &str) -> Option<&str> {
+    let url = url.trim();
+    url.get(..11)
+        .filter(|s| s.eq_ignore_ascii_case("peepwick://"))
+        .map(|_| &url[11..])
+}
+
 /// `peepwick://settings/privacy` → "settings".
 pub fn internal_page(url: &str) -> Option<&'static str> {
-    let rest = url
-        .trim()
-        .get(..11)
-        .filter(|s| s.eq_ignore_ascii_case("peepwick://"))
-        .map(|_| &url.trim()[11..])?;
+    let rest = after_scheme(url)?;
     let name: String = rest
         .chars()
         .take_while(|c| c.is_ascii_alphabetic())
         .collect::<String>()
         .to_lowercase();
     INTERNAL_PAGES.iter().copied().find(|page| *page == name)
+}
+
+/// `peepwick://settings/privacy` → "privacy", also from the old `peepwick://settings#privacy`
+/// form, as `internalSubpage` in `src/shared/url.ts`.
+pub fn internal_subpage(url: &str) -> String {
+    fn word(s: &str) -> &str {
+        let end = s
+            .find(|c: char| !(c.is_ascii_alphabetic() || c == '-'))
+            .unwrap_or(s.len());
+        &s[..end]
+    }
+    let Some(rest) = after_scheme(url) else {
+        return String::new();
+    };
+    let after_page = rest.trim_start_matches(|c: char| c.is_ascii_alphabetic());
+    if after_page.len() == rest.len() {
+        return String::new();
+    }
+    let after_page = after_page.strip_prefix('/').unwrap_or(after_page);
+    let mut subpage = word(after_page);
+    if subpage.is_empty() {
+        subpage = after_page.strip_prefix('#').map(word).unwrap_or_default();
+    }
+    subpage.to_ascii_lowercase()
 }
 
 pub fn internal_url(page: &str, subpage: &str) -> String {
@@ -117,6 +145,29 @@ mod tests {
         assert_eq!(internal_page("PEEPWICK://NewTab"), Some("newtab"));
         assert_eq!(internal_page("peepwick://saved/abc"), None);
         assert_eq!(internal_page("https://settings"), None);
+    }
+
+    #[test]
+    fn finds_subpages() {
+        for (url, subpage) in [
+            ("peepwick://settings/about", "about"),
+            (" PEEPWICK://Settings/Site-Data ", "site-data"),
+            ("peepwick://settings#privacy", "privacy"),
+            ("peepwick://settings/#privacy", "privacy"),
+            ("peepwick://settings/about#privacy", "about"),
+            ("peepwick://settings/about?from=menu", "about"),
+            ("peepwick://settings", ""),
+            ("peepwick://settings/", ""),
+            ("peepwick://settings#", ""),
+            ("peepwick:///about", ""),
+            ("https://settings/about", ""),
+        ] {
+            assert_eq!(internal_subpage(url), subpage, "{url}");
+        }
+        assert_eq!(
+            internal_subpage(&internal_url("settings", "about")),
+            "about"
+        );
     }
 
     #[test]
