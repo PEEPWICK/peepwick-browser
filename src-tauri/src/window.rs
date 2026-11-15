@@ -13,6 +13,7 @@ use gtk::glib;
 use gtk::prelude::*;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
+use tauri::webview::NewWindowResponse;
 use tauri::{AppHandle, Emitter, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
 use webkit2gtk::{
     CookieAcceptPolicy, CookieManagerExt, CookiePersistentStorage, FaviconDatabaseExt,
@@ -183,7 +184,14 @@ pub fn open(
         .min_inner_size(560.0, 400.0)
         .decorations(false)
         .transparent(true)
-        .visible(false);
+        .visible(false)
+        // The interface never leaves its own page, whatever link or dropped address asks it
+        // to, and opens no windows of its own: web pages belong in tabs.
+        .on_navigation({
+            let app = app.clone();
+            move |url| is_interface(&app, url)
+        })
+        .on_new_window(|_, _| NewWindowResponse::Deny);
     builder = match saved.as_ref().and_then(|s| s.bounds) {
         Some([x, y, width, height]) => builder.position(x, y).inner_size(width, height),
         None => builder.inner_size(1360.0, 860.0).center(),
@@ -210,6 +218,21 @@ pub fn open(
         }
     })?;
     Ok(())
+}
+
+/// The interface's own address: the development server's while developing, `tauri://localhost`
+/// in a build.
+fn is_interface(app: &AppHandle, url: &tauri::Url) -> bool {
+    if url.scheme() == "tauri" && url.host_str() == Some("localhost") {
+        return true;
+    }
+    tauri::is_dev()
+        && app
+            .config()
+            .build
+            .dev_url
+            .as_ref()
+            .is_some_and(|dev| dev.origin() == url.origin())
 }
 
 pub fn find(label: &str) -> Option<Rc<BrowserWindow>> {
