@@ -39,13 +39,19 @@ It is written in Rust with [Tauri](https://tauri.app/), and draws pages with
   you away (YouTube, X, Instagram, TikTok, Reddit and a few more, or your own list) wait behind a
   calm screen instead of loading. Need one anyway? It opens for five minutes after a short pause.
   Sites stay quiet too: no notifications until the session ends.
+- **Reader view, a reading list and read aloud.** Articles open without the clutter around them, in
+  the browser's own typefaces, light or dark (<kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>R</kbd>). Keep
+  pages to read later from the menu or a link's right-click menu: the reading list keeps the
+  article itself, so it opens offline. Read aloud speaks an article paragraph by paragraph with
+  your system's voices, at the speed you choose.
 - **One bar for everything.** The address bar suggests from your history, your bookmarks and your
   open tabs. <kbd>Ctrl</kbd>+<kbd>K</kbd> opens the command bar for commands, tabs and bookmarks.
   Search with DuckDuckGo, Brave Search, Startpage, Google, Ecosia or Bing; suggestions from your
   search engine come only if you turn them on.
 - **Bookmarks.** A bookmarks bar with folders, a bookmark manager with search, drag and drop and
-  undo, and the star in the address bar (<kbd>Ctrl</kbd>+<kbd>D</kbd>). Bring your bookmarks
-  over in the HTML file every browser exports, and take them with you the same way.
+  undo, and the star in the address bar (<kbd>Ctrl</kbd>+<kbd>D</kbd>). Bring your bookmarks and
+  history over from Chrome, Brave, Firefox and the other browsers on your computer, or in the HTML
+  file every browser exports, and take your bookmarks with you the same way.
 - **Pages of its own, in the same calm style.** The new tab page shows the sites you visit most;
   history, downloads, bookmarks and settings sit in the same frame. Turkish or English; dark,
   light or your system's theme.
@@ -55,6 +61,9 @@ It is written in Rust with [Tauri](https://tauri.app/), and draws pages with
 - **Shield.** Ads and trackers are blocked with the EasyList and EasyPrivacy lists, compiled into
   WebKit's own content blocking rules. If a site needs it, switch the shield off for that site
   alone.
+- **Dangerous site warnings.** Sites known for malware or phishing don't open; a warning stands in
+  their place. The lists come from the malware-filter project and are checked on your computer, so
+  the addresses you visit never leave the browser.
 - **Fingerprinting protection.** Canvas, WebGL and audio readouts get tiny changes that differ for
   every site and every session. The graphics card model is hidden and the processor count rounded,
   so sites can't recognize you from one site to the next.
@@ -144,6 +153,7 @@ The browser keeps its data in `~/.local/share/com.peepwick.browser` and its cach
 | <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>B</kbd> | Show or hide the bookmarks bar |
 | <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>O</kbd> | Bookmark manager |
 | <kbd>Ctrl</kbd>+<kbd>F</kbd> | Find on page |
+| <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>R</kbd> | Reader view |
 | <kbd>Ctrl</kbd>+<kbd>H</kbd> / <kbd>Ctrl</kbd>+<kbd>J</kbd> | History / downloads |
 | <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Delete</kbd> | Clear browsing data |
 | <kbd>Ctrl</kbd>+<kbd>S</kbd> / <kbd>Ctrl</kbd>+<kbd>P</kbd> | Save page / print |
@@ -160,12 +170,14 @@ PEEPWICK Browser has no telemetry and no account. On its own, it talks only to t
 | Service | Why | When |
 | --- | --- | --- |
 | `easylist.to` | Filter lists for the shield | First start, then every three days |
+| `malware-filter.gitlab.io` | Lists of dangerous sites for the warnings (from its mirror, `curbengh.github.io`, when it doesn't answer) | First start, then every 12 hours |
 | `raw.githubusercontent.com` | The update list: the newest version and its signatures | 15 seconds after start, then every four hours |
 | `github.com` (Releases) | Downloading an update | Only when there is a new version |
 | Your search engine | Search suggestions | Only if you turn suggestions on (off by default) |
 
-Pages you visit load as in any browser, and WebKit fetches their icons along with them. "Copy image"
-fetches the image again from its site. Notifications from sites you allow go through your desktop's
+Pages you visit load as in any browser, and WebKit fetches their icons along with them. A link you
+add to the reading list loads out of sight, to keep its article. "Copy image" fetches the image
+again from its site. Notifications from sites you allow go through your desktop's
 notification service.
 
 ## Build from source
@@ -215,7 +227,11 @@ already installed.
   Built-in pages (new tab, settings, history) and error screens are drawn by the interface, so
   web content never reaches a privileged page.
 - The shield: adblock-rust turns the filter lists into WebKit content rules, which WebKit compiles
-  once and keeps in the profile.
+  once and keeps in the profile. Dangerous site warnings look each page's address up in the
+  malware-filter lists, kept on disk and in memory.
+- Reader view runs Mozilla's Readability in a script world of its own and shows the article in a
+  WebKit view of its own, with scripts off. Read aloud talks to speech-dispatcher, the speech
+  service of Linux desktops, over its socket.
 - History and site icons are stored in SQLite (rusqlite); bookmarks, downloads and site permissions
   in JSON files.
 - Fingerprinting protection, cookie banner rejection and Global Privacy Control's
@@ -236,8 +252,8 @@ already installed.
 PEEPWICK Browser is free software under the [GNU General Public License v3.0](LICENSE).
 It includes WebKitGTK (LGPL-2.1 and BSD), Tauri (MIT or Apache-2.0), the gtk-rs and webkit2gtk-rs
 bindings (MIT), adblock-rust (MPL-2.0), SQLite (public domain) through rusqlite (MIT), React (MIT),
-and the Archivo, Newsreader and IBM Plex Mono typefaces (SIL Open Font License 1.1). The AppImage
-also carries GStreamer and its plugins (LGPL-2.1).
+Mozilla's Readability (Apache-2.0), and the Archivo, Newsreader and IBM Plex Mono typefaces (SIL
+Open Font License 1.1). The AppImage also carries GStreamer and its plugins (LGPL-2.1).
 
 The PEEPWICK name and the Double-Eye W mark identify PEEPWICK and are not part of the GPL grant.
 If you distribute a modified version, please give it your own name and icon.
