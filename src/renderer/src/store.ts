@@ -98,3 +98,8 @@ export function activeTab(state: WindowState): TabState | null {
   const id = activeWorkspace(state).activeTabId
   return id === null ? null : (state.tabs[id] ?? null)
 }
+
+/** The active tab in the latest state, also before React has drawn it. */
+export function latestActiveTab(): TabState | null {
+  return snapshot ? activeTab(snapshot.state) : null
+}

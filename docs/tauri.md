@@ -119,7 +119,7 @@ Durum: ☐ yapılmadı · ◐ kısmen · ☑ tamam (Electron sürümüyle aynı 
 - ◐ Oturumu geri yükleme, kapatılan sekmeyi yeniden açma (geri yükleme testli, ileri-geri geçmişiyle; session.json sürüm 2)
 - ◐ Adres çubuğu: öneriler (geçmiş, açık sekmeler, arama motorunun önerileri; yer imleri onlar taşınınca), arama motorları
 - ◐ Komut çubuğu (Ctrl+K): komutlar ve açık sekmeler; geçmiş ve yer imleri onlar taşınınca
-- ☐ Yeni sekme sayfası, karşılama ekranı
+- ◐ Yeni sekme sayfası, karşılama ekranı (testli: karşılamada dil seçimi ve başlama, en çok ziyaret edilenler, sayfanın arama kutusu ve önerileri, Ctrl+T'de klavyenin bu kutuya geçmesi, orta tıklamayla yeni sekme). Alttaki sayaçlar (bu hafta engellenen, bugünkü odak dakikaları) Kalkan sayaçları ve odak moduyla gelir; o zamana kadar satır görünmez
 - ◐ Yer imleri: çubuk, yönetici, yıldız, klasör menüleri, HTML içe ve dışa aktarma (0.2.1a; bookmarks.json Electron'la aynı biçim). Başka tarayıcılardan aktarma "Veri" bölümünde
 - ◐ Geçmiş sayfası, site başına silme, en çok ziyaret edilenler, site simgeleri (`peepwick://favicon/`); history.db Electron'la aynı şema. Aralıkla silme "Tarama verilerini temizleme"de
 - ◐ İndirmeler: panel ve sayfa, yeniden deneme, klasörde gösterme, nereye kaydedileceğini sorma, bitince bildirim (0.2.1a). WebKitGTK duraklatıp sürdüremiyor; düğmeleri kaldırıldı, "yeniden dene" baştan indirir

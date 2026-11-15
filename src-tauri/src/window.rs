@@ -1447,13 +1447,21 @@ impl BrowserWindow {
         }
         let weak = self.weak.clone();
         glib::timeout_add_local_once(Duration::from_millis(16), move || {
-            let Some(win) = weak.upgrade() else { return };
-            win.dirty.set(false);
-            win.emit("state", win.state());
-            if !win.incognito {
-                session::schedule_save();
+            if let Some(win) = weak.upgrade() {
+                win.flush_state();
             }
         });
+    }
+
+    /// Sends the collected state update now, ahead of a command that acts on it.
+    pub fn flush_state(&self) {
+        if !self.dirty.replace(false) {
+            return;
+        }
+        self.emit("state", self.state());
+        if !self.incognito {
+            session::schedule_save();
+        }
     }
 
     pub fn update_title(&self) {

@@ -22,7 +22,7 @@ import { TranslateBar } from './components/TranslateBar'
 import { Tooltips } from './components/Tooltips'
 import { UIContext, type Panel, type Question, type Toast, type UIContextValue } from './context'
 import type { SaveLoginPrompt } from '@shared/types'
-import { activeTab, useSnapshot, useT } from './store'
+import { activeTab, latestActiveTab, useSnapshot, useT } from './store'
 
 function useTheme(): void {
   const { settings, state } = useSnapshot()
@@ -128,7 +128,8 @@ export function App() {
             break
           case 'focus-page-search':
             setPanel(null)
-            if (activeTabRef.current?.page === 'newtab') window.dispatchEvent(new Event('pw-page-search'))
+            // The new tab arrives in the state just before this command, maybe not drawn yet.
+            if ((latestActiveTab() ?? activeTabRef.current)?.page === 'newtab') window.dispatchEvent(new Event('pw-page-search'))
             else omnibox.current()
             break
           case 'bookmark-star':

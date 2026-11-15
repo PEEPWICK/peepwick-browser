@@ -18,7 +18,9 @@ pub fn new_tab(win: &Rc<BrowserWindow>) {
         url: Some(pages::NEW_TAB_URL.into()),
         ..OpenOptions::default()
     });
-    // The new tab page has its own search box; typing goes straight there.
+    // The new tab page has its own search box; typing goes straight there. The UI finds the
+    // box by the active tab, so the state with the new tab goes first.
+    win.flush_state();
     win.command(json!({ "type": "focus-page-search" }));
 }
 

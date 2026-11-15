@@ -127,6 +127,18 @@ async fn run(app: &AppHandle, win: &Rc<BrowserWindow>, step: &Value, out: &str) 
             eprintln!("[harness] memory {} MB in {count} processes", kb / 1024);
         }
         "mark" => eprintln!("[harness] mark {}", get("name")),
+        // Which view has the keyboard inside the window, also while the window itself isn't the
+        // active one on the desktop (document.hasFocus() is false then).
+        "focus" => {
+            let page = win
+                .active_tab()
+                .and_then(|t| t.view())
+                .is_some_and(|v| v.is_focus());
+            eprintln!(
+                "[harness] focus ui={} page={page}",
+                win.ui_view().is_focus()
+            );
+        }
         // Where each tab's view is, and where the UI asked for it.
         "layout" => {
             let panes: Vec<String> = win
