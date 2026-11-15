@@ -147,7 +147,7 @@ Durum: ☐ yapılmadı · ◐ kısmen · ☑ tamam (Electron sürümüyle aynı 
 ### Veri
 - ☐ Parola yöneticisi: kaydetme, güncelleme, parolalar sayfası, zayıf ve tekrar eden denetimi, CSV
 - ☐ Otomatik doldurma: giriş, kayıt formunda güçlü parola, adresler, form girdileri
-- ☐ Başka tarayıcılardan aktarma: yer imleri, parolalar, geçmiş, çerezler, form verileri
+- ◐ Başka tarayıcılardan aktarma (`importers.rs`): yer imleri ve geçmiş. Chromium ailesi (Chrome, Chrome Beta ve Dev, Chromium, Brave, Edge, Vivaldi, Opera) ve Firefox ailesi (Firefox, LibreWolf, Zen, Floorp), snap ve Flatpak kurulumlarıyla; profil adları Chromium'da `Local State`, Firefox'ta `profiles.ini`'den. Aynı klasöre giden iki yol bir kez sayılır, profilde yalnızca bulunan türler sunulur. Veritabanları tarayıcı açıkken de okunur: `-wal`/`-shm` dosyalarıyla yalnızca bizim okuyabildiğimiz geçici bir klasöre kopyalanır, sonra silinir. Okuma ana iş parçacığının dışında; yer imleri HTML aktarmasıyla aynı yoldan eklenir (çubuk boşsa doğrudan, doluysa "İçe aktarılanlar · Tarayıcı" klasörüne; mobil yer imleri ve Firefox'un menü klasörü diğer yer imlerine), yer imli sitelerin simgeleri de gelir (32 piksele en yakın boyut, en çok 100 KB). Geçmişten son 100 bin ziyaret, 5000'lik işlemlerle; aynı adres ve zamandaki ziyaret ikinci kez yazılmaz. Gizli pencerede aktarılmaz. Testli (sahte HOME ile Brave'in iki profili ve Firefox): profillerin bulunması, yer imleri, tekrarların atlanması, yalnızca geçmiş, simgeler ve geçmiş sayfasında görünmeleri. Parolalar, çerezler ve form verileri o özelliklerle gelir
 - ☐ Şifreli yedek (PWBK biçimi, scrypt + AES-256-GCM) ve geri yükleme
 
 ### Araçlar

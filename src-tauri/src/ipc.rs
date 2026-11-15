@@ -18,7 +18,8 @@ use crate::settings;
 use crate::state::PaneRect;
 use crate::window::{self, BrowserWindow, OpenOptions};
 use crate::{
-    bookmarks, cleardata, downloads, focus, history, menus, omnibox, permissions, stats, zoom,
+    bookmarks, cleardata, downloads, focus, history, importers, menus, omnibox, permissions, stats,
+    zoom,
 };
 
 /// Runs `f` on the main thread with the window whose UI called. The UI may ask before Rust
@@ -74,6 +75,39 @@ pub async fn pw_invoke(
         })
         .await?;
         return rx.await.map_err(|e| e.to_string());
+    }
+    // Other browsers' profiles are read off the main thread; their bookmarks go in on it.
+    if method == "importSources" {
+        return tauri::async_runtime::spawn_blocking(importers::detect_sources)
+            .await
+            .map_err(|e| e.to_string());
+    }
+    if method == "importFrom" {
+        if on_main(&app, &label, |win| win.incognito).await? {
+            return Ok(Value::Null);
+        }
+        let source = short(args.first(), 100);
+        let kinds: Vec<String> = args
+            .get(1)
+            .and_then(Value::as_array)
+            .map(|kinds| {
+                kinds
+                    .iter()
+                    .filter_map(|k| k.as_str().map(str::to_string))
+                    .collect()
+            })
+            .unwrap_or_default();
+        let skip_duplicates = args.get(2).and_then(Value::as_bool) != Some(false);
+        let read = tauri::async_runtime::spawn_blocking(move || importers::read(&source, &kinds))
+            .await
+            .map_err(|e| e.to_string())?;
+        let Some(read) = read else {
+            return Ok(Value::Null);
+        };
+        return on_main(&app, &label, move |_| {
+            importers::finish(read.clone(), skip_duplicates)
+        })
+        .await;
     }
     if method == "suggest" {
         // The search engine's suggestions are fetched here, off the main thread.
@@ -219,8 +253,6 @@ pub(crate) fn invoke(
             Some((id, created)) => json!({ "id": id, "created": created }),
             None => Value::Null,
         },
-        // Reading other browsers' profiles hasn't moved over yet; HTML files have.
-        "importSources" => json!([]),
         "importBookmarks" => match text(args.first()) {
             "html" if !win.incognito => {
                 bookmarks::import_html(win, args.get(1).and_then(Value::as_bool) != Some(false))

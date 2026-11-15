@@ -14,6 +14,7 @@ mod fonts;
 mod harness;
 mod history;
 mod i18n;
+mod importers;
 mod input;
 mod ipc;
 mod menu;

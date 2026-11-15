@@ -370,6 +370,63 @@ fn refresh_pages(db: &Connection, urls: &[String]) -> rusqlite::Result<()> {
     Ok(())
 }
 
+/// A visit read from another browser.
+pub struct Visit {
+    pub url: String,
+    pub title: String,
+    pub visited_at: i64,
+}
+
+/// Adds visits from another browser, leaving out the ones already here; returns how many
+/// were new. Goes in batches, so a page visited meanwhile waits a moment at most.
+pub fn import_visits(visits: &[Visit]) -> usize {
+    let mut added = 0;
+    for batch in visits.chunks(5000) {
+        added += with_db(|db| {
+            let tx = db.unchecked_transaction()?;
+            let mut added = 0;
+            // The newest visit's title for each page (visits come newest first).
+            let mut touched: Vec<(&str, &str)> = Vec::new();
+            let mut seen = HashSet::new();
+            {
+                let mut exists =
+                    tx.prepare_cached("SELECT 1 FROM visits WHERE url = ?1 AND visited_at = ?2")?;
+                let mut insert = tx.prepare_cached(
+                    "INSERT INTO visits (url, title, visited_at) VALUES (?1, ?2, ?3)",
+                )?;
+                for visit in batch {
+                    if !recordable(&visit.url)
+                        || visit.visited_at <= 0
+                        || exists.exists(params![visit.url, visit.visited_at])?
+                    {
+                        continue;
+                    }
+                    let title: String = visit.title.chars().take(1000).collect();
+                    insert.execute(params![visit.url, title, visit.visited_at])?;
+                    if seen.insert(visit.url.as_str()) {
+                        touched.push((&visit.url, &visit.title));
+                    }
+                    added += 1;
+                }
+                let mut page = tx.prepare_cached(
+                    "INSERT INTO pages (url, title, visits, last_visit) VALUES (?1, ?2, 0, 0)
+                     ON CONFLICT(url) DO UPDATE
+                       SET title = CASE WHEN pages.title = '' THEN excluded.title ELSE pages.title END",
+                )?;
+                for (url, title) in &touched {
+                    page.execute(params![url, title.chars().take(1000).collect::<String>()])?;
+                }
+            }
+            let urls: Vec<String> = touched.iter().map(|(url, _)| url.to_string()).collect();
+            refresh_pages(&tx, &urls)?;
+            tx.commit()?;
+            Ok(added)
+        })
+        .unwrap_or(0);
+    }
+    added
+}
+
 pub fn remove_visits(ids: &[i64]) {
     with_db(|db| {
         let mut urls = Vec::new();
