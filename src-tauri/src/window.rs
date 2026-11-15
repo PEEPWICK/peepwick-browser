@@ -624,6 +624,7 @@ impl BrowserWindow {
         for tab in self.tabs.borrow().values() {
             tab.destroy();
         }
+        crate::speech::stop(&self.label);
         crate::menu::window_closed(self.id);
         WINDOWS.with(|windows| windows.borrow_mut().retain(|w| w.id != self.id));
         // Private browsing data goes with the last private window.

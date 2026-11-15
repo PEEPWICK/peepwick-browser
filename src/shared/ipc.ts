@@ -6,6 +6,9 @@ import type {
   Address,
   ReadAloudText,
   ReadingItem,
+  SpeechEvent,
+  SpeechRequest,
+  SpeechVoice,
   TaskRow,
   TranslationModel,
   AppInfo,
@@ -111,6 +114,8 @@ export interface InvokeMethods {
   tasks(): TaskRow[]
   readingList(): ReadingItem[]
   readAloud(tabId: number): ReadAloudText | null
+  /** speech-dispatcher's voices; none when it isn't installed. */
+  speechVoices(): SpeechVoice[]
   translationLanguages(): string[]
   translationModels(): TranslationModel[]
 }
@@ -193,6 +198,10 @@ export interface SendMethods {
   readingOpen(id: string, newTab: boolean): void
   readingMark(id: string, read: boolean): void
   readingRemove(id: string): void
+  /** Read aloud: says a paragraph, stopping whatever was being said. */
+  speak(request: SpeechRequest): void
+  /** Stops what this window is reading aloud. */
+  speechStop(): void
   translation(tabId: number, action: 'offer' | 'choose' | 'start' | 'revert' | 'close', from?: string, to?: string): void
   translationRemove(from: string, to: string): void
   updateCheck(): void
@@ -225,6 +234,8 @@ export interface EventMap {
   autofill: AutofillPopupState
   /** Stored site icons changed; peepwick://favicon/ URLs carry this as ?v=. */
   favicon: number
+  /** Read aloud: what happened to a paragraph this window sent. */
+  speech: SpeechEvent
 }
 
 export type InvokeName = keyof InvokeMethods

@@ -328,6 +328,32 @@ export interface ReadAloudText {
   paragraphs: string[]
 }
 
+/** A voice of speech-dispatcher, from one of its speech engines (output modules). */
+export interface SpeechVoice {
+  module: string
+  name: string
+  lang: string
+}
+
+/** A paragraph for read aloud and how to say it. */
+export interface SpeechRequest {
+  /** The listen bar's own id for it; the speech events about it carry it back. */
+  key: string
+  text: string
+  lang: string
+  /** A voice the reader picked; without one speech-dispatcher picks for the language. */
+  voice: { module: string; name: string } | null
+  /** 1 is normal speed. */
+  rate: number
+}
+
+/** What happened to a paragraph read aloud: begun, ended, stopped (by this window or
+ * another), or not said at all (speech-dispatcher unreachable or gone). */
+export interface SpeechEvent {
+  key: string
+  event: 'start' | 'end' | 'stopped' | 'error'
+}
+
 /** A page on the reading list. */
 export interface ReadingItem {
   id: string

@@ -109,6 +109,10 @@ pub async fn pw_invoke(
         })
         .await;
     }
+    // Read aloud's voices come from speech-dispatcher, which may first have to start.
+    if method == "speechVoices" {
+        return to_json(crate::speech::voices().await);
+    }
     if method == "suggest" {
         // The search engine's suggestions are fetched here, off the main thread.
         let input = short(args.first(), 500);
@@ -462,6 +466,29 @@ pub(crate) fn send(win: &Rc<BrowserWindow>, method: &str, args: &[Value]) {
                 tab.toggle_reader();
             }
         }
+        "speak" => {
+            let Some(request) = arg(0).filter(|request| request.is_object()) else {
+                return;
+            };
+            let field = |name: &str, max: usize| short(request.get(name), max);
+            let voice = request.get("voice").filter(|voice| voice.is_object());
+            crate::speech::speak(crate::speech::Utterance {
+                owner: win.label.clone(),
+                key: field("key", 64),
+                text: field("text", crate::speech::MAX_TEXT),
+                lang: field("lang", 35),
+                voice: voice
+                    .map(|voice| {
+                        (
+                            short(voice.get("module"), 100),
+                            short(voice.get("name"), 200),
+                        )
+                    })
+                    .filter(|(module, name)| !module.is_empty() && !name.is_empty()),
+                rate: float(request.get("rate")),
+            });
+        }
+        "speechStop" => crate::speech::stop(&win.label),
         "readingOpen" => {
             let id = short(arg(0), 64);
             let Some(url) = readinglist::url_for(&id).filter(|_| !win.incognito) else {

@@ -198,6 +198,12 @@ export function App() {
     setFindOpen(false)
     setListening(false)
   }, [tab?.id])
+  // Read aloud ends with its text: when reader view closes or the tab goes to another
+  // page. Otherwise it would start again by itself on the next readable page.
+  const listenText = tab && canListen(tab) ? `${tab.url.split('#')[0]} ${tab.reader}` : null
+  useEffect(() => {
+    setListening(false)
+  }, [listenText])
 
   const showBar =
     !state.incognito && !state.fullscreen && (settings.bookmarksBar === 'always' || (settings.bookmarksBar === 'newtab' && tab?.page === 'newtab'))

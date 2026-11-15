@@ -34,6 +34,7 @@ mod session;
 mod settings;
 mod shield;
 mod shortcuts;
+mod speech;
 mod state;
 mod stats;
 mod store;
@@ -136,6 +137,8 @@ pub fn run() {
                 readinglist::flush();
                 downloads::flush();
                 permissions::flush();
+                // After the saves: it may wait a moment for speech-dispatcher.
+                speech::shutdown();
                 updater::install_on_exit();
             }
             _ => {}
