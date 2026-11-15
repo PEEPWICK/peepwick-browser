@@ -23,8 +23,19 @@ function emit(): void {
   for (const listener of listeners) listener()
 }
 
+/**
+ * The page takes the language of the settings before React draws a word in it. WebKit
+ * uppercases text (`text-transform`) by the rules of the language the page has when it lays
+ * the text out, and keeps it that way when the language changes: English labels drawn while
+ * the page was still Turkish would keep a dotted İ.
+ */
+function followLanguage(settings: Settings): void {
+  document.documentElement.lang = settings.language
+}
+
 export async function initStore(): Promise<void> {
   const data: InitialData = await call.ready()
+  followLanguage(data.settings)
   snapshot = { ...data, faviconVersion: 0 }
   on('state', (state) => {
     if (snapshot) snapshot = { ...snapshot, state }
@@ -35,6 +46,7 @@ export async function initStore(): Promise<void> {
     emit()
   })
   on('settings', (settings) => {
+    followLanguage(settings)
     if (snapshot) snapshot = { ...snapshot, settings }
     emit()
   })

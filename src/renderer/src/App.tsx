@@ -36,8 +36,7 @@ function useTheme(): void {
   const dark = state.incognito || settings.theme === 'dark' || (settings.theme === 'system' && systemDark)
   useEffect(() => {
     document.documentElement.dataset.theme = dark ? 'dark' : 'light'
-    document.documentElement.lang = settings.language
-  }, [dark, settings.language])
+  }, [dark])
 }
 
 export function App() {
