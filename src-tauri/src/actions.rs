@@ -167,6 +167,7 @@ pub fn is_available(win: &BrowserWindow, id: &str) -> bool {
         | "toggle-sidebar"
         | "bookmarks"
         | "toggle-bookmarks-bar"
+        | "clear-data"
         | "report"
         | "task-manager"
         | "check-updates" => true,
@@ -207,6 +208,7 @@ pub fn run_command(win: &Rc<BrowserWindow>, id: &str) {
         }
         "bookmark-tabs" => bookmark_space_tabs(win),
         "import-bookmarks" => win.command(json!({ "type": "import-bookmarks" })),
+        "clear-data" => win.command(json!({ "type": "clear-data" })),
         "check-updates" => {
             open_page(win, "settings", "about");
             crate::updater::check(&win.app_handle());
@@ -253,7 +255,7 @@ pub fn run_command(win: &Rc<BrowserWindow>, id: &str) {
 }
 
 /// The commands the command bar offers, in order.
-pub const COMMANDS: [&str; 23] = [
+pub const COMMANDS: [&str; 24] = [
     "new-tab",
     "new-window",
     "new-incognito",
@@ -272,6 +274,7 @@ pub const COMMANDS: [&str; 23] = [
     "bookmarks",
     "toggle-bookmarks-bar",
     "import-bookmarks",
+    "clear-data",
     "reading-add",
     "reading-list",
     "report",

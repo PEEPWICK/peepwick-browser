@@ -612,6 +612,13 @@ pub fn app_menu(win: &Rc<BrowserWindow>, x: f64, y: f64) {
         .accelerator("Ctrl+H"),
     ];
     if !win.incognito {
+        items.push(
+            item(
+                t("menu.clearData"),
+                on_window(win, |win| run_command(win, "clear-data")),
+            )
+            .accelerator("Ctrl+Shift+Delete"),
+        );
         items.push(bookmarks_submenu(win));
         items.push(submenu(
             t("reading.title"),
