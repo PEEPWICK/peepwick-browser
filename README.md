@@ -104,7 +104,12 @@ folder, or be asked where to save each file. Per-site zoom with a default zoom a
 Find on page, print, save a page as one .mhtml file, and the Web Inspector (<kbd>F12</kbd>).
 Spelling suggestions in text fields. Make it your default browser from Settings or the welcome
 screen, from the .deb or the AppImage alike. Links from other apps open as new tabs in the window
-you used last, and a second launch never starts a second browser on the same profile.
+you used last, and a second launch never starts a second browser on the same profile. Play, pause
+and mute what plays in any tab from the toolbar, sound from a page's frames included. The task
+manager (<kbd>Shift</kbd>+<kbd>Esc</kbd>) shows the memory and processor use of each tab and
+process, and ends a page that hangs. When something breaks, Settings › Report a bug shows a short
+report (version, system, error codes, never addresses or file names) to copy, or to send to
+GitHub's bug form with the details filled in.
 
 ## Install
 
@@ -156,6 +161,7 @@ The browser keeps its data in `~/.local/share/com.peepwick.browser` and its cach
 | <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>R</kbd> | Reader view |
 | <kbd>Ctrl</kbd>+<kbd>H</kbd> / <kbd>Ctrl</kbd>+<kbd>J</kbd> | History / downloads |
 | <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Delete</kbd> | Clear browsing data |
+| <kbd>Shift</kbd>+<kbd>Esc</kbd> | Task manager |
 | <kbd>Ctrl</kbd>+<kbd>S</kbd> / <kbd>Ctrl</kbd>+<kbd>P</kbd> | Save page / print |
 | <kbd>Ctrl</kbd>+<kbd>=</kbd> / <kbd>Ctrl</kbd>+<kbd>-</kbd> / <kbd>Ctrl</kbd>+<kbd>0</kbd> | Zoom in / out / reset |
 | <kbd>Ctrl</kbd>+<kbd>N</kbd> / <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>N</kbd> | New window / private window |
@@ -178,7 +184,8 @@ PEEPWICK Browser has no telemetry and no account. On its own, it talks only to t
 Pages you visit load as in any browser, and WebKit fetches their icons along with them. A link you
 add to the reading list loads out of sight, to keep its article. "Copy image" fetches the image
 again from its site. Notifications from sites you allow go through your desktop's
-notification service.
+notification service. The error log behind "Report a bug" stays on this computer (in a file only
+if you turn that on); it reaches GitHub only when you send a report yourself.
 
 ## Build from source
 
