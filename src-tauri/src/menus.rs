@@ -634,6 +634,11 @@ pub fn app_menu(win: &Rc<BrowserWindow>, x: f64, y: f64) {
             on_window(win, |win| open_page(win, "downloads", "")),
         )
         .accelerator("Ctrl+J"),
+        item(
+            t("cmd.task-manager"),
+            on_window(win, |win| run_command(win, "task-manager")),
+        )
+        .accelerator("Shift+Esc"),
         separator(),
         item(t("menu.zoomIn"), on_active(win, |tab| tab.zoom("in")))
             .accelerator("Ctrl+=")

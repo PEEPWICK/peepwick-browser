@@ -109,6 +109,15 @@ pub async fn pw_invoke(
         })
         .await;
     }
+    // The task manager: which tabs live where comes from the main thread, the processes'
+    // memory and processor use from /proc, off it.
+    if method == "tasks" {
+        let tabs = on_main(&app, &label, |_| crate::tasks::tab_processes()).await?;
+        let rows = tauri::async_runtime::spawn_blocking(move || crate::tasks::rows(tabs))
+            .await
+            .map_err(|e| e.to_string())?;
+        return to_json(rows);
+    }
     // Read aloud's voices come from speech-dispatcher, which may first have to start.
     if method == "speechVoices" {
         return to_json(crate::speech::voices().await);
@@ -293,11 +302,11 @@ pub(crate) fn invoke(
                 })
             })
             .unwrap_or(Value::Null),
+        "tasks" => to_json(crate::tasks::rows(crate::tasks::tab_processes()))?,
         "extensionsList"
         | "shieldReport"
         | "passwordsList"
         | "addressesList"
-        | "tasks"
         | "translationLanguages"
         | "translationModels" => json!([]),
         _ => {
@@ -411,6 +420,19 @@ pub(crate) fn send(win: &Rc<BrowserWindow>, method: &str, args: &[Value]) {
             }
         }
         "toggleMute" => tab(0).iter().for_each(|tab| tab.set_muted(!tab.is_muted())),
+        "media" => {
+            if text(arg(1)) == "toggle" {
+                tab(0).iter().for_each(|tab| tab.toggle_media());
+            }
+        }
+        "endTask" => {
+            if let Some(pid) = arg(0)
+                .and_then(Value::as_i64)
+                .and_then(|p| i32::try_from(p).ok())
+            {
+                crate::tasks::end(pid);
+            }
+        }
         "moveTab" => {
             if let Some(id) = num(arg(0)) {
                 let index = num(arg(2)).unwrap_or(0) as usize;

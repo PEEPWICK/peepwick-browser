@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
-import { FileDown, FolderOpen, PictureInPicture2, Pause, Play, RotateCw, Trash2, Volume2, VolumeX, X } from 'lucide-react'
+import { FileDown, FolderOpen, Pause, Play, RotateCw, Trash2, Volume2, VolumeX, X } from 'lucide-react'
 import { WORKSPACE_ICONS, type DownloadState, type Stats, type WorkspaceIcon } from '@shared/types'
 import { displayHost } from '@shared/url'
 import { api, call } from '../api'
@@ -265,7 +265,6 @@ export function MediaPanel({ anchor }: { anchor: DOMRect }) {
                 </span>
               </button>
               <IconButton icon={playing ? Pause : Play} label={playing ? t('media.pause') : t('media.play')} onClick={() => api.media(tab.id, 'toggle')} />
-              <IconButton icon={PictureInPicture2} label={t('media.pip')} onClick={() => api.media(tab.id, 'pip')} />
               <IconButton icon={tab.muted ? VolumeX : Volume2} label={tab.muted ? t('media.unmute') : t('media.mute')} onClick={() => api.toggleMute(tab.id)} />
             </li>
           )

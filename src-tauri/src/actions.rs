@@ -167,6 +167,7 @@ pub fn is_available(win: &BrowserWindow, id: &str) -> bool {
         | "toggle-sidebar"
         | "bookmarks"
         | "toggle-bookmarks-bar"
+        | "task-manager"
         | "check-updates" => true,
         "focus-start" => !focus::active(),
         "focus-stop" => focus::active(),
@@ -243,13 +244,14 @@ pub fn run_command(win: &Rc<BrowserWindow>, id: &str) {
             }
         }
         "reading-list" => open_page(win, "reading", ""),
+        "task-manager" => win.command(json!({ "type": "task-manager" })),
         "quit" => session::quit(&win.app_handle()),
         _ => eprintln!("[actions] not ported yet: {id}"),
     }
 }
 
 /// The commands the command bar offers, in order.
-pub const COMMANDS: [&str; 21] = [
+pub const COMMANDS: [&str; 22] = [
     "new-tab",
     "new-window",
     "new-incognito",
@@ -270,5 +272,6 @@ pub const COMMANDS: [&str; 21] = [
     "import-bookmarks",
     "reading-add",
     "reading-list",
+    "task-manager",
     "check-updates",
 ];

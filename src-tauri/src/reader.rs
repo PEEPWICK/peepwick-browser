@@ -5,6 +5,7 @@
 
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
+use std::rc::Rc;
 use std::sync::LazyLock;
 
 use gtk::prelude::*;
@@ -330,6 +331,11 @@ fn context() -> WebContext {
         }
         let manager = WebsiteDataManager::new_ephemeral();
         let context = WebContext::with_website_data_manager(&manager);
+        // The browser's extension too, given no settings: here it only tells the task manager
+        // which process a reader view lives in.
+        if let Some(dir) = crate::window::extension_directory() {
+            context.set_web_extensions_directory(&dir);
+        }
         if let Some(security) = context.security_manager() {
             security.register_uri_scheme_as_display_isolated("peepwick");
         }
@@ -358,6 +364,8 @@ pub struct Reader {
     pub view: WebView,
     pub article: Article,
     token: String,
+    /// The view's web process, for the task manager.
+    pub pid: Rc<Cell<Option<i32>>>,
 }
 
 impl Reader {
@@ -395,6 +403,7 @@ impl Reader {
             view,
             article,
             token,
+            pid: Rc::new(Cell::new(None)),
         }
     }
 

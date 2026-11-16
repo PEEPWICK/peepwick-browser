@@ -185,7 +185,9 @@ export interface SendMethods {
   errorLogClear(): void
   backupCancel(token: string): void
   restart(): void
-  media(tabId: number, action: 'toggle' | 'pip'): void
+  /** Pauses what plays in the tab, or plays again what this paused. WebKitGTK has no
+   * picture in picture. */
+  media(tabId: number, action: 'toggle'): void
   passwordCopy(id: string): void
   passwordsRemove(ids: string[]): void
   passwordsUndo(): void

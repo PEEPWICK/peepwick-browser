@@ -15,8 +15,8 @@ use webkit2gtk::{
     BackForwardListExt, FindControllerExt, LoadEvent, NavigationPolicyDecision,
     NavigationPolicyDecisionExt, NetworkError, PolicyDecision, PolicyDecisionExt,
     PolicyDecisionType, PolicyError, ResponsePolicyDecision, ResponsePolicyDecisionExt,
-    ScriptDialogType, URIRequestExt, URIResponseExt, UserMessageExt, WebView, WebViewExt,
-    WebViewSessionState,
+    ScriptDialogType, URIRequestExt, URIResponseExt, UserMessage, UserMessageExt, WebView,
+    WebViewExt, WebViewSessionState,
 };
 
 use crate::i18n::t;
@@ -97,6 +97,10 @@ pub struct Tab {
     /// Moves on with every page and every reader view, so a late answer about an older one
     /// is dropped.
     reader_token: Cell<u32>,
+    /// The web process the page lives in, for the task manager.
+    pid: Cell<Option<i32>>,
+    /// Video or audio in the page: playing, or paused after playing. The web process tells.
+    media: Cell<Option<&'static str>>,
 }
 
 impl Tab {
@@ -125,6 +129,8 @@ impl Tab {
             reader: RefCell::new(None),
             reader_available: Cell::new(false),
             reader_token: Cell::new(0),
+            pid: Cell::new(None),
+            media: Cell::new(None),
         });
         tab.set_address(if saved.url.is_empty() {
             pages::NEW_TAB_URL
@@ -242,6 +248,8 @@ impl Tab {
     fn destroy_view(&self) {
         self.close_reader();
         crate::permissions::deny_pending_for(self.id);
+        self.pid.set(None);
+        self.media.set(None);
         if let Some(view) = self.view.take() {
             view.stop_loading();
             if let Some(parent) = view.parent() {
@@ -448,6 +456,70 @@ impl Tab {
         self.muted.get()
     }
 
+    // ── Processes and media ───────────────────────────────────────────────────
+
+    /// Asks which web process the page lives in, for the task manager. A page that hangs
+    /// can't answer: it keeps the answer it gave before.
+    fn ask_pid(self: &Rc<Self>, view: &WebView) {
+        let weak = Rc::downgrade(self);
+        let asked = view.clone();
+        ask_pid(view, move |pid| {
+            if let Some(tab) = weak.upgrade()
+                && tab.view().as_ref() == Some(&asked)
+            {
+                tab.pid.set(Some(pid));
+            }
+        });
+    }
+
+    /// The processes the tab lives in: its page's and its reader view's. One it doesn't know
+    /// yet is asked for again, for the next look.
+    pub fn processes(self: &Rc<Self>) -> (Option<i32>, Option<i32>) {
+        if self.pid.get().is_none()
+            && let Some(view) = self.view()
+        {
+            self.ask_pid(&view);
+        }
+        let reader = self.reader.borrow().as_ref().and_then(|r| r.pid.get());
+        (self.pid.get(), reader)
+    }
+
+    /// Ends the page's process if it is `pid`, or closes the reader view living there.
+    /// Whether the tab had it.
+    pub fn end_process(&self, pid: i32) -> bool {
+        if self
+            .reader
+            .borrow()
+            .as_ref()
+            .is_some_and(|r| r.pid.get() == Some(pid))
+        {
+            self.close_reader();
+            self.relayout();
+            self.changed();
+            return true;
+        }
+        match self.view() {
+            // Its tabs show the "page stopped" screen (web_process_terminated).
+            Some(view) if self.pid.get() == Some(pid) => {
+                view.terminate_web_process();
+                true
+            }
+            _ => false,
+        }
+    }
+
+    /// Pauses what plays in the page, or plays again what this paused, in all its frames
+    /// (webext/peepwick-webext.c).
+    pub fn toggle_media(&self) {
+        if let Some(view) = self.view() {
+            view.send_message_to_page(
+                &UserMessage::new("media-toggle", None),
+                None::<&gtk::gio::Cancellable>,
+                |_| {},
+            );
+        }
+    }
+
     fn is_private(&self) -> bool {
         self.window().is_some_and(|w| w.incognito)
     }
@@ -624,11 +696,7 @@ impl Tab {
             reader_available: self.reader_available.get(),
             reader: self.reader.borrow().is_some(),
             find: self.find.borrow().as_ref().map(|f| json!(f)),
-            media: if view.as_ref().is_some_and(|v| v.is_playing_audio()) {
-                Some("playing")
-            } else {
-                None
-            },
+            media: self.media.get(),
             page_lang: None,
             translation: None,
         }
@@ -643,6 +711,12 @@ impl Tab {
         let tab = tab_of.clone();
         view.connect_load_changed(move |view, event| {
             let Some(tab) = tab() else { return };
+            if event == LoadEvent::Committed {
+                // A new page: what played in the last one stopped with it, and the page may
+                // live in another process now.
+                tab.media.set(None);
+                tab.ask_pid(view);
+            }
             match event {
                 LoadEvent::Started => {
                     crate::permissions::deny_pending_for(tab.id);
@@ -804,6 +878,8 @@ impl Tab {
         let tab = tab_of.clone();
         view.connect_web_process_terminated(move |_, _| {
             let Some(tab) = tab() else { return };
+            tab.pid.set(None);
+            tab.media.set(None);
             tab.interstitial.replace(Some(json!({ "kind": "crashed" })));
             tab.relayout();
             tab.changed();
@@ -816,6 +892,20 @@ impl Tab {
             let Some(tab) = tab() else { return false };
             let parameters = message.parameters();
             match message.name().as_deref() {
+                // A frame's video or audio started or stopped playing.
+                Some("media") => {
+                    let playing = parameters.and_then(|p| p.get::<bool>()) == Some(true);
+                    let media = if playing {
+                        Some("playing")
+                    } else {
+                        tab.media.get().map(|_| "paused")
+                    };
+                    if media != tab.media.get() {
+                        tab.media.set(media);
+                        tab.changed();
+                    }
+                    true
+                }
                 Some("https-upgraded") => {
                     if let Some((http, secure)) =
                         parameters.and_then(|p| p.get::<(String, String)>())
@@ -1087,6 +1177,24 @@ impl Tab {
     fn connect_reader(self: &Rc<Self>, win: &Rc<BrowserWindow>, view: &WebView) {
         let weak = Rc::downgrade(self);
         let tab_of = move || weak.upgrade();
+
+        // Its own process, for the task manager.
+        let tab = tab_of.clone();
+        view.connect_load_changed(move |view, event| {
+            if event != LoadEvent::Committed {
+                return;
+            }
+            let pid = tab().and_then(|tab| {
+                let reader = tab.reader.borrow();
+                reader
+                    .as_ref()
+                    .filter(|r| &r.view == view)
+                    .map(|r| r.pid.clone())
+            });
+            if let Some(pid) = pid {
+                ask_pid(view, move |id| pid.set(Some(id)));
+            }
+        });
 
         let tab = tab_of.clone();
         view.connect_decide_policy(move |_, decision, kind| {
@@ -1440,6 +1548,23 @@ fn capture_history(view: &WebView) -> Option<Vec<u8>> {
 /// warning.
 fn is_held(url: &str) -> bool {
     focus::should_gate(url) || safebrowsing::threat_for(url).is_some()
+}
+
+/// Asks a view's web process for its id (webext/peepwick-webext.c).
+fn ask_pid(view: &WebView, keep: impl FnOnce(i32) + 'static) {
+    view.send_message_to_page(
+        &UserMessage::new("pid", None),
+        None::<&gtk::gio::Cancellable>,
+        move |reply| {
+            if let Some(pid) = reply
+                .ok()
+                .and_then(|m| m.parameters())
+                .and_then(|p| p.get::<i32>())
+            {
+                keep(pid);
+            }
+        },
+    );
 }
 
 fn error_code(error: &glib::Error) -> i32 {

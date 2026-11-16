@@ -375,7 +375,7 @@ export interface TaskRow {
   /** For services and extensions: what runs there. */
   name: string
   tabs: { id: number; title: string; url: string; favicon: string | null }[]
-  /** Bytes in memory (working set). */
+  /** Bytes in memory: the process's own and its share of what it shares with others. */
   memory: number
   /** Percent of one processor core since the last look. */
   cpu: number

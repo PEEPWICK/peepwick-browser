@@ -373,14 +373,11 @@ fn configure_context(context: &WebContext, manager: &WebsiteDataManager, incogni
     context.set_spell_checking_enabled(true);
     context.set_spell_checking_languages(&["tr_TR", "en_US"]);
     // Our extension in the web processes (webext/peepwick-webext.c) adds the Global Privacy
-    // Control header to their requests and does HTTPS-Only's upgrading. Each new web process
+    // Control header to their requests and does HTTPS-Only's upgrading; it also tells the
+    // task manager and the media controls what goes on in the page. Each new web process
     // gets the settings as it starts.
-    match paths::resource("webext/libpeepwick-webext.so") {
-        Some(file) => {
-            if let Some(dir) = file.parent() {
-                context.set_web_extensions_directory(&dir.to_string_lossy());
-            }
-        }
+    match extension_directory() {
+        Some(dir) => context.set_web_extensions_directory(&dir),
         None => eprintln!(
             "[window] the web process extension is missing: no Sec-GPC header, no HTTPS-Only"
         ),
@@ -388,6 +385,13 @@ fn configure_context(context: &WebContext, manager: &WebsiteDataManager, incogni
     context.connect_initialize_web_extensions(|context| {
         context.set_web_extensions_initialization_user_data(&extension_config());
     });
+}
+
+/// The folder of the web process extension (webext/peepwick-webext.c), for the contexts that
+/// load it.
+pub fn extension_directory() -> Option<String> {
+    paths::resource("webext/libpeepwick-webext.so")
+        .and_then(|file| Some(file.parent()?.to_string_lossy().into_owned()))
 }
 
 /// What the web process extension needs: (Global Privacy Control, HTTPS-Only, the sites

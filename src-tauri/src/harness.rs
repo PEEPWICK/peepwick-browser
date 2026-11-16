@@ -108,7 +108,7 @@ async fn run(app: &AppHandle, win: &Rc<BrowserWindow>, step: &Value, out: &str) 
                 .values()
                 .map(|t| {
                     format!(
-                        "{} {} loading={} {:?} reader={}/{} zoom={:.2} find={}",
+                        "{} {} loading={} {:?} reader={}/{} zoom={:.2} find={} media={:?} audible={}",
                         t.id,
                         t.url,
                         t.loading,
@@ -116,7 +116,9 @@ async fn run(app: &AppHandle, win: &Rc<BrowserWindow>, step: &Value, out: &str) 
                         t.reader_available,
                         t.reader,
                         t.zoom,
-                        t.find.as_ref().map(|f| f.to_string()).unwrap_or_default()
+                        t.find.as_ref().map(|f| f.to_string()).unwrap_or_default(),
+                        t.media,
+                        t.audible
                     )
                 })
                 .collect();

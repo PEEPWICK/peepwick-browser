@@ -39,6 +39,7 @@ mod state;
 mod stats;
 mod store;
 mod tab;
+mod tasks;
 mod updater;
 mod window;
 mod zoom;
