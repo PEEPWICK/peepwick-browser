@@ -115,6 +115,27 @@ pub fn host_of(url: &str) -> String {
         .unwrap_or_default()
 }
 
+/// The ports browsers never send a request to, the Fetch standard's "bad ports": a page
+/// mustn't make the browser talk to a mail, file sharing or other service that isn't the web.
+/// Sorted, for the search.
+const BAD_PORTS: &[u16] = &[
+    0, 1, 7, 9, 11, 13, 15, 17, 19, 20, 21, 22, 23, 25, 37, 42, 43, 53, 69, 77, 79, 87, 95, 101,
+    102, 103, 104, 109, 110, 111, 113, 115, 117, 119, 123, 135, 137, 139, 143, 161, 179, 389, 427,
+    465, 512, 513, 514, 515, 526, 530, 531, 532, 540, 548, 554, 556, 563, 587, 601, 636, 989, 990,
+    993, 995, 1719, 1720, 1723, 2049, 3659, 4045, 4190, 5060, 5061, 6000, 6566, 6665, 6666, 6667,
+    6668, 6669, 6679, 6697, 10080,
+];
+
+/// Whether a web address names one of those ports. WebKit doesn't load it: it shows a blank page
+/// in its place, without a load failure (`tab.rs` turns that into the error page).
+pub fn restricted_port(url: &str) -> bool {
+    url::Url::parse(url).is_ok_and(|u| {
+        matches!(u.scheme(), "http" | "https")
+            && u.port()
+                .is_some_and(|port| BAD_PORTS.binary_search(&port).is_ok())
+    })
+}
+
 /// The security shown before a certificate check result is known.
 pub fn security_of(url: &str) -> &'static str {
     if url.starts_with("https:") {
@@ -135,6 +156,21 @@ pub fn security_of(url: &str) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn knows_the_restricted_ports() {
+        assert!(BAD_PORTS.windows(2).all(|pair| pair[0] < pair[1]));
+        assert!(restricted_port("http://127.0.0.1:1/"));
+        assert!(restricted_port("http://localhost:0/"));
+        assert!(restricted_port("https://mail.example.com:25/inbox"));
+        assert!(restricted_port("http://[::1]:6000/"));
+        assert!(!restricted_port("http://127.0.0.1:8080/"));
+        assert!(!restricted_port("http://127.0.0.1:65535/"));
+        assert!(!restricted_port("http://example.com/"));
+        assert!(!restricted_port("https://example.com:443/"));
+        assert!(!restricted_port("file:///home/user/a.html"));
+        assert!(!restricted_port("about:blank"));
+    }
 
     #[test]
     fn finds_internal_pages() {

@@ -97,6 +97,9 @@ pub struct Tab {
     /// Moves on with every page and every reader view, so a late answer about an older one
     /// is dropped.
     reader_token: Cell<u32>,
+    /// The address the page is loading, until it commits: WebKit commits a blank page in place
+    /// of an address it won't load.
+    loading: RefCell<Option<String>>,
     /// The web process the page lives in, for the task manager.
     pid: Cell<Option<i32>>,
     /// Video or audio in the page: playing, or paused after playing. The web process tells.
@@ -129,6 +132,7 @@ impl Tab {
             reader: RefCell::new(None),
             reader_available: Cell::new(false),
             reader_token: Cell::new(0),
+            loading: RefCell::new(None),
             pid: Cell::new(None),
             media: Cell::new(None),
         });
@@ -248,6 +252,7 @@ impl Tab {
     fn destroy_view(&self) {
         self.close_reader();
         crate::permissions::deny_pending_for(self.id);
+        self.loading.replace(None);
         self.pid.set(None);
         self.media.set(None);
         if let Some(view) = self.view.take() {
@@ -711,6 +716,14 @@ impl Tab {
         let tab = tab_of.clone();
         view.connect_load_changed(move |view, event| {
             let Some(tab) = tab() else { return };
+            let wanted = match event {
+                LoadEvent::Started | LoadEvent::Redirected => {
+                    tab.loading.replace(view.uri().map(|uri| uri.to_string()));
+                    None
+                }
+                LoadEvent::Committed => tab.loading.take(),
+                _ => None,
+            };
             if event == LoadEvent::Committed {
                 // A new page: what played in the last one stopped with it, and the page may
                 // live in another process now.
@@ -742,6 +755,21 @@ impl Tab {
                 LoadEvent::Committed => {
                     security::https_settled(tab.id);
                     tab.tls_failure.replace(None);
+                    // An address on a restricted port: WebKit commits a blank page instead,
+                    // with no load failure. The tab keeps the address and says why.
+                    if view.uri().as_deref() == Some("about:blank")
+                        && let Some(wanted) = wanted.filter(|w| pages::restricted_port(w))
+                    {
+                        crate::diagnostics::load_error(UNSAFE_PORT);
+                        tab.set_address(&wanted);
+                        tab.show_error(
+                            &wanted,
+                            UNSAFE_PORT,
+                            "Not allowed to use restricted network port",
+                            false,
+                        );
+                        return;
+                    }
                     if let Some(uri) = view.uri()
                         && uri.starts_with("https:")
                         && let Some((certificate, flags)) =
@@ -1583,7 +1611,14 @@ fn ask_pid(view: &WebView, keep: impl FnOnce(i32) + 'static) {
     );
 }
 
+/// Chromium's ERR_UNSAFE_PORT, for an address on a restricted port (`pages::restricted_port`).
+const UNSAFE_PORT: i32 = -312;
+
 fn error_code(error: &glib::Error) -> i32 {
+    // A redirect to a restricted port fails the load (an address typed in commits a blank page).
+    if error.matches(PolicyError::CannotUseRestrictedPort) {
+        return UNSAFE_PORT;
+    }
     let message = error.message().to_lowercase();
     if message.contains("resolve") || message.contains("name or service") {
         -105

@@ -187,6 +187,7 @@ fn load_error_name(code: i32) -> &'static str {
         -105 => "ERR_NAME_NOT_RESOLVED",
         -106 => "ERR_INTERNET_DISCONNECTED",
         -118 => "ERR_CONNECTION_TIMED_OUT",
+        -312 => "ERR_UNSAFE_PORT",
         -200 => "ERR_CERT_COMMON_NAME_INVALID",
         -201 => "ERR_CERT_DATE_INVALID",
         -202 => "ERR_CERT_AUTHORITY_INVALID",

@@ -18,7 +18,7 @@ function errorText(code: number): MessageKey {
   if (code === -106 || code === -21) return 'error.offline'
   if (code === -102) return 'error.refused'
   if (code === -118 || code === -7) return 'error.timeout'
-  if (code === -20 || code === -27) return 'error.blocked'
+  if (code === -20 || code === -27 || code === -312) return 'error.blocked'
   return 'error.generic'
 }
 
