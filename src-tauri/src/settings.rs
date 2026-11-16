@@ -418,7 +418,7 @@ fn save(settings: &Settings) {
     if let Ok(json) = serde_json::to_vec_pretty(&saved)
         && let Err(error) = store::write_atomic(&file(), &json)
     {
-        eprintln!("[settings] could not save: {error}");
+        crate::log_error!("[settings] could not save: {error}");
     }
 }
 

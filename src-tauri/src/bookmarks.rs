@@ -185,10 +185,10 @@ fn save() {
     match serde_json::to_vec(&tree()) {
         Ok(json) => {
             if let Err(error) = store::write_atomic(&file(), &json) {
-                eprintln!("[bookmarks] could not save: {error}");
+                crate::log_error!("[bookmarks] could not save: {error}");
             }
         }
-        Err(error) => eprintln!("[bookmarks] could not serialize: {error}"),
+        Err(error) => crate::log_error!("[bookmarks] could not serialize: {error}"),
     }
 }
 
@@ -1388,7 +1388,7 @@ pub fn import_html(win: &BrowserWindow, skip_duplicates: bool) -> Value {
             &t("import.fromFile"),
         ),
         Err(error) => {
-            eprintln!("[bookmarks] could not read {}: {error}", path.display());
+            crate::log_error!("[bookmarks] could not read {}: {error}", path.display());
             Value::Null
         }
     }
@@ -1426,7 +1426,7 @@ pub fn export(win: &BrowserWindow) -> bool {
     match std::fs::write(&path, to_netscape(&titled)) {
         Ok(()) => true,
         Err(error) => {
-            eprintln!("[bookmarks] could not write {}: {error}", path.display());
+            crate::log_error!("[bookmarks] could not write {}: {error}", path.display());
             false
         }
     }

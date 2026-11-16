@@ -69,7 +69,7 @@ fn set(app: &AppHandle, change: impl FnOnce(&mut UpdateState)) {
 }
 
 fn fail(app: &AppHandle, error: String) {
-    eprintln!("[updater] {error}");
+    crate::diagnostics::error("update", &format!("[updater] {error}"));
     set(app, |s| {
         s.status = "error";
         s.error = Some(error);
@@ -231,7 +231,7 @@ pub fn install_and_restart(app: &AppHandle) {
             *PENDING_DEB
                 .lock()
                 .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(bytes);
-            eprintln!("[updater] {error}");
+            crate::diagnostics::error("update", &format!("[updater] {error}"));
             return;
         }
         let handle = app.clone();
@@ -275,6 +275,6 @@ pub fn install_on_exit() {
     if let Some(bytes) = deb
         && let Err(error) = install_deb(&bytes)
     {
-        eprintln!("[updater] {error}");
+        crate::diagnostics::error("update", &format!("[updater] {error}"));
     }
 }

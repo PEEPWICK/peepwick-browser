@@ -153,10 +153,10 @@ fn save() {
     match serde_json::to_vec(&list) {
         Ok(json) => {
             if let Err(error) = store::write_atomic(&file(), &json) {
-                eprintln!("[downloads] could not save: {error}");
+                crate::log_error!("[downloads] could not save: {error}");
             }
         }
-        Err(error) => eprintln!("[downloads] could not serialize: {error}"),
+        Err(error) => crate::log_error!("[downloads] could not serialize: {error}"),
     }
 }
 
@@ -240,7 +240,7 @@ pub fn open_with_default(uri: &str) {
         }
     }
     if let Err(error) = gio::AppInfo::launch_default_for_uri(uri, Some(&context)) {
-        eprintln!("[downloads] could not open {uri}: {error}");
+        crate::log_error!("[downloads] could not open {uri}: {error}");
     }
 }
 
@@ -496,7 +496,9 @@ pub fn action(id: &str, action: &str) {
                         LIST.with(|cell| cell.borrow_mut().retain(|d| d.id != id));
                         changed(true);
                     }
-                    Err(error) => eprintln!("[downloads] could not move to the trash: {error}"),
+                    Err(error) => {
+                        crate::log_error!("[downloads] could not move to the trash: {error}")
+                    }
                 },
             );
         }

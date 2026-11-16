@@ -26,7 +26,7 @@ pub fn new_tab(win: &Rc<BrowserWindow>) {
 
 pub fn new_window(win: &BrowserWindow, private: bool, urls: Vec<String>) {
     if let Err(error) = window::open(&win.app_handle(), private, urls, None) {
-        eprintln!("[window] could not open a window: {error}");
+        crate::log_error!("[window] could not open a window: {error}");
     }
 }
 
@@ -102,7 +102,7 @@ pub fn save_page(win: &Rc<BrowserWindow>) {
                 None::<&gio::Cancellable>,
                 |result| {
                     if let Err(error) = result {
-                        eprintln!("[save] could not save the page: {error}");
+                        crate::log_error!("[save] could not save the page: {error}");
                     }
                 },
             );
@@ -167,6 +167,7 @@ pub fn is_available(win: &BrowserWindow, id: &str) -> bool {
         | "toggle-sidebar"
         | "bookmarks"
         | "toggle-bookmarks-bar"
+        | "report"
         | "task-manager"
         | "check-updates" => true,
         "focus-start" => !focus::active(),
@@ -244,6 +245,7 @@ pub fn run_command(win: &Rc<BrowserWindow>, id: &str) {
             }
         }
         "reading-list" => open_page(win, "reading", ""),
+        "report" => open_page(win, "settings", "report"),
         "task-manager" => win.command(json!({ "type": "task-manager" })),
         "quit" => session::quit(&win.app_handle()),
         _ => eprintln!("[actions] not ported yet: {id}"),
@@ -251,7 +253,7 @@ pub fn run_command(win: &Rc<BrowserWindow>, id: &str) {
 }
 
 /// The commands the command bar offers, in order.
-pub const COMMANDS: [&str; 22] = [
+pub const COMMANDS: [&str; 23] = [
     "new-tab",
     "new-window",
     "new-incognito",
@@ -272,6 +274,7 @@ pub const COMMANDS: [&str; 22] = [
     "import-bookmarks",
     "reading-add",
     "reading-list",
+    "report",
     "task-manager",
     "check-updates",
 ];

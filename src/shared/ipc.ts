@@ -183,6 +183,8 @@ export interface SendMethods {
   /** Copies the report and opens the GitHub bug form with it filled in. */
   reportIssue(): void
   errorLogClear(): void
+  /** An error in the browser's own interface, for the error log. */
+  uiError(message: string): void
   backupCancel(token: string): void
   restart(): void
   /** Pauses what plays in the tab, or plays again what this paused. WebKitGTK has no

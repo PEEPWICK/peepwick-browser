@@ -303,6 +303,7 @@ pub(crate) fn invoke(
             })
             .unwrap_or(Value::Null),
         "tasks" => to_json(crate::tasks::rows(crate::tasks::tab_processes()))?,
+        "report" => crate::diagnostics::report(),
         "extensionsList"
         | "shieldReport"
         | "passwordsList"
@@ -433,6 +434,22 @@ pub(crate) fn send(win: &Rc<BrowserWindow>, method: &str, args: &[Value]) {
                 crate::tasks::end(pid);
             }
         }
+        // Report a bug: the person copies the report, or opens the bug form with it.
+        "reportCopy" => {
+            let report = crate::diagnostics::report();
+            menus::copy_text(report["text"].as_str().unwrap_or_default());
+        }
+        "reportIssue" => {
+            let report = crate::diagnostics::report();
+            menus::copy_text(report["text"].as_str().unwrap_or_default());
+            win.open_tab(OpenOptions {
+                url: Some(crate::diagnostics::issue_url(&report)),
+                ..Default::default()
+            });
+        }
+        "errorLogClear" => crate::diagnostics::clear(),
+        // An error in the browser's own interface.
+        "uiError" => crate::diagnostics::record("interface", &short(arg(0), 2000)),
         "moveTab" => {
             if let Some(id) = num(arg(0)) {
                 let index = num(arg(2)).unwrap_or(0) as usize;

@@ -149,7 +149,7 @@ pub fn sync_appimage_entry(create: bool) -> bool {
     match written {
         Ok(()) => true,
         Err(error) => {
-            eprintln!("[desktop] could not write the desktop file: {error}");
+            crate::log_error!("[desktop] could not write the desktop file: {error}");
             false
         }
     }
@@ -228,7 +228,7 @@ fn run<S: AsRef<OsStr>>(program: &str, args: &[S], limit: Duration) -> Option<St
                 std::thread::sleep(Duration::from_millis(20));
             }
             _ => {
-                eprintln!("[desktop] {program} did not finish");
+                crate::log_error!("[desktop] {program} did not finish");
                 let _ = child.kill();
                 let _ = child.wait();
                 return None;

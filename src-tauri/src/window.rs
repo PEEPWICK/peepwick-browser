@@ -213,7 +213,7 @@ pub fn open(
             saved,
         ) {
             Ok(win) => WINDOWS.with(|windows| windows.borrow_mut().push(win)),
-            Err(error) => eprintln!("[window] could not set up the window: {error}"),
+            Err(error) => crate::log_error!("[window] could not set up the window: {error}"),
         }
     })?;
     Ok(())
@@ -259,7 +259,7 @@ fn last_normal_window() -> Option<Rc<BrowserWindow>> {
 pub fn open_urls(app: &AppHandle, urls: Vec<String>) {
     let Some(win) = last_normal_window() else {
         if let Err(error) = open(app, false, urls, None) {
-            eprintln!("[window] could not open a window: {error}");
+            crate::log_error!("[window] could not open a window: {error}");
         }
         return;
     };
@@ -378,7 +378,7 @@ fn configure_context(context: &WebContext, manager: &WebsiteDataManager, incogni
     // gets the settings as it starts.
     match extension_directory() {
         Some(dir) => context.set_web_extensions_directory(&dir),
-        None => eprintln!(
+        None => crate::log_error!(
             "[window] the web process extension is missing: no Sec-GPC header, no HTTPS-Only"
         ),
     }
@@ -489,6 +489,15 @@ impl BrowserWindow {
         overlay.show_all();
         // Transparent, so pages show through while the UI is on top for a menu.
         ui.set_background_color(&gtk::gdk::RGBA::new(0.0, 0.0, 0.0, 0.0));
+        // The interface's own process failing goes to the error log.
+        ui.connect_web_process_terminated(|_, reason| {
+            if reason != webkit2gtk::WebProcessTerminationReason::TerminatedByApi {
+                crate::diagnostics::record(
+                    "interface",
+                    &format!("Interface process gone: {reason:?}"),
+                );
+            }
+        });
         let context = if incognito {
             private_context()
         } else {
@@ -1500,7 +1509,7 @@ impl BrowserWindow {
     pub fn emit(&self, name: &str, payload: impl Serialize) {
         let payload = json!({ "name": name, "payload": payload });
         if let Err(error) = self.app.emit_to(self.label.as_str(), "pw:event", payload) {
-            eprintln!("[window] could not send {name}: {error}");
+            crate::log_error!("[window] could not send {name}: {error}");
         }
     }
 
@@ -1731,6 +1740,7 @@ pub fn apply_theme() {
 pub fn settings_changed() {
     let prefs = settings::get();
     apply_theme();
+    crate::diagnostics::settings_changed();
     crate::pagescripts::refresh();
     // Dangerous site warnings turned on fetch the lists they don't have yet.
     crate::safebrowsing::refresh();

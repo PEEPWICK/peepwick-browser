@@ -8,8 +8,10 @@ import './styles/panels.css'
 import './styles/pages.css'
 import { createRoot } from 'react-dom/client'
 import { App } from './App'
+import { watchErrors } from './errors'
 import { initStore } from './store'
 
+watchErrors()
 void initStore().then(() => {
   createRoot(document.getElementById('root')!).render(<App />)
 })

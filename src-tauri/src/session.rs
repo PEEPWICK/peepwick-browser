@@ -95,10 +95,10 @@ pub fn save_now() {
     }) {
         Ok(json) => {
             if let Err(error) = store::write_atomic(&file(), &json) {
-                eprintln!("[session] could not save: {error}");
+                crate::log_error!("[session] could not save: {error}");
             }
         }
-        Err(error) => eprintln!("[session] could not serialize: {error}"),
+        Err(error) => crate::log_error!("[session] could not serialize: {error}"),
     }
 }
 

@@ -7,6 +7,7 @@ mod actions;
 mod bookmarks;
 mod cleardata;
 mod desktop;
+mod diagnostics;
 mod downloads;
 mod focus;
 mod fonts;
@@ -102,6 +103,8 @@ pub fn run() {
         .setup(|app| {
             paths::init(app.handle())?;
             settings::load();
+            // The error log, and earlier sessions' errors when it is kept in a file.
+            diagnostics::start();
             stats::load();
             // Before any window: a session that is still going gates the restored tabs.
             focus::load();

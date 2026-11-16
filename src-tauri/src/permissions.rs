@@ -71,10 +71,10 @@ pub fn flush() {
         match serde_json::to_vec(&saved) {
             Ok(json) => {
                 if let Err(error) = store::write_atomic(&file(), &json) {
-                    eprintln!("[permissions] could not save: {error}");
+                    crate::log_error!("[permissions] could not save: {error}");
                 }
             }
-            Err(error) => eprintln!("[permissions] could not serialize: {error}"),
+            Err(error) => crate::log_error!("[permissions] could not serialize: {error}"),
         }
     }
 }

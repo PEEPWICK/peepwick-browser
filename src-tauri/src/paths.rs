@@ -50,6 +50,11 @@ pub fn profile() -> &'static PathBuf {
         .expect("paths::init runs before anything reads the profile")
 }
 
+/// The profile folder once `init` has run, for what may run before it (the error log).
+pub fn profile_if_ready() -> Option<&'static PathBuf> {
+    PROFILE.get()
+}
+
 pub fn user_path(name: &str) -> PathBuf {
     profile().join(name)
 }

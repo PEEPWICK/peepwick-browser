@@ -218,7 +218,7 @@ fn start(address: Option<Address>, sink: Sink) -> Sender<Request> {
         .name("peepwick-speech".into())
         .spawn(move || work(address, rx, sink));
     if let Err(error) = spawned {
-        eprintln!("[speech] could not start: {error}");
+        crate::log_error!("[speech] could not start: {error}");
     }
     tx
 }

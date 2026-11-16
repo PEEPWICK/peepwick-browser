@@ -15,8 +15,8 @@ use webkit2gtk::{
     BackForwardListExt, FindControllerExt, LoadEvent, NavigationPolicyDecision,
     NavigationPolicyDecisionExt, NetworkError, PolicyDecision, PolicyDecisionExt,
     PolicyDecisionType, PolicyError, ResponsePolicyDecision, ResponsePolicyDecisionExt,
-    ScriptDialogType, URIRequestExt, URIResponseExt, UserMessage, UserMessageExt, WebView,
-    WebViewExt, WebViewSessionState,
+    ScriptDialogType, URIRequestExt, URIResponseExt, UserMessage, UserMessageExt,
+    WebProcessTerminationReason, WebView, WebViewExt, WebViewSessionState,
 };
 
 use crate::i18n::t;
@@ -748,6 +748,7 @@ impl Tab {
                             view.tls_info().filter(|(_, f)| !f.is_empty())
                         && !security::has_exception(&pages::host_of(&uri))
                     {
+                        crate::diagnostics::certificate_error(flags);
                         tab.certificate_warning(&uri, &certificate, flags);
                         return;
                     }
@@ -857,7 +858,10 @@ impl Tab {
             let code = error_code(error);
             match security::https_fallback(tab.id, uri, code) {
                 Some(http) => tab.show_https_only(&http),
-                None => tab.show_error(uri, code, &error.message(), false),
+                None => {
+                    crate::diagnostics::load_error(code);
+                    tab.show_error(uri, code, &error.message(), false);
+                }
             }
             true
         });
@@ -870,14 +874,26 @@ impl Tab {
             }
             match security::https_fallback(tab.id, uri, -202) {
                 Some(http) => tab.show_https_only(&http),
-                None => tab.certificate_warning(uri, certificate, flags),
+                None => {
+                    crate::diagnostics::certificate_error(flags);
+                    tab.certificate_warning(uri, certificate, flags);
+                }
             }
             true
         });
 
         let tab = tab_of.clone();
-        view.connect_web_process_terminated(move |_, _| {
+        view.connect_web_process_terminated(move |_, reason| {
             let Some(tab) = tab() else { return };
+            // Ended from the task manager: not an error.
+            match reason {
+                WebProcessTerminationReason::TerminatedByApi => {}
+                WebProcessTerminationReason::ExceededMemoryLimit => crate::diagnostics::record(
+                    "page",
+                    "Web process gone: it went over the memory limit",
+                ),
+                _ => crate::diagnostics::record("page", "Web process gone: crashed"),
+            }
             tab.pid.set(None);
             tab.media.set(None);
             tab.interstitial.replace(Some(json!({ "kind": "crashed" })));

@@ -88,10 +88,10 @@ fn save() {
     match serde_json::to_vec(&json!({ "items": items })) {
         Ok(data) => {
             if let Err(error) = store::write_atomic(&file(), &data) {
-                eprintln!("[reading] could not save: {error}");
+                crate::log_error!("[reading] could not save: {error}");
             }
         }
-        Err(error) => eprintln!("[reading] could not serialize: {error}"),
+        Err(error) => crate::log_error!("[reading] could not serialize: {error}"),
     }
 }
 
@@ -137,7 +137,7 @@ fn store(url: &str, title: &str, article: Option<&Article>) -> Item {
             .and_then(|data| store::write_atomic(&path, &data));
         match written {
             Ok(()) => saved = true,
-            Err(error) => eprintln!("[reading] could not keep the article: {error}"),
+            Err(error) => crate::log_error!("[reading] could not keep the article: {error}"),
         }
     }
     let host = reader::display_host(url);

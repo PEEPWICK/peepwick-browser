@@ -35,7 +35,7 @@ fn save(session: &FocusState) {
         .map_err(std::io::Error::other)
         .and_then(|bytes| store::write_atomic(&file(), &bytes));
     if let Err(error) = written {
-        eprintln!("[focus] could not save the session: {error}");
+        crate::log_error!("[focus] could not save the session: {error}");
     }
 }
 

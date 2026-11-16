@@ -81,7 +81,7 @@ pub fn open() {
                 *slot = Some(db);
             }
         }
-        Err(error) => eprintln!("[history] could not open {}: {error}", path.display()),
+        Err(error) => crate::log_error!("[history] could not open {}: {error}", path.display()),
     }
 }
 
@@ -91,7 +91,7 @@ fn with_db<R>(f: impl FnOnce(&Connection) -> rusqlite::Result<R>) -> Option<R> {
     match f(db) {
         Ok(value) => Some(value),
         Err(error) => {
-            eprintln!("[history] {error}");
+            crate::log_error!("[history] {error}");
             None
         }
     }

@@ -41,7 +41,7 @@ pub fn show(summary: &str, body: &str) {
                 None::<&gio::Cancellable>,
                 |result| {
                     if let Err(error) = result {
-                        eprintln!("[notify] {error}");
+                        crate::log_error!("[notify] {error}");
                     }
                 },
             );

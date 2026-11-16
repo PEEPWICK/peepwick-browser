@@ -712,7 +712,7 @@ fn import_favicons(family: Family, dir: &Path, hosts: &HashSet<String>) -> usize
         Ok(())
     });
     if let Err(error) = read {
-        eprintln!("[import] icons skipped: {error}");
+        crate::log_error!("[import] icons skipped: {error}");
     }
     best.into_iter()
         .filter(|(host, (_, data))| {
@@ -761,7 +761,7 @@ pub fn read(source_id: &str, kinds: &[String]) -> Option<Imported> {
                 imported.bookmarks = Some((parsed.tree, parsed.skipped));
             }
             Err(error) => {
-                eprintln!("[import] bookmarks failed: {error}");
+                crate::log_error!("[import] bookmarks failed: {error}");
                 imported.failed.push("bookmarks");
             }
         }
@@ -770,7 +770,7 @@ pub fn read(source_id: &str, kinds: &[String]) -> Option<Imported> {
         match read_history(source.family, &source.dir) {
             Ok(visits) => imported.history = Some(history::import_visits(&visits)),
             Err(error) => {
-                eprintln!("[import] history failed: {error}");
+                crate::log_error!("[import] history failed: {error}");
                 imported.failed.push("history");
             }
         }

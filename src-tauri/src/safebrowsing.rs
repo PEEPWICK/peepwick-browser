@@ -117,14 +117,14 @@ pub fn refresh() {
             match download(client, threat.list()) {
                 Some(text) => {
                     if let Err(error) = crate::store::write_atomic(&path, text.as_bytes()) {
-                        eprintln!(
+                        crate::log_error!(
                             "[safebrowsing] could not keep the {} list: {error}",
                             threat.name()
                         );
                     }
                     install(threat, parse_host_list(&text));
                 }
-                None => eprintln!(
+                None => crate::log_error!(
                     "[safebrowsing] could not download the {} list",
                     threat.name()
                 ),

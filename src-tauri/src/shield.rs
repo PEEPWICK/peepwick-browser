@@ -151,7 +151,7 @@ pub fn start(app: AppHandle) {
         let lists = match download_lists() {
             Ok(lists) => lists,
             Err(error) => {
-                eprintln!("[shield] could not download filter lists: {error}");
+                crate::log_error!("[shield] could not download filter lists: {error}");
                 return;
             }
         };
@@ -161,14 +161,14 @@ pub fn start(app: AppHandle) {
             set.add_filter_list(text, ParseOptions::default());
         }
         let Ok((rules, _)) = set.into_content_blocking() else {
-            eprintln!("[shield] could not convert the lists");
+            crate::log_error!("[shield] could not convert the lists");
             return;
         };
         let count = rules.len();
         let json = match serde_json::to_string(&rules) {
             Ok(json) => json,
             Err(error) => {
-                eprintln!("[shield] could not serialize rules: {error}");
+                crate::log_error!("[shield] could not serialize rules: {error}");
                 return;
             }
         };
@@ -188,7 +188,9 @@ pub fn start(app: AppHandle) {
                         );
                         apply(filter);
                     }
-                    Err(error) => eprintln!("[shield] WebKit could not compile the rules: {error}"),
+                    Err(error) => {
+                        crate::log_error!("[shield] WebKit could not compile the rules: {error}")
+                    }
                 })
             })
         });

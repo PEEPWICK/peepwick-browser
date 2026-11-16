@@ -677,6 +677,10 @@ pub fn app_menu(win: &Rc<BrowserWindow>, x: f64, y: f64) {
             on_window(win, |win| open_page(win, "settings", "")),
         ),
         item(
+            t("menu.report"),
+            on_window(win, |win| run_command(win, "report")),
+        ),
+        item(
             t("menu.about"),
             on_window(win, |win| run_command(win, "check-updates")),
         ),

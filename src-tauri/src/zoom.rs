@@ -40,7 +40,7 @@ fn save() {
         if let Ok(json) = serde_json::to_vec(&*s.borrow())
             && let Err(error) = store::write_atomic(&file(), &json)
         {
-            eprintln!("[zoom] could not save: {error}");
+            crate::log_error!("[zoom] could not save: {error}");
         }
     });
 }

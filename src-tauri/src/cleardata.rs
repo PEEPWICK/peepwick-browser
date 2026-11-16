@@ -170,7 +170,7 @@ fn clear(since: u64, kinds: &[ClearKind], done: impl FnOnce() + 'static) {
     match window::browsing_data() {
         Some(manager) if !types.is_empty() => clear_website_data(&manager, types, move |ok| {
             if !ok {
-                eprintln!("[cleardata] WebKit could not clear the site data");
+                crate::log_error!("[cleardata] WebKit could not clear the site data");
             }
             done();
         }),

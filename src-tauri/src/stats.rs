@@ -57,7 +57,7 @@ fn save(data: &Stats) {
         .map_err(std::io::Error::other)
         .and_then(|bytes| store::write_atomic(&file(), &bytes));
     if let Err(error) = written {
-        eprintln!("[stats] could not save: {error}");
+        crate::log_error!("[stats] could not save: {error}");
     }
 }
 
