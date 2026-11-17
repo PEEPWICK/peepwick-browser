@@ -11,7 +11,7 @@ mimariyi ve yayın ölçütü olan özellik eşitliği listesini tutar; geçiş 
 | Platform | Şimdilik yalnızca Linux (AppImage + deb) |
 | Arayüz | React arayüzü (`src/renderer`) kalır; arka uç Rust (`src-tauri`) |
 | Yer | Aynı repo. Geliştirme `tauri` dalında, yan klasörde (`../peepwick-browser-tauri`) başladı; 0.2.0a ile `main` oldu |
-| Yayın | İlk karar: eşitlik listesi tamamlanınca 0.2.0a. 2026-11-01'de değişti: 0.2.0a eşitlikten önce, GitHub'da ön sürüm (Pre-release) olarak yayınlandı. `main` Tauri koduna geçti, Electron kodu `electron` dalında; 0.1.9a "Latest" kalıyor ki kurulu 0.1.x kopyaları eksik bir sürüme kendiliğinden geçmesin. `package.json`'daki `githubPrerelease` eşitlik sağlanınca `false` yapılır |
+| Yayın | İlk karar: eşitlik listesi tamamlanınca 0.2.0a. 2026-11-01'de değişti: 0.2.0a eşitlikten önce, GitHub'da ön sürüm (Pre-release) olarak yayınlandı. `main` Tauri koduna geçti. Electron kodu bir süre `electron` dalında durdu, 2026-11-17'de silindi; geçmişi `main`'in eski commit'lerinde ve v0.1.x etiketlerinde. 0.1.9a "Latest" kalıyor ki kurulu 0.1.x kopyaları eksik bir sürüme kendiliğinden geçmesin. `package.json`'daki `githubPrerelease` eşitlik sağlanınca `false` yapılır |
 | Kullanıcı verisi | Temiz başlangıç: Electron profilinden otomatik aktarım yok. Kullanıcılar yer imlerini HTML, parolaları CSV olarak dışa aktarıp yeni sürümde içe alabilir |
 | Hedefler | Daha az bellek, daha küçük kurulum, Rust'ın güvenliği, Electron'dan bağımsızlık |
 
