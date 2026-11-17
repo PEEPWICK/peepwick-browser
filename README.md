@@ -8,7 +8,7 @@
 <h3 align="center">The browser that guards your attention.</h3>
 
 <p align="center">
-  <a href="https://github.com/PEEPWICK/peepwick-browser/releases/tag/v0.2.6a"><b>Download for Linux</b></a>
+  <a href="https://github.com/PEEPWICK/peepwick-browser/releases/tag/v0.2.7a"><b>Download for Linux</b></a>
   &nbsp;·&nbsp;
   <a href="#what-the-browser-sends-and-where">Privacy</a>
   &nbsp;·&nbsp;
@@ -120,21 +120,21 @@ GitHub's bug form with the details filled in.
 
 ## Install
 
-Download the newest version, **0.2.6a**, from its
-[release page](https://github.com/PEEPWICK/peepwick-browser/releases/tag/v0.2.6a):
+Download the newest version, **0.2.7a**, from its
+[release page](https://github.com/PEEPWICK/peepwick-browser/releases/tag/v0.2.7a):
 
 - **AppImage**, for any distribution. It carries its own WebKitGTK and GStreamer:
 
   ```bash
-  chmod +x peepwick-browser-0.2.6a-x86_64.AppImage
-  ./peepwick-browser-0.2.6a-x86_64.AppImage
+  chmod +x peepwick-browser-0.2.7a-x86_64.AppImage
+  ./peepwick-browser-0.2.7a-x86_64.AppImage
   ```
 
 - **.deb**, for Ubuntu, Debian, Zorin, Mint and their relatives. It uses your system's WebKitGTK,
   which keeps the package at about 5 MB:
 
   ```bash
-  sudo apt install ./peepwick-browser-0.2.6a-amd64.deb
+  sudo apt install ./peepwick-browser-0.2.7a-amd64.deb
   ```
 
 Both update themselves: the AppImage replaces its own file, and the .deb asks for your password
