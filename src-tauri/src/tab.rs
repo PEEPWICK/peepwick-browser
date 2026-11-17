@@ -3,6 +3,7 @@
 //! shown again.
 
 use std::cell::{Cell, RefCell};
+use std::collections::HashMap;
 use std::rc::{Rc, Weak};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -82,7 +83,9 @@ pub struct Tab {
     /// An error, crash or warning screen the UI draws in place of the page.
     interstitial: RefCell<Option<Value>>,
     find: RefCell<Option<FindState>>,
+    /// Requests the shield stopped on the current page, and from which hosts.
     pub blocked: Cell<u32>,
+    blocked_hosts: RefCell<HashMap<String, u32>>,
     pub last_active: Cell<u64>,
     pub opener_id: Cell<Option<u32>>,
     /// History to restore when the view is made: a tab restored from the last session, or
@@ -125,6 +128,7 @@ impl Tab {
             interstitial: RefCell::new(None),
             find: RefCell::new(None),
             blocked: Cell::new(0),
+            blocked_hosts: RefCell::new(HashMap::new()),
             last_active: Cell::new(now_ms()),
             opener_id: Cell::new(None),
             saved_history: RefCell::new(history),
@@ -529,6 +533,37 @@ impl Tab {
         self.window().is_some_and(|w| w.incognito)
     }
 
+    /// Loads the shield stopped, as (page, resource) addresses from the web process. Those of
+    /// a page the tab has left since are dropped. Private windows count for the tab only:
+    /// the day's numbers are written to disk.
+    pub fn record_blocked(&self, loads: &[(String, String)]) {
+        let counted = count_blocked(&self.url(), loads, &mut self.blocked_hosts.borrow_mut());
+        if counted == 0 {
+            return;
+        }
+        self.blocked.set(self.blocked.get().saturating_add(counted));
+        if !self.is_private() {
+            crate::stats::add_blocked(u64::from(counted));
+        }
+        self.changed();
+    }
+
+    /// The hosts the shield blocked most on this page, for its panel.
+    pub fn blocked_report(&self, limit: usize) -> Vec<Value> {
+        let mut hosts: Vec<(String, u32)> = self
+            .blocked_hosts
+            .borrow()
+            .iter()
+            .map(|(host, count)| (host.clone(), *count))
+            .collect();
+        hosts.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+        hosts
+            .into_iter()
+            .take(limit)
+            .map(|(host, count)| json!({ "host": host, "count": count }))
+            .collect()
+    }
+
     /// Applies the remembered or default zoom again, after either changed in Settings.
     pub fn refresh_zoom(&self) {
         if let Some(view) = self.view()
@@ -802,6 +837,7 @@ impl Tab {
                         }
                     }
                     tab.blocked.set(0);
+                    tab.blocked_hosts.borrow_mut().clear();
                 }
                 _ => {}
             }
@@ -946,6 +982,13 @@ impl Tab {
                         parameters.and_then(|p| p.get::<(String, String, String)>())
                     {
                         crate::autofill::page_message(&tab, page, &kind, &payload, &uri);
+                    }
+                    true
+                }
+                // Loads the shield stopped, as the page's console heard of them.
+                Some("blocked") => {
+                    if let Some(loads) = parameters.and_then(|p| p.get::<Vec<(String, String)>>()) {
+                        tab.record_blocked(&loads);
                     }
                     true
                 }
@@ -1654,4 +1697,66 @@ fn favicon_data_url(surface: cairo::Surface) -> Option<String> {
         "data:image/png;base64,{}",
         base64::engine::general_purpose::STANDARD.encode(png)
     ))
+}
+
+/// Counts blocked loads that belong to the page at `current` (fragments aside) into `hosts`;
+/// returns how many did.
+fn count_blocked(
+    current: &str,
+    loads: &[(String, String)],
+    hosts: &mut HashMap<String, u32>,
+) -> u32 {
+    let page = |url: &str| url.split('#').next().unwrap_or_default().to_string();
+    let current = page(current);
+    let mut counted = 0;
+    for (document, resource) in loads {
+        if page(document) != current {
+            continue;
+        }
+        let host = pages::host_of(resource);
+        *hosts
+            .entry(if host.is_empty() {
+                resource.clone()
+            } else {
+                host
+            })
+            .or_insert(0) += 1;
+        counted += 1;
+    }
+    counted
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn counts_blocked_loads_of_the_current_page_only() {
+        let mut hosts = HashMap::new();
+        let loads = vec![
+            (
+                "https://a.example/page#top".to_string(),
+                "https://ads.example/x.js".to_string(),
+            ),
+            (
+                "https://a.example/page".to_string(),
+                "https://ads.example/y.gif".to_string(),
+            ),
+            (
+                "https://a.example/page".to_string(),
+                "https://t.example/p".to_string(),
+            ),
+            (
+                "https://a.example/before".to_string(),
+                "https://ads.example/z.js".to_string(),
+            ),
+        ];
+        assert_eq!(
+            count_blocked("https://a.example/page", &loads, &mut hosts),
+            3
+        );
+        assert_eq!(hosts.get("ads.example"), Some(&2));
+        assert_eq!(hosts.get("t.example"), Some(&1));
+        assert_eq!(hosts.len(), 2);
+    }
 }

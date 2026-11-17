@@ -1,10 +1,11 @@
-//! Daily counts for the new tab page and the focus panel: minutes of focus, and requests the
-//! shield blocked. WebKitGTK doesn't report blocked requests, so those stay as the Electron
-//! version left them. Kept in stats.json in the Electron version's format, for 90 days.
+//! Daily counts for the new tab page, the shield's panel and the focus panel: minutes of focus,
+//! and requests the shield blocked (from the pages' consoles, see webext/peepwick-webext.c).
+//! Kept in stats.json in the Electron version's format, for 90 days.
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::BTreeMap;
 use std::path::PathBuf;
+use std::time::Duration;
 
 use gtk::glib;
 use serde::{Deserialize, Serialize};
@@ -30,6 +31,7 @@ struct Stats {
 
 thread_local! {
     static DATA: RefCell<Stats> = RefCell::new(Stats::default());
+    static SAVE_PENDING: Cell<bool> = const { Cell::new(false) };
 }
 
 fn file() -> PathBuf {
@@ -58,6 +60,27 @@ fn save(data: &Stats) {
         .and_then(|bytes| store::write_atomic(&file(), &bytes));
     if let Err(error) = written {
         crate::log_error!("[stats] could not save: {error}");
+    }
+}
+
+/// Requests the shield blocked in a normal window: today's count and the total. Saved a moment
+/// later, so a page full of trackers is one write.
+pub fn add_blocked(count: u64) {
+    let today = day_key(0);
+    DATA.with(|d| {
+        let mut data = d.borrow_mut();
+        data.days.entry(today).or_default().blocked += count;
+        data.blocked_total += count;
+    });
+    if !SAVE_PENDING.with(|pending| pending.replace(true)) {
+        glib::timeout_add_local_once(Duration::from_secs(2), flush);
+    }
+}
+
+/// Writes counts still waiting, before the browser quits.
+pub fn flush() {
+    if SAVE_PENDING.with(|pending| pending.replace(false)) {
+        DATA.with(|d| save(&d.borrow()));
     }
 }
 

@@ -15,6 +15,9 @@
  *   playing ("media"), and "media-toggle" pauses what plays in all of a page's frames, or
  *   plays again what it paused. This runs in a script world of its own, apart from the page's
  *   scripts.
+ * - Shield counts: WebKit tells the browser nothing about the loads its content rules stop, but
+ *   it writes a line about each to the page's console; those lines are gathered per page and
+ *   sent to the browser ("blocked"), which counts them for the tab and the day.
  * - Autofill: in a page's main frame, another world of its own (webext/forms.js) notices
  *   sign-in and other form fields getting focus and forms being sent, and tells the browser
  *   ("forms"), with the page's address from WebKit, never from the page. The browser answers
@@ -403,6 +406,65 @@ on_page_message (WebKitWebPage     *page,
     return TRUE;
 }
 
+/* ── Shield counts ─────────────────────────────────────────────────────────────────── */
+
+/* The line WebKit writes for each load a content rule stops, frames included (the first
+ * address is then still the tab's page):
+ *   "Content blocker prevented frame displaying <page> from loading a resource from <url>" */
+#define BLOCKED_START "Content blocker prevented frame displaying "
+#define BLOCKED_MIDDLE " from loading a resource from "
+#define PAGE_BLOCKED "peepwick-blocked"
+/* Pairs of addresses kept between two messages; more in a quarter of a second are left out. */
+#define BLOCKED_MAX 500
+
+/* Sends what a page gathered: (page, resource) pairs. */
+static gboolean
+send_blocked (gpointer data)
+{
+    WebKitWebPage *page = webkit_web_extension_get_page (web_extension, *(guint64 *) data);
+    if (!page)
+        return G_SOURCE_REMOVE;
+    GPtrArray *pending = g_object_steal_data (G_OBJECT (page), PAGE_BLOCKED);
+    if (!pending)
+        return G_SOURCE_REMOVE;
+    GVariantBuilder builder;
+    g_variant_builder_init (&builder, G_VARIANT_TYPE ("a(ss)"));
+    for (guint i = 0; i + 1 < pending->len; i += 2)
+        g_variant_builder_add (&builder, "(ss)", g_ptr_array_index (pending, i),
+                               g_ptr_array_index (pending, i + 1));
+    tell_browser (page, "blocked", g_variant_builder_end (&builder));
+    g_ptr_array_unref (pending);
+    return G_SOURCE_REMOVE;
+}
+
+/* The console signal is deprecated, but it is the only place WebKitGTK says what it blocked. */
+G_GNUC_BEGIN_IGNORE_DEPRECATIONS
+static void
+on_console_message (WebKitWebPage *page, WebKitConsoleMessage *message, gpointer data)
+{
+    const char *text = webkit_console_message_get_text (message);
+    if (!has_config || !text || !g_str_has_prefix (text, BLOCKED_START))
+        return;
+    const char *document = text + strlen (BLOCKED_START);
+    const char *middle = strstr (document, BLOCKED_MIDDLE);
+    if (!middle)
+        return;
+    GPtrArray *pending = g_object_get_data (G_OBJECT (page), PAGE_BLOCKED);
+    if (!pending) {
+        pending = g_ptr_array_new_with_free_func (g_free);
+        g_object_set_data_full (G_OBJECT (page), PAGE_BLOCKED, pending,
+                                (GDestroyNotify) g_ptr_array_unref);
+        guint64 *id = g_new (guint64, 1);
+        *id = webkit_web_page_get_id (page);
+        g_timeout_add_full (G_PRIORITY_DEFAULT, 250, send_blocked, id, g_free);
+    }
+    if (pending->len >= BLOCKED_MAX * 2)
+        return;
+    g_ptr_array_add (pending, g_strndup (document, middle - document));
+    g_ptr_array_add (pending, g_strdup (middle + strlen (BLOCKED_MIDDLE)));
+}
+G_GNUC_END_IGNORE_DEPRECATIONS
+
 static void
 on_page_created (WebKitWebExtension *extension,
                  WebKitWebPage      *page,
@@ -410,6 +472,7 @@ on_page_created (WebKitWebExtension *extension,
 {
     g_signal_connect (page, "send-request", G_CALLBACK (on_send_request), NULL);
     g_signal_connect (page, "user-message-received", G_CALLBACK (on_page_message), NULL);
+    g_signal_connect (page, "console-message-sent", G_CALLBACK (on_console_message), NULL);
 }
 
 static void

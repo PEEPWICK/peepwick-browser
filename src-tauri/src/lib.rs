@@ -150,6 +150,7 @@ pub fn run() {
                 readinglist::flush();
                 passwords::flush();
                 formdata::flush();
+                stats::flush();
                 downloads::flush();
                 permissions::flush();
                 // After the saves: it may wait a moment for speech-dispatcher.

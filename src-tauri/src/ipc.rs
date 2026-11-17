@@ -446,9 +446,12 @@ pub(crate) fn invoke(
             .unwrap_or(Value::Null),
         "tasks" => to_json(crate::tasks::rows(crate::tasks::tab_processes()))?,
         "report" => crate::diagnostics::report(),
-        "extensionsList" | "shieldReport" | "translationLanguages" | "translationModels" => {
-            json!([])
-        }
+        "shieldReport" => to_json(
+            win.active_tab()
+                .map(|tab| tab.blocked_report(12))
+                .unwrap_or_default(),
+        )?,
+        "extensionsList" | "translationLanguages" | "translationModels" => json!([]),
         _ => {
             eprintln!("[ipc] not ported yet: invoke {method}");
             Value::Null
