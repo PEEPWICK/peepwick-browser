@@ -313,6 +313,20 @@ async fn run(app: &AppHandle, win: &Rc<BrowserWindow>, step: &Value, out: &str) 
                 let _ = view.evaluate_javascript_future(&js, None, None).await;
             }
         }
+        // A secret in the (test) keyring, as another browser keeps one.
+        "storeSecret" => {
+            let (label, app_name, secret) = (
+                get("label").to_string(),
+                get("application").to_string(),
+                get("secret").to_string(),
+            );
+            let stored = tauri::async_runtime::spawn_blocking(move || {
+                crate::secrets::store(&label, &[("application", &app_name)], secret.as_bytes())
+                    .map_err(|e| e.to_string())
+            })
+            .await;
+            eprintln!("[harness] stored secret {stored:?}");
+        }
         // The passwords page's CSV import and export, without their file dialogs.
         "passwordsCsv" => {
             if !get("export").is_empty() {

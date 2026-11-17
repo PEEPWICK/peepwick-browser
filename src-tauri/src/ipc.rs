@@ -106,12 +106,19 @@ pub async fn pw_invoke(
             })
             .unwrap_or_default();
         let skip_duplicates = args.get(2).and_then(Value::as_bool) != Some(false);
-        let read = tauri::async_runtime::spawn_blocking(move || importers::read(&source, &kinds))
-            .await
-            .map_err(|e| e.to_string())?;
+        // Firefox's primary password, when the profile has one.
+        let primary = short(args.get(3), 1000);
+        let read = tauri::async_runtime::spawn_blocking(move || {
+            importers::read(&source, &kinds, &primary)
+        })
+        .await
+        .map_err(|e| e.to_string())?;
         let Some(read) = read else {
             return Ok(Value::Null);
         };
+        if read.has_passwords() {
+            crate::passwords::ready(true).await;
+        }
         return on_main(&app, &label, move |_| {
             importers::finish(read.clone(), skip_duplicates)
         })

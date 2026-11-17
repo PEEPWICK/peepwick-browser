@@ -1,8 +1,10 @@
 //! Importing from other browsers on this computer, the Chromium family and the Firefox family
-//! (Snap and Flatpak installs included): bookmarks, with the icons of the bookmarked sites, and
-//! history. Browsers keep their databases locked while they run, so SQLite files are copied to a
-//! private temporary folder and read from there. Only files on this computer are read; nothing
-//! is sent anywhere. Passwords, cookies and form data come with those features.
+//! (Snap and Flatpak installs included): bookmarks, with the icons of the bookmarked sites,
+//! history, and saved passwords (browsercrypto.rs decrypts them, with the browser's key from the
+//! desktop's keyring or Firefox's primary password). Browsers keep their databases locked while
+//! they run, so SQLite files are copied to a private temporary folder and read from there. Only
+//! files on this computer are read; nothing is sent anywhere. Cookies and form data come with
+//! those features.
 
 use std::collections::{HashMap, HashSet};
 use std::os::unix::fs::{DirBuilderExt, MetadataExt};
@@ -16,9 +18,11 @@ use serde_json::{Value, json};
 use webkit2gtk::glib;
 
 use crate::bookmarks::{self, Draft, DraftTree, Parsed};
+use crate::browsercrypto::{self, ChromiumKeys, FirefoxError};
 use crate::history::{self, Visit};
 use crate::i18n::{Var, t, tv};
 use crate::pages;
+use crate::passwords::PlainLogin;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Family {
@@ -158,6 +162,9 @@ fn chromium_kinds(dir: &Path) -> Vec<&'static str> {
     if dir.join("Bookmarks").is_file() {
         kinds.push("bookmarks");
     }
+    if dir.join("Login Data").is_file() {
+        kinds.push("passwords");
+    }
     if dir.join("History").is_file() {
         kinds.push("history");
     }
@@ -165,11 +172,17 @@ fn chromium_kinds(dir: &Path) -> Vec<&'static str> {
 }
 
 fn firefox_kinds(dir: &Path) -> Vec<&'static str> {
+    let mut kinds = Vec::new();
     if dir.join("places.sqlite").is_file() {
-        vec!["bookmarks", "history"]
-    } else {
-        Vec::new()
+        kinds.push("bookmarks");
     }
+    if dir.join("logins.json").is_file() && dir.join("key4.db").is_file() {
+        kinds.push("passwords");
+    }
+    if dir.join("places.sqlite").is_file() {
+        kinds.push("history");
+    }
+    kinds
 }
 
 fn kinds(family: Family, dir: &Path) -> Vec<&'static str> {
@@ -724,6 +737,159 @@ fn import_favicons(family: Family, dir: &Path, hosts: &HashSet<String>) -> usize
         .count()
 }
 
+/// Chromium counts time in microseconds since 1601: milliseconds since 1970, if set.
+fn chromium_ms(micros: Option<i64>) -> Option<u64> {
+    micros
+        .filter(|m| *m > 0)
+        .and_then(|m| u64::try_from(m / 1000 - WEBKIT_EPOCH_MS).ok())
+}
+
+/// Chromium's saved logins: Login Data, and Login Data For Account (a signed-in Chrome's account
+/// passwords). The logins, the sites never to save for, and how many couldn't be decrypted.
+fn chromium_passwords(
+    dir: &Path,
+    keys: &ChromiumKeys,
+) -> Result<(Vec<PlainLogin>, Vec<String>, usize), String> {
+    type Row = (
+        String,
+        Option<String>,
+        Option<Vec<u8>>,
+        Option<i64>,
+        Option<i64>,
+        i64,
+    );
+    let mut logins = Vec::new();
+    let mut never = Vec::new();
+    let mut undecrypted = 0;
+    for name in ["Login Data", "Login Data For Account"] {
+        if !dir.join(name).is_file() {
+            continue;
+        }
+        let rows: Vec<Row> = with_copy(dir, name, |db| {
+            let columns: HashSet<String> = db
+                .prepare("PRAGMA table_info(logins)")?
+                .query_map([], |row| row.get::<_, String>(1))?
+                .collect::<rusqlite::Result<_>>()?;
+            let modified = if columns.contains("date_password_modified") {
+                "date_password_modified"
+            } else {
+                "0"
+            };
+            let blocked = if columns.contains("blacklisted_by_user") {
+                "blacklisted_by_user"
+            } else {
+                "0"
+            };
+            let mut statement = db.prepare(&format!(
+                "SELECT origin_url, username_value, password_value, date_created, {modified}, {blocked} FROM logins"
+            ))?;
+            statement
+                .query_map([], |row| {
+                    Ok((
+                        row.get(0)?,
+                        row.get(1)?,
+                        row.get(2)?,
+                        row.get(3)?,
+                        row.get(4)?,
+                        row.get::<_, Option<i64>>(5)?.unwrap_or(0),
+                    ))
+                })?
+                .collect()
+        })?;
+        for (origin, username, secret, created, modified, blocked) in rows {
+            if !(origin.starts_with("https:") || origin.starts_with("http:")) {
+                continue;
+            }
+            if blocked != 0 {
+                never.push(origin);
+                continue;
+            }
+            let Some(plain) = browsercrypto::decrypt_chromium(&secret.unwrap_or_default(), keys)
+            else {
+                undecrypted += 1;
+                continue;
+            };
+            let created = chromium_ms(created);
+            logins.push(PlainLogin {
+                origin,
+                username: username.unwrap_or_default(),
+                password: String::from_utf8_lossy(&plain).into_owned(),
+                note: None,
+                created,
+                updated: chromium_ms(modified).or(created),
+            });
+        }
+    }
+    Ok((logins, never, undecrypted))
+}
+
+/// Firefox's saved logins, or that the profile's primary password is needed.
+enum FirefoxLogins {
+    Read(Vec<PlainLogin>, Vec<String>),
+    NeedsPrimary,
+}
+
+fn firefox_passwords(dir: &Path, primary: &str) -> Result<FirefoxLogins, String> {
+    type Keys = (Vec<u8>, Vec<u8>, Vec<(Vec<u8>, Vec<u8>)>);
+    let (item1, item2, privates): Keys = with_copy(dir, "key4.db", |db| {
+        let (item1, item2) = db.query_row(
+            "SELECT item1, item2 FROM metadata WHERE id = 'password'",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )?;
+        let privates = db
+            .prepare("SELECT a11, a102 FROM nssPrivate")?
+            .query_map([], |row| {
+                Ok((
+                    row.get::<_, Option<Vec<u8>>>(0)?,
+                    row.get::<_, Option<Vec<u8>>>(1)?,
+                ))
+            })?
+            .filter_map(Result::ok)
+            .filter_map(|(a11, a102)| Some((a11?, a102?)))
+            .collect();
+        Ok((item1, item2, privates))
+    })?;
+    let keys = match browsercrypto::login_keys(&item1, &item2, &privates, primary) {
+        Ok(keys) => keys,
+        Err(FirefoxError::PrimaryPassword) => return Ok(FirefoxLogins::NeedsPrimary),
+    };
+    let text = std::fs::read_to_string(dir.join("logins.json")).map_err(|e| e.to_string())?;
+    let json: Value = serde_json::from_str(&text).map_err(|e| e.to_string())?;
+    let mut logins = Vec::new();
+    for login in json["logins"].as_array().into_iter().flatten() {
+        let origin = login["hostname"].as_str().unwrap_or_default();
+        if !(origin.starts_with("https:") || origin.starts_with("http:")) {
+            continue;
+        }
+        let field = |key: &str| {
+            browsercrypto::decrypt_login_field(login[key].as_str().unwrap_or_default(), &keys)
+        };
+        // One unreadable login doesn't stop the rest.
+        let (Some(username), Some(password)) =
+            (field("encryptedUsername"), field("encryptedPassword"))
+        else {
+            continue;
+        };
+        let ms = |key: &str| login[key].as_f64().filter(|n| *n > 0.0).map(|n| n as u64);
+        logins.push(PlainLogin {
+            origin: origin.to_string(),
+            username,
+            password,
+            note: None,
+            created: ms("timeCreated"),
+            updated: ms("timePasswordChanged").or(ms("timeCreated")),
+        });
+    }
+    let never = json["disabledHosts"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|h| h.as_str().map(str::to_string))
+        .collect();
+    Ok(FirefoxLogins::Read(logins, never))
+}
+
 /// What was read from a profile, for the main thread to put in place.
 #[derive(Clone, Debug)]
 pub struct Imported {
@@ -731,12 +897,24 @@ pub struct Imported {
     bookmarks: Option<(DraftTree, usize)>,
     history: Option<usize>,
     favicons: usize,
+    /// Logins in the clear and the sites never to save for: they stay in memory, on their way
+    /// into ours.
+    passwords: Option<(Vec<PlainLogin>, Vec<String>)>,
+    needs_primary: bool,
     failed: Vec<&'static str>,
 }
 
+impl Imported {
+    /// Whether putting it in place needs the passwords' key.
+    pub fn has_passwords(&self) -> bool {
+        self.passwords.is_some()
+    }
+}
+
 /// Reads the chosen kinds from a profile the last search found. History goes into ours
-/// straight away; bookmarks wait for `finish` on the main thread. Not on the main thread.
-pub fn read(source_id: &str, kinds: &[String]) -> Option<Imported> {
+/// straight away; bookmarks and passwords wait for `finish` on the main thread. Not on the main
+/// thread: a Chromium browser's keyring secret may need the keyring unlocked.
+pub fn read(source_id: &str, kinds: &[String], primary: &str) -> Option<Imported> {
     let source = FOUND
         .lock()
         .ok()?
@@ -749,6 +927,8 @@ pub fn read(source_id: &str, kinds: &[String]) -> Option<Imported> {
         bookmarks: None,
         history: None,
         favicons: 0,
+        passwords: None,
+        needs_primary: false,
         failed: Vec::new(),
     };
     if wants("bookmarks") {
@@ -766,6 +946,35 @@ pub fn read(source_id: &str, kinds: &[String]) -> Option<Imported> {
             }
         }
     }
+    if wants("passwords") {
+        match source.family {
+            Family::Chromium => {
+                let keys = browsercrypto::chromium_keys(source.browser);
+                match chromium_passwords(&source.dir, &keys) {
+                    Ok((logins, never, undecrypted)) => {
+                        if undecrypted > 0 && logins.is_empty() {
+                            imported.failed.push("passwords");
+                        }
+                        imported.passwords = Some((logins, never));
+                    }
+                    Err(error) => {
+                        crate::log_error!("[import] passwords failed: {error}");
+                        imported.failed.push("passwords");
+                    }
+                }
+            }
+            Family::Firefox => match firefox_passwords(&source.dir, primary) {
+                Ok(FirefoxLogins::Read(logins, never)) => {
+                    imported.passwords = Some((logins, never));
+                }
+                Ok(FirefoxLogins::NeedsPrimary) => imported.needs_primary = true,
+                Err(error) => {
+                    crate::log_error!("[import] passwords failed: {error}");
+                    imported.failed.push("passwords");
+                }
+            },
+        }
+    }
     if wants("history") {
         match read_history(source.family, &source.dir) {
             Ok(visits) => imported.history = Some(history::import_visits(&visits)),
@@ -779,7 +988,7 @@ pub fn read(source_id: &str, kinds: &[String]) -> Option<Imported> {
 }
 
 /// Adds the bookmarks read and says what the import brought, for the dialog.
-pub fn finish(imported: Imported, skip_duplicates: bool) -> Value {
+pub fn finish(mut imported: Imported, skip_duplicates: bool) -> Value {
     let mut result = match imported.bookmarks {
         Some((tree, skipped)) => bookmarks::import_parsed(
             Parsed { tree, skipped },
@@ -791,6 +1000,19 @@ pub fn finish(imported: Imported, skip_duplicates: bool) -> Value {
     result["favicons"] = json!(imported.favicons);
     if let Some(history) = imported.history {
         result["history"] = json!(history);
+    }
+    if let Some((logins, never)) = &imported.passwords {
+        let (added, duplicates) = crate::passwords::import_logins(logins, never);
+        result["passwords"] = json!(added);
+        result["passwordDuplicates"] = json!(duplicates);
+        // Read but not kept: the keyring stayed locked.
+        if added + duplicates == 0 && !logins.is_empty() && !imported.failed.contains(&"passwords")
+        {
+            imported.failed.push("passwords");
+        }
+    }
+    if imported.needs_primary {
+        result["needsPrimaryPassword"] = json!(true);
     }
     if !imported.failed.is_empty() {
         result["failed"] = json!(imported.failed);

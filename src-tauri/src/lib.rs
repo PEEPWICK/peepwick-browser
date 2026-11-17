@@ -6,6 +6,7 @@
 mod actions;
 mod autofill;
 mod bookmarks;
+mod browsercrypto;
 mod cleardata;
 mod desktop;
 mod diagnostics;

@@ -1,6 +1,7 @@
 //! The desktop's Secret Service (GNOME Keyring, KWallet's Secret Service) over D-Bus: reading
 //! a secret by its attributes, and keeping one. The browser keeps one key there, for its saved
-//! passwords (passwords.rs).
+//! passwords (passwords.rs), and reads the keys Chromium-based browsers keep there, to import
+//! their passwords (browsercrypto.rs).
 //!
 //! Blocking, and a locked keyring makes the desktop ask for its password: never call these on
 //! the main thread. Secrets travel over the session bus unencrypted ("plain"), which the spec
