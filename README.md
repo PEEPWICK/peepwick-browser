@@ -49,9 +49,11 @@ It is written in Rust with [Tauri](https://tauri.app/), and draws pages with
   Search with DuckDuckGo, Brave Search, Startpage, Google, Ecosia or Bing; suggestions from your
   search engine come only if you turn them on.
 - **Bookmarks.** A bookmarks bar with folders, a bookmark manager with search, drag and drop and
-  undo, and the star in the address bar (<kbd>Ctrl</kbd>+<kbd>D</kbd>). Bring your bookmarks and
-  history over from Chrome, Brave, Firefox and the other browsers on your computer, or in the HTML
-  file every browser exports, and take your bookmarks with you the same way.
+  undo, and the star in the address bar (<kbd>Ctrl</kbd>+<kbd>D</kbd>). Bring your bookmarks,
+  history and passwords over from Chrome, Brave, Firefox and the other browsers on your computer,
+  Firefox profiles with a primary password too. Bookmarks also come in the HTML file every browser
+  exports, and passwords in a CSV export from Chrome, Firefox, Bitwarden, 1Password, LastPass or
+  KeePassXC; both go back out the same way.
 - **Pages of its own, in the same calm style.** The new tab page shows the sites you visit most;
   history, downloads, bookmarks and settings sit in the same frame. Turkish or English; dark,
   light or your system's theme.
@@ -93,6 +95,11 @@ It is written in Rust with [Tauri](https://tauri.app/), and draws pages with
   decide.
 - **Site permissions.** Location, camera, microphone and notifications are asked for above the
   page, never granted silently. Answers can be remembered per site and changed in Settings.
+- **Passwords.** After you sign in, the browser offers to save or update the password. Next time a
+  short list under the field fills it in, only on the same site and only when you pick it. Sign-up
+  forms get a strong password on request. Passwords are encrypted with a key your desktop's keyring
+  keeps (GNOME Keyring, KWallet), and the passwords page checks for weak and reused ones on your
+  computer.
 - **Signed updates.** The browser looks for a new version at startup and every four hours,
   downloads it in the background and installs it when you restart. It installs nothing whose
   signature doesn't match.
@@ -185,7 +192,9 @@ Pages you visit load as in any browser, and WebKit fetches their icons along wit
 add to the reading list loads out of sight, to keep its article. "Copy image" fetches the image
 again from its site. Notifications from sites you allow go through your desktop's
 notification service. The error log behind "Report a bug" stays on this computer (in a file only
-if you turn that on); it reaches GitHub only when you send a report yourself.
+if you turn that on); it reaches GitHub only when you send a report yourself. Importing reads the
+other browser's files on this computer; nothing leaves it. For Chromium-based browsers, the key
+their passwords are encrypted with is read from your desktop's keyring.
 
 ## Build from source
 
