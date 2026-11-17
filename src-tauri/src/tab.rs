@@ -733,6 +733,9 @@ impl Tab {
             match event {
                 LoadEvent::Started => {
                     crate::permissions::deny_pending_for(tab.id);
+                    if let Some(win) = tab.window() {
+                        crate::autofill::hide_tab(&win, tab.id);
+                    }
                     // A new load ends the last one's HTTPS attempt; the web process reports this
                     // one's after this.
                     security::https_settled(tab.id);
@@ -932,10 +935,20 @@ impl Tab {
         // HTTPS-Only, from the web process (webext/peepwick-webext.c): the page was moved to
         // HTTPS, or its secure version sent it back to HTTP and the load stopped.
         let tab = tab_of.clone();
-        view.connect_user_message_received(move |_, message| {
+        view.connect_user_message_received(move |page, message| {
             let Some(tab) = tab() else { return false };
             let parameters = message.parameters();
             match message.name().as_deref() {
+                // A sign-in field got focus or lost it, a key moved through the list of saved
+                // logins, or a sign-in was sent, with WebKit's address for the page.
+                Some("forms") => {
+                    if let Some((kind, payload, uri)) =
+                        parameters.and_then(|p| p.get::<(String, String, String)>())
+                    {
+                        crate::autofill::page_message(&tab, page, &kind, &payload, &uri);
+                    }
+                    true
+                }
                 // A frame's video or audio started or stopped playing.
                 Some("media") => {
                     let playing = parameters.and_then(|p| p.get::<bool>()) == Some(true);

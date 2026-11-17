@@ -282,6 +282,50 @@ async fn run(app: &AppHandle, win: &Rc<BrowserWindow>, step: &Value, out: &str) 
             crate::window::open_urls(app, urls);
         }
         "quit" => crate::session::quit(app),
+        // The list of saved logins under a field: what it offers, where it is, what it shows.
+        "autofill" => {
+            let shown = match crate::autofill::popup_view(win) {
+                Some(view) if view.is_visible() => glib::future_with_timeout(
+                    Duration::from_secs(5),
+                    view.evaluate_javascript_future(
+                        "[...document.querySelectorAll('.autofill-item')].map(li => li.className + ': ' + li.innerText.replace(/\\n/g, ' / ')).join(' | ')",
+                        None,
+                        None,
+                    ),
+                )
+                .await
+                .map(describe)
+                .unwrap_or_else(|_| "timeout".into()),
+                _ => "hidden".into(),
+            };
+            eprintln!(
+                "[harness] autofill {} shows {shown}",
+                crate::autofill::describe(win)
+            );
+        }
+        // A press on one of the list's rows, as the pointer makes it.
+        "autofillClick" => {
+            if let Some(view) = crate::autofill::popup_view(win) {
+                let js = format!(
+                    "document.querySelectorAll('.autofill-item')[{}]?.dispatchEvent(new MouseEvent('mousedown', {{ bubbles: true, cancelable: true }}))",
+                    step.get("index").and_then(Value::as_u64).unwrap_or(0)
+                );
+                let _ = view.evaluate_javascript_future(&js, None, None).await;
+            }
+        }
+        // The passwords page's CSV import and export, without their file dialogs.
+        "passwordsCsv" => {
+            if !get("export").is_empty() {
+                crate::passwords::ready(false).await;
+                let done = crate::passwords::export_to(std::path::Path::new(get("export")));
+                eprintln!("[harness] passwords exported {done}");
+            }
+            if !get("import").is_empty() {
+                crate::passwords::ready(true).await;
+                let result = crate::passwords::import_csv_from(std::path::Path::new(get("import")));
+                eprintln!("[harness] passwords imported {result}");
+            }
+        }
         other => eprintln!("[harness] unknown step {other}"),
     }
 }
@@ -338,6 +382,22 @@ async fn capture(win: &Rc<BrowserWindow>, path: &str) -> Result<(), String> {
     }
     for (shot, rect) in &pages {
         cr.set_source_surface(shot, rect.x, rect.y)
+            .map_err(|e| e.to_string())?;
+        cr.paint().map_err(|e| e.to_string())?;
+    }
+    // The list of saved logins over the page, where it sits.
+    if let Some(popup) = crate::autofill::popup_view(win).filter(|v| v.is_visible())
+        && let Some((x, y)) = popup.translate_coordinates(&ui, 0, 0)
+        && let Ok(Ok(shot)) = glib::future_with_timeout(
+            Duration::from_secs(5),
+            popup.snapshot_future(
+                SnapshotRegion::Visible,
+                SnapshotOptions::TRANSPARENT_BACKGROUND,
+            ),
+        )
+        .await
+    {
+        cr.set_source_surface(&shot, f64::from(x), f64::from(y))
             .map_err(|e| e.to_string())?;
         cr.paint().map_err(|e| e.to_string())?;
     }

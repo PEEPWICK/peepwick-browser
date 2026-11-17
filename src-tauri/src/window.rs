@@ -149,6 +149,8 @@ pub struct BrowserWindow {
     overlay: gtk::Overlay,
     /// Holds the tab views; passes input through wherever there is no view.
     fixed: gtk::Fixed,
+    /// Over the tab views: the list of saved logins under a form field (autofill.rs).
+    popups: gtk::Fixed,
     ui: WebView,
     context: WebContext,
     web_settings: webkit2gtk::Settings,
@@ -485,6 +487,11 @@ impl BrowserWindow {
         fixed.set_valign(gtk::Align::Fill);
         overlay.add_overlay(&fixed);
         overlay.set_overlay_pass_through(&fixed, true);
+        let popups = gtk::Fixed::new();
+        popups.set_halign(gtk::Align::Fill);
+        popups.set_valign(gtk::Align::Fill);
+        overlay.add_overlay(&popups);
+        overlay.set_overlay_pass_through(&popups, true);
         vbox.pack_start(&overlay, true, true, 0);
         overlay.show_all();
         // Transparent, so pages show through while the UI is on top for a menu.
@@ -514,6 +521,7 @@ impl BrowserWindow {
             weak: weak.clone(),
             overlay,
             fixed,
+            popups,
             ui: ui.clone(),
             context,
             web_settings: web_settings(),
@@ -639,6 +647,7 @@ impl BrowserWindow {
         }
         crate::speech::stop(&self.label);
         crate::menu::window_closed(self.id);
+        crate::autofill::forget(self.id);
         WINDOWS.with(|windows| windows.borrow_mut().retain(|w| w.id != self.id));
         // Private browsing data goes with the last private window.
         if self.incognito && !all().iter().any(|w| w.incognito) {
@@ -671,6 +680,35 @@ impl BrowserWindow {
 
     pub fn ui_view(&self) -> WebView {
         self.ui.clone()
+    }
+
+    /// The interface's WebKit context, which the list of saved logins shares (autofill.rs).
+    pub fn ui_context(&self) -> Option<WebContext> {
+        self.ui.context()
+    }
+
+    /// The layer over the tab views that the list of saved logins sits in.
+    pub fn popup_layer(&self) -> &gtk::Fixed {
+        &self.popups
+    }
+
+    /// The size of the area under the toolbar and over the tabs: the whole window's content.
+    pub fn content_size(&self) -> (i32, i32) {
+        (
+            self.overlay.allocated_width(),
+            self.overlay.allocated_height(),
+        )
+    }
+
+    /// Shows a view over the pages at this place and size, without taking the focus.
+    pub fn show_popup(&self, view: &WebView, x: i32, y: i32, width: i32, height: i32) {
+        if view.parent().is_none() {
+            self.popups.put(view, x, y);
+        } else {
+            self.popups.move_(view, x, y);
+        }
+        view.set_size_request(width, height);
+        view.show();
     }
 
     pub fn ui_on_top(&self) -> bool {
@@ -951,6 +989,9 @@ impl BrowserWindow {
             return;
         };
         let previous = self.active_tab();
+        if previous.as_ref().is_some_and(|p| p.id != id) {
+            crate::autofill::hide(self);
+        }
         self.active_workspace.replace(workspace_id.clone());
         self.set_active_in_workspace(&workspace_id, id);
         tab.last_active.set(now_ms());
@@ -1414,6 +1455,9 @@ impl BrowserWindow {
     pub fn set_overlay(&self, open: bool) {
         if self.overlay_open.replace(open) == open {
             return;
+        }
+        if open {
+            crate::autofill::hide(self);
         }
         self.restack();
         if open {

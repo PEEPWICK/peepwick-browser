@@ -2859,6 +2859,7 @@ dependencies = [
  "glib",
  "gtk",
  "javascriptcore-rs",
+ "openssl",
  "percent-encoding",
  "psl",
  "regex",
@@ -2874,6 +2875,7 @@ dependencies = [
  "url",
  "webkit2gtk",
  "x509-parser",
+ "zbus",
 ]
 
 [[package]]

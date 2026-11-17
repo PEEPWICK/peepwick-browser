@@ -4,6 +4,7 @@
 //! views managed here. See `docs/tauri.md` for the plan of the move from Electron.
 
 mod actions;
+mod autofill;
 mod bookmarks;
 mod cleardata;
 mod desktop;
@@ -24,12 +25,15 @@ mod notify;
 mod omnibox;
 mod pages;
 mod pagescripts;
+mod passwordcsv;
+mod passwords;
 mod paths;
 mod permissions;
 mod reader;
 mod readinglist;
 mod safebrowsing;
 mod search;
+mod secrets;
 mod security;
 mod session;
 mod settings;
@@ -111,6 +115,7 @@ pub fn run() {
             zoom::load();
             bookmarks::load();
             readinglist::load();
+            passwords::load();
             downloads::load();
             permissions::load();
             history::open();
@@ -139,6 +144,7 @@ pub fn run() {
             tauri::RunEvent::Exit => {
                 bookmarks::flush();
                 readinglist::flush();
+                passwords::flush();
                 downloads::flush();
                 permissions::flush();
                 // After the saves: it may wait a moment for speech-dispatcher.

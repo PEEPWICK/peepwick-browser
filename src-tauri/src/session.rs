@@ -121,6 +121,7 @@ pub fn save_before_exit() {
     }
     crate::bookmarks::flush();
     crate::readinglist::flush();
+    crate::passwords::flush();
     crate::downloads::flush();
     crate::permissions::flush();
 }

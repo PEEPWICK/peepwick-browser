@@ -15,6 +15,9 @@
  *   playing ("media"), and "media-toggle" pauses what plays in all of a page's frames, or
  *   plays again what it paused. This runs in a script world of its own, apart from the page's
  *   scripts.
+ * - Saved passwords: in a page's main frame, another world of its own notices sign-in fields
+ *   getting focus and sign-ins being sent, and tells the browser ("forms"), with the page's
+ *   address from WebKit, never from the page. The browser answers with what to fill ("forms").
  *
  * The browser hands each new web process its settings as it starts and sends a "config"
  * message when they change (src/window.rs): (gpc, https-only, sites allowed over HTTP).
@@ -317,6 +320,180 @@ toggle_media (WebKitWebPage *page)
            || in_frames (page, "__peepwickPlayFirst()", FALSE);
 }
 
+/* ── Saved passwords ───────────────────────────────────────────────────────────────── */
+
+static WebKitScriptWorld *forms_world = NULL;
+/* Tabs' processes get settings; reader views' don't, and have no sign-in forms. */
+static gboolean has_config = FALSE;
+
+/* Set up in a page's main frame as its window is: tells the browser about sign-in fields
+ * getting focus or losing it, keys that move through the browser's list of saved logins while
+ * it's open, and sign-ins being sent; fills in what the browser sends back. */
+static const char FORMS_JS[] =
+    "(() => {\n"
+    "  const send = globalThis.__peepwickFormsSend\n"
+    "  delete globalThis.__peepwickFormsSend\n"
+    "  const tell = (type, payload) => send(type, JSON.stringify(payload === undefined ? null : payload))\n"
+    "  const TEXT_TYPES = new Set(['text', 'email', 'tel', 'url', 'number', 'search'])\n"
+    "  const visible = (el) => {\n"
+    "    const r = el.getBoundingClientRect()\n"
+    "    return r.width > 0 && r.height > 0 && getComputedStyle(el).visibility !== 'hidden'\n"
+    "  }\n"
+    "  const inputsIn = (scope) => [...scope.querySelectorAll('input')].filter((i) => !i.disabled && !i.readOnly && visible(i))\n"
+    "  const passwordFields = (scope) => inputsIn(scope).filter((i) => i.type === 'password')\n"
+    "  const scopeOf = (input) => input.form || document\n"
+    "  const usernameFor = (password) => {\n"
+    "    const inputs = inputsIn(scopeOf(password)).filter((i) => TEXT_TYPES.has(i.type))\n"
+    "    const tagged = inputs.find((i) => /\\b(username|email)\\b/.test(i.autocomplete))\n"
+    "    if (tagged) return tagged\n"
+    "    // Otherwise the last text field before the password.\n"
+    "    return inputs.filter((i) => i.compareDocumentPosition(password) & Node.DOCUMENT_POSITION_FOLLOWING).at(-1) || null\n"
+    "  }\n"
+    "  const classify = (input) => {\n"
+    "    if (input.type === 'password') {\n"
+    "      const several = passwordFields(scopeOf(input)).length >= 2\n"
+    "      return /new-password/.test(input.autocomplete) || several ? 'new-password' : 'password'\n"
+    "    }\n"
+    "    if (!TEXT_TYPES.has(input.type) || input.autocomplete === 'off' || /one-time-code|cc-/.test(input.autocomplete)) return null\n"
+    "    if (/\\busername\\b/.test(input.autocomplete)) return 'username'\n"
+    "    const passwords = passwordFields(scopeOf(input))\n"
+    "    return passwords.length > 0 && usernameFor(passwords[0]) === input ? 'username' : null\n"
+    "  }\n"
+    "  const setValue = (input, value) => {\n"
+    "    // The prototype's setter, so frameworks that track the value see a real change.\n"
+    "    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, value)\n"
+    "    input.dispatchEvent(new Event('input', { bubbles: true }))\n"
+    "    input.dispatchEvent(new Event('change', { bubbles: true }))\n"
+    "  }\n"
+    "  const rectOf = (input) => {\n"
+    "    const r = input.getBoundingClientRect()\n"
+    "    return { x: r.left, y: r.top, width: r.width, height: r.height }\n"
+    "  }\n"
+    "  let active = null\n"
+    "  let popupOpen = false\n"
+    "  let popupSelected = false\n"
+    "  let lastSubmit = ''\n"
+    "  document.addEventListener('focusin', (event) => {\n"
+    "    const input = event.target\n"
+    "    if (!(input instanceof HTMLInputElement)) return\n"
+    "    const kind = classify(input)\n"
+    "    if (!kind) return\n"
+    "    active = input\n"
+    "    tell('focus', { kind, rect: rectOf(input) })\n"
+    "  }, true)\n"
+    "  document.addEventListener('focusout', (event) => {\n"
+    "    if (event.target === active) tell('blur')\n"
+    "  }, true)\n"
+    "  // A sign-in, or a new password being set: the browser may offer to save it.\n"
+    "  const capture = (scope) => {\n"
+    "    const passwords = passwordFields(scope).filter((p) => p.value)\n"
+    "    if (passwords.length === 0) return\n"
+    "    const many = passwords.length >= 2\n"
+    "    // In change-password forms the new password is the second field.\n"
+    "    const password = many ? passwords[1].value : passwords[0].value\n"
+    "    const user = usernameFor(passwords[0])\n"
+    "    const username = user ? user.value : ''\n"
+    "    const signature = username + '\\u0000' + password\n"
+    "    if (signature === lastSubmit) return\n"
+    "    lastSubmit = signature\n"
+    "    setTimeout(() => { lastSubmit = '' }, 3000)\n"
+    "    tell('submit', { username, password, newPassword: many || passwords.some((p) => /new-password/.test(p.autocomplete)) })\n"
+    "  }\n"
+    "  document.addEventListener('keydown', (event) => {\n"
+    "    if (!active || event.target !== active) return\n"
+    "    if (popupOpen && ['ArrowDown', 'ArrowUp', 'Escape', 'Tab'].includes(event.key)) {\n"
+    "      if (event.key !== 'Tab') event.preventDefault()\n"
+    "      tell('key', event.key)\n"
+    "      return\n"
+    "    }\n"
+    "    if (popupOpen && popupSelected && event.key === 'Enter') {\n"
+    "      event.preventDefault()\n"
+    "      tell('key', 'Enter')\n"
+    "      return\n"
+    "    }\n"
+    "    if (event.key === 'Enter') capture(scopeOf(active))\n"
+    "  }, true)\n"
+    "  document.addEventListener('submit', (event) => {\n"
+    "    if (event.target instanceof HTMLFormElement) capture(event.target)\n"
+    "  }, true)\n"
+    "  document.addEventListener('click', (event) => {\n"
+    "    const target = event.target instanceof Element ? event.target.closest('button, input[type=submit], input[type=button], [role=button]') : null\n"
+    "    if (!target) return\n"
+    "    const scope = target.closest('form') || document\n"
+    "    if (passwordFields(scope).some((p) => p.value)) capture(scope)\n"
+    "  }, true)\n"
+    "  // The list under a field follows it; when it moves, the browser closes the list.\n"
+    "  addEventListener('scroll', () => popupOpen && tell('blur'), true)\n"
+    "  addEventListener('resize', () => popupOpen && tell('blur'))\n"
+    "  globalThis.__peepwickFormsReceive = (json) => {\n"
+    "    const message = JSON.parse(json)\n"
+    "    if (message.type === 'popup') {\n"
+    "      popupOpen = message.open === true\n"
+    "      popupSelected = message.selected === true\n"
+    "      return\n"
+    "    }\n"
+    "    const field = active\n"
+    "    if (!field || !field.isConnected) return\n"
+    "    const scope = scopeOf(field)\n"
+    "    if (message.type === 'login') {\n"
+    "      const password = field.type === 'password' ? field : passwordFields(scope)[0]\n"
+    "      const user = password ? usernameFor(password) : field\n"
+    "      if (user && message.username) setValue(user, message.username)\n"
+    "      if (password && typeof message.password === 'string') setValue(password, message.password)\n"
+    "    } else if (message.type === 'generated' && typeof message.password === 'string') {\n"
+    "      // Every password field of a sign-up form: the password and its confirmation.\n"
+    "      for (const p of passwordFields(scope).filter((p) => !/current-password/.test(p.autocomplete))) setValue(p, message.password)\n"
+    "    }\n"
+    "    field.focus()\n"
+    "  }\n"
+    "})()\n";
+
+static void
+forms_send (const char *type, const char *payload, gpointer data)
+{
+    WebKitWebPage *page = webkit_web_extension_get_page (web_extension, *(guint64 *) data);
+    if (!page || !type || !payload)
+        return;
+    /* The address is WebKit's, of the main frame: the only frame this runs in. */
+    const char *uri = webkit_web_page_get_uri (page);
+    tell_browser (page, "forms", g_variant_new ("(sss)", type, payload, uri ? uri : ""));
+}
+
+static void
+on_forms_window_cleared (WebKitScriptWorld *world,
+                         WebKitWebPage     *page,
+                         WebKitFrame       *frame,
+                         gpointer           data)
+{
+    if (!has_config || !webkit_frame_is_main_frame (frame))
+        return;
+    g_autoptr (JSCContext) context = webkit_frame_get_js_context_for_script_world (frame, world);
+    guint64 *page_id = g_new (guint64, 1);
+    *page_id = webkit_web_page_get_id (page);
+    g_autoptr (JSCValue) send = jsc_value_new_function (context, NULL, G_CALLBACK (forms_send),
+                                                       page_id, g_free, G_TYPE_NONE, 2,
+                                                       G_TYPE_STRING, G_TYPE_STRING);
+    jsc_context_set_value (context, "__peepwickFormsSend", send);
+    g_autoptr (JSCValue) done = jsc_context_evaluate (context, FORMS_JS, -1);
+}
+
+/* What the browser sends to fill in, or the state of its list, to the main frame's world. */
+static void
+forms_receive (WebKitWebPage *page, const char *json)
+{
+    WebKitFrame *frame = webkit_web_page_get_main_frame (page);
+    if (!frame)
+        return;
+    g_autoptr (JSCContext) context =
+        webkit_frame_get_js_context_for_script_world (frame, forms_world);
+    g_autoptr (JSCValue) receive = jsc_context_get_value (context, "__peepwickFormsReceive");
+    if (jsc_value_is_function (receive)) {
+        g_autoptr (JSCValue) result =
+            jsc_value_function_call (receive, G_TYPE_STRING, json, G_TYPE_NONE);
+    }
+    jsc_context_clear_exception (context);
+}
+
 /* ── Messages from the browser to one page ───────────────────────────────────────── */
 
 static gboolean
@@ -330,7 +507,12 @@ on_page_message (WebKitWebPage     *page,
         reply = g_variant_new_int32 (getpid ());
     else if (g_strcmp0 (name, "media-toggle") == 0)
         reply = g_variant_new_boolean (toggle_media (page));
-    else
+    else if (g_strcmp0 (name, "forms") == 0) {
+        GVariant *parameters = webkit_user_message_get_parameters (message);
+        if (parameters && g_variant_is_of_type (parameters, G_VARIANT_TYPE_STRING))
+            forms_receive (page, g_variant_get_string (parameters, NULL));
+        reply = g_variant_new_boolean (TRUE);
+    } else
         return FALSE;
     webkit_user_message_send_reply (message, webkit_user_message_new (name, reply));
     return TRUE;
@@ -353,6 +535,7 @@ apply_config (GVariant *config)
     g_autoptr (GVariantIter) sites = NULL;
     const char *site;
     g_variant_get (config, "(bbas)", &send_gpc, &https_only, &sites);
+    has_config = TRUE;
     g_clear_pointer (&http_allowed, g_ptr_array_unref);
     http_allowed = g_ptr_array_new_with_free_func (g_free);
     while (g_variant_iter_next (sites, "&s", &site))
@@ -378,6 +561,9 @@ webkit_web_extension_initialize_with_user_data (WebKitWebExtension *extension,
     web_extension = extension;
     media_world = webkit_script_world_new_with_name ("peepwick-media");
     g_signal_connect (media_world, "window-object-cleared", G_CALLBACK (on_window_object_cleared),
+                      NULL);
+    forms_world = webkit_script_world_new_with_name ("peepwick-forms");
+    g_signal_connect (forms_world, "window-object-cleared", G_CALLBACK (on_forms_window_cleared),
                       NULL);
     g_signal_connect (extension, "page-created", G_CALLBACK (on_page_created), NULL);
     g_signal_connect (extension, "user-message-received", G_CALLBACK (on_message), NULL);

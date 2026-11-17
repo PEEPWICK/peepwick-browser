@@ -122,6 +122,7 @@ pub fn counts(range: u64, done: impl FnOnce(Value) + 'static) {
         history: history::count_visits(since as i64),
         downloads: downloads::count_since(since),
         permissions: permissions::count(),
+        passwords: crate::passwords::count(),
         ..Counts::default()
     };
     let Some(manager) = window::browsing_data() else {
@@ -159,7 +160,10 @@ fn clear(since: u64, kinds: &[ClearKind], done: impl FnOnce() + 'static) {
     if has(ClearKind::Permissions) {
         permissions::clear();
     }
-    // Form entries and passwords aren't kept yet: there's nothing of them to clear.
+    // Saved passwords go whatever the range, as in 0.1.x; form entries aren't kept yet.
+    if has(ClearKind::Passwords) {
+        crate::passwords::clear();
+    }
     let mut types = WebsiteDataTypes::empty();
     if has(ClearKind::Cookies) {
         types |= site_data();

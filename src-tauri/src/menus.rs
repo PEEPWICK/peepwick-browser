@@ -620,6 +620,10 @@ pub fn app_menu(win: &Rc<BrowserWindow>, x: f64, y: f64) {
             .accelerator("Ctrl+Shift+Delete"),
         );
         items.push(bookmarks_submenu(win));
+        items.push(item(
+            t("menu.passwords"),
+            on_window(win, |win| open_page(win, "passwords", "")),
+        ));
         items.push(submenu(
             t("reading.title"),
             vec![

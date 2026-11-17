@@ -52,6 +52,14 @@ pub async fn pw_invoke(
     args: Vec<Value>,
 ) -> Result<Value, String> {
     let label = webview.label().to_string();
+    // Saved passwords: the keyring's key is read, or made, off the main thread first.
+    if let Some(create) = crate::passwords::invoke_needs_key(&method) {
+        crate::passwords::ready(create).await;
+        return on_main(&app, &label, move |win| {
+            crate::passwords::invoke(win, &method, &args)
+        })
+        .await;
+    }
     if matches!(
         method.as_str(),
         "siteInfo" | "siteClearData" | "clearData" | "clearDataCounts"
@@ -245,7 +253,10 @@ pub(crate) fn invoke(
             }
         }
         "stats" => stats::stats(),
-        "passwordsStatus" => json!({ "count": 0, "backend": "", "never": [] }),
+        // The harness's way in; the interface's calls wait for the key first (pw_invoke).
+        m if crate::passwords::invoke_needs_key(m).is_some() => {
+            crate::passwords::invoke(win, m, args)
+        }
         "formEntryCount" => json!(0),
         "bookmarkCreate" => {
             let input = |key: &str| args.first().and_then(|i| i.get(key));
@@ -306,7 +317,6 @@ pub(crate) fn invoke(
         "report" => crate::diagnostics::report(),
         "extensionsList"
         | "shieldReport"
-        | "passwordsList"
         | "addressesList"
         | "translationLanguages"
         | "translationModels" => json!([]),
@@ -684,6 +694,30 @@ pub(crate) fn send(win: &Rc<BrowserWindow>, method: &str, args: &[Value]) {
             zoom::forget(arg(0).and_then(Value::as_str));
             window::zoom_changed();
         }
+        "passwordCopy" => {
+            let id = text(arg(0)).to_string();
+            crate::passwords::when_ready(false, move || {
+                crate::passwords::copy(&id);
+            });
+        }
+        "passwordsRemove" => {
+            let ids: Vec<String> = arg(0)
+                .and_then(Value::as_array)
+                .map(|ids| {
+                    ids.iter()
+                        .filter_map(|id| id.as_str().map(str::to_string))
+                        .collect()
+                })
+                .unwrap_or_default();
+            crate::passwords::remove(&ids);
+        }
+        "passwordsUndo" => crate::passwords::undo_remove(),
+        "saveLoginAnswer" => {
+            if let Some(id) = num(arg(0)) {
+                crate::autofill::answer(id, text(arg(1)));
+            }
+        }
+        "passwordNeverRemove" => crate::passwords::remove_never(text(arg(0))),
         _ => eprintln!("[ipc] not ported yet: send {method}"),
     }
 }

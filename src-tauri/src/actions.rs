@@ -188,6 +188,7 @@ pub fn is_available(win: &BrowserWindow, id: &str) -> bool {
                 })
         }
         "reading-list" => true,
+        "passwords" => !win.incognito,
         _ => false,
     }
 }
@@ -247,6 +248,7 @@ pub fn run_command(win: &Rc<BrowserWindow>, id: &str) {
             }
         }
         "reading-list" => open_page(win, "reading", ""),
+        "passwords" => open_page(win, "passwords", ""),
         "report" => open_page(win, "settings", "report"),
         "task-manager" => win.command(json!({ "type": "task-manager" })),
         "quit" => session::quit(&win.app_handle()),
@@ -255,7 +257,7 @@ pub fn run_command(win: &Rc<BrowserWindow>, id: &str) {
 }
 
 /// The commands the command bar offers, in order.
-pub const COMMANDS: [&str; 24] = [
+pub const COMMANDS: [&str; 25] = [
     "new-tab",
     "new-window",
     "new-incognito",
@@ -275,6 +277,7 @@ pub const COMMANDS: [&str; 24] = [
     "toggle-bookmarks-bar",
     "import-bookmarks",
     "clear-data",
+    "passwords",
     "reading-add",
     "reading-list",
     "report",

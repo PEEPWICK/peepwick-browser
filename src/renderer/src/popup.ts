@@ -1,12 +1,22 @@
 // The autofill popup: a small view of its own placed under a form field, so the
-// page stays clickable and keeps keyboard focus. The main process sends the items
-// and the highlighted one; a click picks an item. No React here: it opens often.
+// page stays clickable and keeps keyboard focus. The browser draws it by calling
+// window.__peepwickAutofill with the items and the highlighted one; a click picks an
+// item, through WebKit's message handler (src-tauri/src/autofill.rs). The view has no
+// Tauri bridge. No React here: it opens often.
 import '@fontsource-variable/archivo/standard.css'
 import '@fontsource/ibm-plex-mono/400.css'
 import './styles/tokens.css'
 import './styles/popup.css'
 import type { AutofillPopupState } from '@shared/types'
-import { bridge } from './bridge'
+
+interface PopupWindow {
+  webkit?: { messageHandlers?: { peepwickPopup?: { postMessage(message: string): void } } }
+  __peepwickAutofill?: (state: AutofillPopupState) => void
+}
+const popup = window as unknown as PopupWindow
+
+const send = (method: 'autofillPick' | 'autofillHover' | 'ready', index: number) =>
+  popup.webkit?.messageHandlers?.peepwickPopup?.postMessage(JSON.stringify({ method, index }))
 
 const list = document.getElementById('list')!
 
@@ -44,15 +54,17 @@ function render(state: AutofillPopupState): void {
         text.append(detail)
       }
       li.append(icon, text)
-      li.addEventListener('mouseenter', () => bridge.send('autofillHover', index))
+      li.addEventListener('mouseenter', () => send('autofillHover', index))
       // mousedown, not click: picking must not wait for the page to lose focus.
       li.addEventListener('mousedown', (event) => {
         event.preventDefault()
-        bridge.send('autofillPick', index)
+        send('autofillPick', index)
       })
       return li
     }),
   )
 }
 
-bridge.on('autofill', (payload) => render(payload as AutofillPopupState))
+popup.__peepwickAutofill = render
+// The browser holds what to draw until the page says it can draw it.
+send('ready', -1)
