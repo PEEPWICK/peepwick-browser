@@ -5,7 +5,8 @@
 //! exported, or shown on the passwords page at the person's request.
 //!
 //! passwords.json keeps 0.1.x's layout (version 1, logins, the sites never to save for); only
-//! the encryption differs, so 0.1.x's file can't be read: its passwords come over as CSV.
+//! the encryption differs, so 0.1.x's file can't be read: its passwords come over as CSV or
+//! in a backup (backup.rs).
 //!
 //! The list lives on the main thread. The key is read from the keyring off it, the first time
 //! something needs it (`ready`, `when_ready`), and kept in memory after.
@@ -337,7 +338,7 @@ pub fn load() {
 }
 
 /// Writes the file readable by its owner only, through a temporary file.
-fn write_private(path: &Path, data: &[u8]) -> std::io::Result<()> {
+pub(crate) fn write_private(path: &Path, data: &[u8]) -> std::io::Result<()> {
     let tmp = path.with_extension("tmp");
     let mut out = std::fs::OpenOptions::new()
         .write(true)
@@ -393,6 +394,11 @@ fn with_data<T>(f: impl FnOnce(&mut PasswordFile) -> T) -> T {
 
 pub fn count() -> usize {
     with_data(|data| data.logins.len())
+}
+
+/// The sites never to offer saving for, for a backup.
+pub(crate) fn never_list() -> Vec<String> {
+    with_data(|data| data.never.clone())
 }
 
 /// What the passwords page says about where the passwords are kept.
@@ -795,8 +801,8 @@ pub fn import_logins(logins: &[PlainLogin], never: &[String]) -> (usize, usize) 
     (added, duplicates)
 }
 
-/// Every login whose password can be read, in the clear: for exporting.
-fn plain_logins() -> Vec<PlainLogin> {
+/// Every login whose password can be read, in the clear: for exporting and backups.
+pub(crate) fn plain_logins() -> Vec<PlainLogin> {
     with_data(|data| data.logins.clone())
         .into_iter()
         .filter_map(|l| {

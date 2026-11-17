@@ -189,6 +189,8 @@ export function BackupRestoreDialog({ token, name }: { token: string; name: stri
       result.permissions > 0 && t('backup.result.permissions', { n: result.permissions }),
       result.extensions > 0 && t('backup.result.extensions', { n: result.extensions }),
       result.history > 0 && t('backup.result.history', { n: result.history }),
+      result.passwords > 0 && t('backup.result.passwords', { n: result.passwords }),
+      result.autofill > 0 && t('backup.result.autofill', { n: result.autofill }),
     ].filter(Boolean) as string[]
     body = (
       <>
@@ -228,6 +230,7 @@ export function BackupRestoreDialog({ token, name }: { token: string; name: stri
             ))}
           </div>
         )}
+        {(summary.autofillLater ?? 0) > 0 && <p className="setting-hint">{t('backup.autofillLater', { n: summary.autofillLater ?? 0 })}</p>}
         <p className="setting-hint">{t('backup.restoreMerge')}</p>
         {error && <span className="field-error">{error}</span>}
         <div className="panel-actions">

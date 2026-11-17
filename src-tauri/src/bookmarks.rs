@@ -700,6 +700,138 @@ pub fn insert_draft(draft: DraftTree, folder_title: &str) {
     changed();
 }
 
+// ── Backups ───────────────────────────────────────────────────────────────────
+
+/// The tree without ids, as a backup file keeps it (`toDraft` in src/shared/bookmarks.ts).
+pub fn backup_draft() -> Value {
+    draft_json(&tree())
+}
+
+fn draft_json(tree: &Tree) -> Value {
+    fn strip(nodes: &[Node]) -> Vec<Value> {
+        nodes
+            .iter()
+            .map(|node| match node.kind {
+                Kind::Link => json!({
+                    "type": "url",
+                    "title": node.title,
+                    "url": node.url(),
+                    "addedAt": node.added_at,
+                }),
+                Kind::Folder => json!({
+                    "type": "folder",
+                    "title": node.title,
+                    "addedAt": node.added_at,
+                    "children": strip(node.children()),
+                }),
+            })
+            .collect()
+    }
+    json!({ "bar": strip(tree.bar.children()), "other": strip(tree.other.children()) })
+}
+
+/// A backup's bookmarks, without the nodes that aren't well formed.
+pub fn draft_from_backup(value: &Value) -> Option<DraftTree> {
+    fn nodes(value: &Value) -> Option<Vec<Draft>> {
+        Some(value.as_array()?.iter().filter_map(node).collect())
+    }
+    fn node(value: &Value) -> Option<Draft> {
+        let title = value.get("title")?.as_str()?.to_string();
+        let added_at = value.get("addedAt").and_then(Value::as_u64);
+        match value.get("type")?.as_str()? {
+            "url" => Some(Draft::Link {
+                title,
+                url: value.get("url")?.as_str()?.to_string(),
+                added_at,
+            }),
+            "folder" => Some(Draft::Folder {
+                title,
+                added_at,
+                children: nodes(value.get("children")?)?,
+            }),
+            _ => None,
+        }
+    }
+    Some(DraftTree {
+        bar: nodes(value.get("bar")?)?,
+        other: nodes(value.get("other")?)?,
+    })
+}
+
+/// How many bookmarks (not folders) a draft holds.
+pub fn draft_links(draft: &DraftTree) -> usize {
+    count(&draft.bar).0 + count(&draft.other).0
+}
+
+/// Merges a backup's bookmarks in, as the Electron version's restore did (`mergeTrees`): a
+/// folder with the same name in the same place is merged into, and addresses already anywhere
+/// in the tree are skipped. Returns how many bookmarks were added.
+pub fn merge_draft(draft: DraftTree) -> usize {
+    let now = now_ms();
+    let added = TREE.with(|cell| merge_tree(&mut cell.borrow_mut(), draft, now));
+    if added > 0 {
+        changed();
+    }
+    added
+}
+
+fn merge_tree(tree: &mut Tree, draft: DraftTree, now: u64) -> usize {
+    fn keys(node: &Node, seen: &mut HashSet<String>) {
+        for child in node.children() {
+            if child.is_folder() {
+                keys(child, seen);
+            } else {
+                seen.insert(url_key(child.url()));
+            }
+        }
+    }
+    fn into(target: &mut Node, drafts: Vec<Draft>, seen: &mut HashSet<String>, now: u64) -> usize {
+        let mut added = 0;
+        for draft in drafts {
+            match draft {
+                Draft::Link {
+                    title,
+                    url,
+                    added_at,
+                } => {
+                    if !bookmarkable(&url) || !seen.insert(url_key(&url)) {
+                        continue;
+                    }
+                    let title = title.chars().take(1000).collect();
+                    let link = Node::link(new_id(), title, url, added_at.unwrap_or(now));
+                    target.children_mut().push(link);
+                    added += 1;
+                }
+                Draft::Folder {
+                    title,
+                    added_at,
+                    children,
+                } => {
+                    let title: String = title.chars().take(1000).collect();
+                    let siblings = target.children_mut();
+                    let at = match siblings
+                        .iter()
+                        .position(|node| node.is_folder() && node.title == title)
+                    {
+                        Some(at) => at,
+                        None => {
+                            siblings.push(Node::folder(new_id(), title, added_at.unwrap_or(now)));
+                            siblings.len() - 1
+                        }
+                    };
+                    added += into(&mut siblings[at], children, seen, now);
+                }
+            }
+        }
+        added
+    }
+    let mut seen = HashSet::new();
+    keys(&tree.bar, &mut seen);
+    keys(&tree.other, &mut seen);
+    into(&mut tree.bar, draft.bar, &mut seen, now)
+        + into(&mut tree.other, draft.other, &mut seen, now)
+}
+
 // ── Opening ───────────────────────────────────────────────────────────────────
 
 fn links_under(ids: &[String]) -> Vec<String> {
@@ -1522,5 +1654,108 @@ mod tests {
         assert_eq!(compare_titles("çay", "dut", lang), Ordering::Less);
         assert_eq!(compare_titles("Item 9", "item 10", lang), Ordering::Less);
         assert_eq!(compare_titles("ılık", "iğne", lang), Ordering::Less);
+    }
+
+    // Restoring a backup, as the Electron version's tests checked `mergeTrees`.
+    fn sample() -> Tree {
+        let mut tree = Tree::empty();
+        let mut work = Node::folder("f".into(), "İş".into(), 1);
+        work.children_mut().push(Node::link(
+            "b".into(),
+            "Electron".into(),
+            "https://www.electronjs.org/".into(),
+            1,
+        ));
+        tree.bar.children_mut().extend([
+            Node::link("a".into(), "GitHub".into(), "https://github.com/".into(), 1),
+            work,
+        ]);
+        tree
+    }
+
+    fn titles(node: &Node, out: &mut Vec<String>) {
+        for child in node.children() {
+            if child.is_folder() {
+                titles(child, out);
+            } else {
+                out.push(child.title.clone());
+            }
+        }
+    }
+
+    #[test]
+    fn turns_the_tree_into_a_draft_without_ids_and_back() {
+        let json = draft_json(&sample());
+        assert!(!json.to_string().contains("\"id\""));
+        let draft = draft_from_backup(&json).unwrap();
+        assert_eq!(draft_links(&draft), 2);
+        assert_eq!(
+            draft.bar[1],
+            Draft::Folder {
+                title: "İş".into(),
+                added_at: Some(1),
+                children: vec![Draft::Link {
+                    title: "Electron".into(),
+                    url: "https://www.electronjs.org/".into(),
+                    added_at: Some(1),
+                }],
+            }
+        );
+    }
+
+    #[test]
+    fn merges_into_folders_with_the_same_name_and_skips_addresses_already_there() {
+        let mut tree = sample();
+        let incoming = draft_from_backup(&json!({
+            "bar": [
+                { "type": "url", "title": "GitHub again", "url": "https://github.com" },
+                { "type": "folder", "title": "İş", "children": [
+                    { "type": "url", "title": "Electron", "url": "https://www.electronjs.org/" },
+                    { "type": "url", "title": "Vite", "url": "https://vite.dev/" }
+                ] },
+                { "type": "folder", "title": "Yeni", "children": [
+                    { "type": "url", "title": "MDN", "url": "https://developer.mozilla.org/" }
+                ] }
+            ],
+            "other": [{ "type": "url", "title": "Unsafe", "url": "javascript:alert(1)" }]
+        }))
+        .unwrap();
+        assert_eq!(merge_tree(&mut tree, incoming, 7), 2);
+        let folders: Vec<&Node> = tree
+            .bar
+            .children()
+            .iter()
+            .filter(|n| n.is_folder() && n.title == "İş")
+            .collect();
+        assert_eq!(folders.len(), 1);
+        let mut all = Vec::new();
+        titles(&tree.bar, &mut all);
+        titles(&tree.other, &mut all);
+        assert_eq!(all, ["GitHub", "Electron", "Vite", "MDN"]);
+        assert!(tree.other.children().is_empty());
+        assert!(tree.valid());
+    }
+
+    #[test]
+    fn adds_nothing_the_second_time() {
+        let mut tree = sample();
+        let draft = draft_from_backup(&draft_json(&sample())).unwrap();
+        assert_eq!(merge_tree(&mut tree, draft, 7), 0);
+    }
+
+    #[test]
+    fn leaves_out_malformed_nodes() {
+        let draft = draft_from_backup(&json!({
+            "bar": [
+                { "type": "url", "title": 1, "url": "https://a.example/" },
+                { "type": "folder", "title": "No children" },
+                { "type": "url", "title": "Fine", "url": "https://b.example/" }
+            ],
+            "other": []
+        }))
+        .unwrap();
+        assert_eq!(draft_links(&draft), 1);
+        assert!(draft_from_backup(&Value::Null).is_none());
+        assert!(draft_from_backup(&json!({ "bar": [] })).is_none());
     }
 }

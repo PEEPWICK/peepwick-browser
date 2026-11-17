@@ -154,7 +154,86 @@ pub async fn pw_invoke(
         info.is_default_browser = default.await.unwrap_or(false);
         return to_json(info);
     }
+    if method.starts_with("backup") && method != "backupCounts" {
+        return backup_call(&app, &label, &method, &args).await;
+    }
     on_main(&app, &label, move |win| invoke(win, &method, &args)).await?
+}
+
+/// Backups: the file dialogs and the data on the main thread; scrypt, which takes about half a
+/// second, and the file off it.
+async fn backup_call(
+    app: &AppHandle,
+    label: &str,
+    method: &str,
+    args: &[Value],
+) -> Result<Value, String> {
+    let token = short(args.first(), 64);
+    match method {
+        "backupExport" => {
+            let categories = ids(args.first());
+            let password = text(args.get(1)).to_string();
+            // The dialog asks for eight characters at least.
+            if password.chars().count() < 8 {
+                return Ok(json!("failed"));
+            }
+            if categories.iter().any(|c| c == "passwords") {
+                crate::passwords::ready(false).await;
+            }
+            let chosen = on_main(app, label, |win| {
+                (!win.incognito)
+                    .then(|| crate::backup::choose_save_path(win))
+                    .flatten()
+            })
+            .await?;
+            let Some(path) = chosen else {
+                return Ok(json!("cancelled"));
+            };
+            let payload = on_main(app, label, move |_| crate::backup::collect(&categories)).await?;
+            let saved = tauri::async_runtime::spawn_blocking(move || {
+                crate::backup::write(&path, &payload, &password)
+            })
+            .await
+            .unwrap_or(false);
+            Ok(json!(if saved { "saved" } else { "failed" }))
+        }
+        "backupOpen" => {
+            let chosen = on_main(app, label, |win| {
+                (!win.incognito)
+                    .then(|| crate::backup::choose_backup_file(win))
+                    .flatten()
+            })
+            .await?;
+            let Some(path) = chosen else {
+                return Ok(Value::Null);
+            };
+            tauri::async_runtime::spawn_blocking(move || crate::backup::open_path(&path))
+                .await
+                .map_err(|e| e.to_string())
+        }
+        "backupUnlock" => {
+            let password = text(args.get(1)).to_string();
+            Ok(tauri::async_runtime::spawn_blocking(move || {
+                crate::backup::unlock(&token, &password)
+            })
+            .await
+            .unwrap_or_else(|_| json!({ "error": "format" })))
+        }
+        "backupRestore" => {
+            let categories = ids(args.get(1));
+            if crate::backup::restores_passwords(&token, &categories) {
+                crate::passwords::ready(true).await;
+            }
+            on_main(app, label, move |win| {
+                crate::backup::restore(win, &token, &categories)
+            })
+            .await
+        }
+        _ => {
+            eprintln!("[ipc] not ported yet: invoke {method}");
+            Ok(Value::Null)
+        }
+    }
 }
 
 #[tauri::command]
@@ -321,6 +400,7 @@ pub(crate) fn invoke(
             })
             .unwrap_or(Value::Null),
         "tasks" => to_json(crate::tasks::rows(crate::tasks::tab_processes()))?,
+        "backupCounts" => crate::backup::local_counts(),
         "report" => crate::diagnostics::report(),
         "extensionsList"
         | "shieldReport"
@@ -725,6 +805,7 @@ pub(crate) fn send(win: &Rc<BrowserWindow>, method: &str, args: &[Value]) {
             }
         }
         "passwordNeverRemove" => crate::passwords::remove_never(text(arg(0))),
+        "backupCancel" => crate::backup::forget(text(arg(0))),
         _ => eprintln!("[ipc] not ported yet: send {method}"),
     }
 }

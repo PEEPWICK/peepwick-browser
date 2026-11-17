@@ -724,6 +724,8 @@ export interface BackupSummary {
   version: string
   counts: BackupCounts
   extensions: { id: string; name: string }[]
+  /** Addresses and form entries in the file (0.1.x) that this version can't restore yet. */
+  autofillLater?: number
 }
 
 export interface RestoreResult {

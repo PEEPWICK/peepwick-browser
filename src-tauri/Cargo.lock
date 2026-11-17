@@ -2856,6 +2856,7 @@ dependencies = [
  "adblock",
  "base64 0.22.1",
  "cairo-rs",
+ "flate2",
  "glib",
  "gtk",
  "javascriptcore-rs",

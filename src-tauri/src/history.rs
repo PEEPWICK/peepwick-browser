@@ -472,6 +472,23 @@ pub fn delete_host(host: &str) -> usize {
     .unwrap_or(0)
 }
 
+/// Every visit, oldest first, for a backup.
+pub fn export_visits() -> Vec<Visit> {
+    with_db(|db| {
+        let mut select =
+            db.prepare("SELECT url, title, visited_at FROM visits ORDER BY visited_at")?;
+        let visits = select.query_map([], |row| {
+            Ok(Visit {
+                url: row.get(0)?,
+                title: row.get::<_, Option<String>>(1)?.unwrap_or_default(),
+                visited_at: row.get(2)?,
+            })
+        })?;
+        visits.collect()
+    })
+    .unwrap_or_default()
+}
+
 pub fn count_visits(since: i64) -> i64 {
     with_db(|db| {
         db.prepare_cached("SELECT COUNT(*) FROM visits WHERE visited_at >= ?1")?

@@ -5,6 +5,8 @@
 
 mod actions;
 mod autofill;
+mod backup;
+mod backupfile;
 mod bookmarks;
 mod browsercrypto;
 mod cleardata;

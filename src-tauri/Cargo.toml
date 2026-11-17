@@ -55,3 +55,5 @@ x509-parser = "0.18.1"
 # Saved passwords: AES-256-GCM, and the ciphers other browsers use, for importing theirs.
 # Already linked through native-tls. The Secret Service is reached through gio's D-Bus.
 openssl = "0.10"
+# Backups are gzipped JSON, as the Electron version wrote them.
+flate2 = "1"

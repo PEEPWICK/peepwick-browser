@@ -340,6 +340,38 @@ async fn run(app: &AppHandle, win: &Rc<BrowserWindow>, step: &Value, out: &str) 
                 eprintln!("[harness] passwords imported {result}");
             }
         }
+        // Backups without their file dialogs: what the export dialog offers, a backup written
+        // to a path, and a file opened into the restore dialog (unlocked through the UI).
+        "backupCounts" => eprintln!("[harness] backup counts {}", crate::backup::local_counts()),
+        "backupExport" => {
+            let categories: Vec<String> = step["categories"]
+                .as_array()
+                .map(|list| {
+                    list.iter()
+                        .filter_map(|c| c.as_str().map(str::to_string))
+                        .collect()
+                })
+                .unwrap_or_default();
+            if categories.iter().any(|c| c == "passwords") {
+                crate::passwords::ready(false).await;
+            }
+            let payload = crate::backup::collect(&categories);
+            let (path, password) = (get("path").to_string(), get("password").to_string());
+            let saved = tauri::async_runtime::spawn_blocking(move || {
+                crate::backup::write(std::path::Path::new(&path), &payload, &password)
+            })
+            .await;
+            eprintln!("[harness] backup saved {saved:?}");
+        }
+        "backupOpen" => {
+            let opened = crate::backup::open_path(std::path::Path::new(get("path")));
+            eprintln!("[harness] backup opened {opened}");
+            if let (Some(token), Some(name)) = (opened["token"].as_str(), opened["name"].as_str()) {
+                win.command(
+                    serde_json::json!({ "type": "backup-restore", "token": token, "name": name }),
+                );
+            }
+        }
         other => eprintln!("[harness] unknown step {other}"),
     }
 }

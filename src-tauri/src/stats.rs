@@ -73,6 +73,69 @@ pub fn add_focus_minutes(minutes: f64) {
     });
 }
 
+/// Days with focus minutes or blocked requests, for the backup dialog.
+pub fn active_days() -> usize {
+    DATA.with(|d| {
+        d.borrow()
+            .days
+            .values()
+            .filter(|day| day.focus > 0.0 || day.blocked > 0)
+            .count()
+    })
+}
+
+/// stats.json as it is, for a backup.
+pub fn export() -> Value {
+    DATA.with(|d| serde_json::to_value(&*d.borrow()).unwrap_or_default())
+}
+
+/// "2026-11-17", as stats.json names its days.
+fn is_day_key(key: &str) -> bool {
+    key.len() == 10
+        && key.bytes().enumerate().all(|(i, b)| match i {
+            4 | 7 => b == b'-',
+            _ => b.is_ascii_digit(),
+        })
+}
+
+/// A backup's focus history merged in: each day keeps the larger of the two counts, as the
+/// Electron version did. Returns how many of the last 90 days it raised.
+pub fn merge(incoming: &Value) -> usize {
+    let Some(days) = incoming.get("days").and_then(Value::as_object) else {
+        return 0;
+    };
+    let oldest = day_key(KEEP_DAYS);
+    let mut raised = 0;
+    DATA.with(|d| {
+        let mut data = d.borrow_mut();
+        for (key, day) in days {
+            let blocked = day.get("blocked").and_then(Value::as_f64);
+            let focus = day.get("focus").and_then(Value::as_f64);
+            let (Some(blocked), Some(focus)) = (blocked, focus) else {
+                continue;
+            };
+            if !is_day_key(key)
+                || *key < oldest
+                || !(blocked.is_finite() && blocked >= 0.0 && focus.is_finite() && focus >= 0.0)
+            {
+                continue;
+            }
+            let current = data.days.entry(key.clone()).or_default();
+            let blocked = blocked.round() as u64;
+            if blocked > current.blocked || focus > current.focus {
+                raised += 1;
+            }
+            current.blocked = current.blocked.max(blocked);
+            current.focus = current.focus.max(focus);
+        }
+        if let Some(total) = incoming.get("blockedTotal").and_then(Value::as_u64) {
+            data.blocked_total = data.blocked_total.max(total);
+        }
+        save(&data);
+    });
+    raised
+}
+
 /// What the new tab page and the focus panel show.
 pub fn stats() -> Value {
     DATA.with(|d| {

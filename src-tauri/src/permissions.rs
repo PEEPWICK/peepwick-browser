@@ -316,6 +316,46 @@ pub fn count() -> usize {
     SAVED.with(|cell| cell.borrow().values().map(|kinds| kinds.len()).sum())
 }
 
+/// The remembered answers as permissions.json keeps them, for a backup.
+pub fn export() -> Value {
+    SAVED.with(|cell| serde_json::to_value(&*cell.borrow()).unwrap_or_default())
+}
+
+/// A backup's remembered answers merged in; for the same site and kind the backup's answer
+/// wins, as in the Electron version. Returns how many it brought.
+pub fn merge(incoming: &Value) -> usize {
+    let Some(sites) = incoming.as_object() else {
+        return 0;
+    };
+    let mut brought = 0;
+    SAVED.with(|cell| {
+        let mut saved = cell.borrow_mut();
+        for (origin, kinds) in sites {
+            let web = origin.starts_with("http://") || origin.starts_with("https://");
+            let Some(kinds) = kinds
+                .as_object()
+                .filter(|_| web && origin_of(origin) == *origin)
+            else {
+                continue;
+            };
+            for (kind, allow) in kinds {
+                let Some(allow) = allow.as_bool().filter(|_| KINDS.contains(&kind.as_str())) else {
+                    continue;
+                };
+                saved
+                    .entry(origin.clone())
+                    .or_default()
+                    .insert(kind.clone(), allow);
+                brought += 1;
+            }
+        }
+    });
+    if brought > 0 {
+        changed();
+    }
+    brought
+}
+
 /// Clearing browsing data: every remembered answer goes, and sites ask again.
 pub fn clear() {
     SAVED.with(|cell| cell.borrow_mut().clear());
