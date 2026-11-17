@@ -1531,7 +1531,11 @@ impl BrowserWindow {
         if minutes == 0 {
             return;
         }
-        let cutoff = now_ms().saturating_sub(u64::from(minutes) * 60_000);
+        self.sleep_tabs_idle_since(now_ms().saturating_sub(u64::from(minutes) * 60_000));
+    }
+
+    /// Background tabs last shown before `cutoff` (ms) give up their views.
+    pub(crate) fn sleep_tabs_idle_since(&self, cutoff: u64) {
         let tabs: Vec<Rc<Tab>> = self.tabs.borrow().values().cloned().collect();
         for tab in tabs {
             if tab.view().is_some() && !self.is_shown(tab.id) && tab.last_active.get() < cutoff {

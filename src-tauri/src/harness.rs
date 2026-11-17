@@ -108,7 +108,7 @@ async fn run(app: &AppHandle, win: &Rc<BrowserWindow>, step: &Value, out: &str) 
                 .values()
                 .map(|t| {
                     format!(
-                        "{} {} loading={} {:?} reader={}/{} zoom={:.2} find={} media={:?} audible={}",
+                        "{} {} loading={} {:?} reader={}/{} zoom={:.2} find={} media={:?} audible={} sleeping={}",
                         t.id,
                         t.url,
                         t.loading,
@@ -118,7 +118,8 @@ async fn run(app: &AppHandle, win: &Rc<BrowserWindow>, step: &Value, out: &str) 
                         t.zoom,
                         t.find.as_ref().map(|f| f.to_string()).unwrap_or_default(),
                         t.media,
-                        t.audible
+                        t.audible,
+                        t.sleeping
                     )
                 })
                 .collect();
@@ -339,6 +340,11 @@ async fn run(app: &AppHandle, win: &Rc<BrowserWindow>, step: &Value, out: &str) 
                 let result = crate::passwords::import_csv_from(std::path::Path::new(get("import")));
                 eprintln!("[harness] passwords imported {result}");
             }
+        }
+        // Background tabs idle for longer than "idleMs" sleep now, as the minute timer does.
+        "sleepTabs" => {
+            let idle = step["idleMs"].as_u64().unwrap_or(0);
+            win.sleep_tabs_idle_since(crate::tab::now_ms().saturating_sub(idle));
         }
         // Keys pressed as the keyboard presses them, so a page sees trusted input: "text" types
         // characters, then "keys" presses named keys (Down, Return, BackSpace). To the active
