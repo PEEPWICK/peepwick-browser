@@ -1792,6 +1792,8 @@ pub fn settings_changed() {
     crate::pagescripts::refresh();
     // Dangerous site warnings turned on fetch the lists they don't have yet.
     crate::safebrowsing::refresh();
+    // The shield's level: the strict set comes the first time it's chosen.
+    crate::shield::settings_changed();
     for cell in [&BROWSING, &PRIVATE] {
         cell.with(|context| {
             let Some(context) = context.borrow().clone() else {

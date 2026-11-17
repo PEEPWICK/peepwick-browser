@@ -1,33 +1,115 @@
 //! The privacy shield: Brave's adblock-rust engine turns the filter lists into WebKit content
-//! rules, which WebKit compiles once, keeps on disk and applies in every page's process.
+//! rules, which WebKit compiles once, keeps on disk and applies in every page's process. There
+//! are two sets: the standard one (ads and trackers), and what the strict level adds (cookie
+//! notices and other annoyances), whose lists are fetched only once someone chooses that level.
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::path::PathBuf;
 use std::time::{Duration, Instant, SystemTime};
 
 use adblock::lists::{FilterSet, ParseOptions};
-use tauri::AppHandle;
 use webkit2gtk::glib;
 use webkit2gtk::{UserContentManager, UserContentManagerExt};
 
-use crate::{pages, paths, settings};
+use crate::settings::{self, ShieldLevel};
+use crate::{pages, paths};
 
-const LISTS: [(&str, &str); 2] = [
-    ("easylist", "https://easylist.to/easylist/easylist.txt"),
-    (
-        "easyprivacy",
-        "https://easylist.to/easylist/easyprivacy.txt",
-    ),
-];
 const REFRESH_AFTER: Duration = Duration::from_secs(3 * 24 * 60 * 60);
-const RULES_ID: &str = "peepwick-shield-standard";
+
+/// A set of rules: the lists it is made from (each kept as shield-<name>.txt) and its name in
+/// WebKit's store.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum Set {
+    /// Ads and trackers, at the standard and the strict level.
+    Standard,
+    /// What the strict level adds: cookie notices and other annoyances.
+    Strict,
+}
+
+impl Set {
+    fn lists(self) -> &'static [(&'static str, &'static str)] {
+        match self {
+            Set::Standard => &[
+                ("easylist", "https://easylist.to/easylist/easylist.txt"),
+                (
+                    "easyprivacy",
+                    "https://easylist.to/easylist/easyprivacy.txt",
+                ),
+            ],
+            Set::Strict => &[
+                (
+                    "cookies",
+                    "https://secure.fanboy.co.nz/fanboy-cookiemonster.txt",
+                ),
+                (
+                    "annoyances",
+                    "https://easylist.to/easylist/fanboy-annoyance.txt",
+                ),
+            ],
+        }
+    }
+
+    fn id(self) -> &'static str {
+        match self {
+            Set::Standard => "peepwick-shield-standard",
+            Set::Strict => "peepwick-shield-strict",
+        }
+    }
+
+    fn slot(self) -> &'static std::thread::LocalKey<RefCell<Option<ffi::ContentFilter>>> {
+        match self {
+            Set::Standard => &STANDARD,
+            Set::Strict => &STRICT,
+        }
+    }
+}
 
 thread_local! {
-    static FILTER: RefCell<Option<ffi::ContentFilter>> = const { RefCell::new(None) };
+    static STANDARD: RefCell<Option<ffi::ContentFilter>> = const { RefCell::new(None) };
+    static STRICT: RefCell<Option<ffi::ContentFilter>> = const { RefCell::new(None) };
+    /// Sets being fetched and compiled now: each is built once at a time.
+    static BUILDING: RefCell<Vec<Set>> = const { RefCell::new(Vec::new()) };
+    /// The level the tabs' rules follow.
+    static LEVEL: Cell<Option<ShieldLevel>> = const { Cell::new(None) };
+    /// Whether the strict set was loaded, or asked for, this session.
+    static STRICT_ASKED: Cell<bool> = const { Cell::new(false) };
     static MANAGERS: RefCell<Vec<glib::WeakRef<UserContentManager>>> = const { RefCell::new(Vec::new()) };
     /// Tabs showing a site with the shield off: their pages load without the rules.
     static PAUSED: RefCell<Vec<glib::WeakRef<UserContentManager>>> = const { RefCell::new(Vec::new()) };
     static STORE: ffi::FilterStore = ffi::FilterStore::new(&paths::user_path("shield-rules"));
+}
+
+fn level() -> ShieldLevel {
+    settings::get().shield_level
+}
+
+/// Puts on a content manager the rules its pages should have: the standard set, and at the
+/// strict level what that adds.
+fn add_filters(manager: &UserContentManager) {
+    let add = |set: Set| {
+        set.slot().with(|filter| {
+            if let Some(filter) = filter.borrow().as_ref() {
+                filter.add_to(manager);
+            }
+        })
+    };
+    add(Set::Standard);
+    if level() == ShieldLevel::Strict {
+        add(Set::Strict);
+    }
+}
+
+/// Every tab that isn't paused gets its rules again: a set was compiled, or the level changed.
+/// Pages loaded already keep the rules they had until they load again.
+fn reapply() {
+    MANAGERS.with(|managers| {
+        for manager in managers.borrow().iter().filter_map(|m| m.upgrade()) {
+            if !is_paused(&manager) {
+                manager.remove_all_filters();
+                add_filters(&manager);
+            }
+        }
+    });
 }
 
 /// Gives a tab's content manager the rules, now or once they are ready.
@@ -38,23 +120,7 @@ pub fn attach(manager: &UserContentManager) {
         managers.retain(|m| m.upgrade().is_some());
         managers.push(manager.downgrade());
     });
-    FILTER.with(|filter| {
-        if let Some(filter) = filter.borrow().as_ref() {
-            filter.add_to(manager);
-        }
-    });
-}
-
-fn apply(filter: ffi::ContentFilter) {
-    MANAGERS.with(|managers| {
-        for manager in managers.borrow().iter().filter_map(|m| m.upgrade()) {
-            if !is_paused(&manager) {
-                manager.remove_all_filters();
-                filter.add_to(&manager);
-            }
-        }
-    });
-    FILTER.with(|cell| cell.replace(Some(filter)));
+    add_filters(manager);
 }
 
 pub(crate) fn is_paused(manager: &UserContentManager) -> bool {
@@ -81,11 +147,7 @@ pub fn set_paused(manager: &UserContentManager, paused: bool) {
     });
     manager.remove_all_filters();
     if !paused {
-        FILTER.with(|filter| {
-            if let Some(filter) = filter.borrow().as_ref() {
-                filter.add_to(manager);
-            }
-        });
+        add_filters(manager);
     }
 }
 
@@ -129,82 +191,124 @@ fn is_fresh(path: &PathBuf) -> bool {
         .is_some_and(|age| age < REFRESH_AFTER)
 }
 
-/// Loads the compiled rules at once, and refreshes the lists in the background when they
-/// are old (or the first time, when there are none yet).
-pub fn start(app: AppHandle) {
-    let stale = LISTS.iter().any(|(name, _)| !is_fresh(&list_path(name)));
-    let started = Instant::now();
-    STORE.with(|store| {
-        store.load(RULES_ID, move |result| match result {
-            Ok(filter) => {
-                eprintln!("[shield] compiled rules loaded in {:?}", started.elapsed());
-                apply(filter);
-            }
-            Err(_) => eprintln!("[shield] no compiled rules yet"),
-        })
-    });
-    let need_build = stale || !paths::user_path("shield-rules").exists();
-    if !need_build {
+/// Loads the compiled rules at once and refreshes the lists in the background when they are old
+/// (or the first time, when there are none yet); the strict level's set only at that level.
+pub fn start() {
+    let level = level();
+    LEVEL.set(Some(level));
+    load(Set::Standard);
+    if level == ShieldLevel::Strict {
+        STRICT_ASKED.set(true);
+        load(Set::Strict);
+    }
+}
+
+/// Settings changed: when the level did, the strict set comes the first time it's needed, and
+/// the tabs get the rules for the new level.
+pub fn settings_changed() {
+    let level = level();
+    if LEVEL.replace(Some(level)) == Some(level) {
         return;
     }
+    if level == ShieldLevel::Strict && !STRICT_ASKED.replace(true) {
+        load(Set::Strict);
+    }
+    reapply();
+}
+
+/// A set's compiled rules from WebKit's store; built when they aren't there or their lists are old.
+fn load(set: Set) {
+    let stale = set
+        .lists()
+        .iter()
+        .any(|(name, _)| !is_fresh(&list_path(name)));
+    let started = Instant::now();
+    STORE.with(|store| {
+        store.load(set.id(), move |result| match result {
+            Ok(filter) => {
+                eprintln!("[shield] {set:?} rules loaded in {:?}", started.elapsed());
+                set.slot().with(|slot| slot.replace(Some(filter)));
+                reapply();
+                if stale {
+                    build(set);
+                }
+            }
+            Err(_) => {
+                eprintln!("[shield] no compiled {set:?} rules yet");
+                build(set);
+            }
+        })
+    });
+}
+
+/// Fetches a set's lists (an old copy when offline), turns them into WebKit rules off the main
+/// thread, has WebKit compile them and gives them to the tabs.
+fn build(set: Set) {
+    if BUILDING.with(|building| building.borrow().contains(&set)) {
+        return;
+    }
+    BUILDING.with(|building| building.borrow_mut().push(set));
     std::thread::spawn(move || {
-        let lists = match download_lists() {
-            Ok(lists) => lists,
-            Err(error) => {
-                crate::log_error!("[shield] could not download filter lists: {error}");
-                return;
-            }
-        };
-        let converting = Instant::now();
-        let mut set = FilterSet::new(true);
-        for text in lists {
-            set.add_filter_list(text, ParseOptions::default());
-        }
-        let Ok((rules, _)) = set.into_content_blocking() else {
-            crate::log_error!("[shield] could not convert the lists");
-            return;
-        };
-        let count = rules.len();
-        let json = match serde_json::to_string(&rules) {
-            Ok(json) => json,
-            Err(error) => {
-                crate::log_error!("[shield] could not serialize rules: {error}");
-                return;
-            }
-        };
-        eprintln!(
-            "[shield] {count} rules ({} KB) converted in {:?}",
-            json.len() / 1024,
-            converting.elapsed()
-        );
-        let _ = app.run_on_main_thread(move || {
+        let converted = download_lists(set.lists()).and_then(convert);
+        glib::MainContext::default().invoke(move || {
+            BUILDING.with(|building| building.borrow_mut().retain(|s| *s != set));
+            let (json, count) = match converted {
+                Ok(converted) => converted,
+                Err(error) => {
+                    crate::log_error!("[shield] {set:?} rules: {error}");
+                    return;
+                }
+            };
             let compiling = Instant::now();
             STORE.with(|store| {
-                store.save(RULES_ID, json, move |result| match result {
+                store.save(set.id(), json, move |result| match result {
                     Ok(filter) => {
                         eprintln!(
-                            "[shield] WebKit compiled {count} rules in {:?}",
+                            "[shield] WebKit compiled {count} {set:?} rules in {:?}",
                             compiling.elapsed()
                         );
-                        apply(filter);
+                        set.slot().with(|slot| slot.replace(Some(filter)));
+                        reapply();
                     }
                     Err(error) => {
-                        crate::log_error!("[shield] WebKit could not compile the rules: {error}")
+                        crate::log_error!(
+                            "[shield] WebKit could not compile the {set:?} rules: {error}"
+                        )
                     }
                 })
-            })
+            });
         });
     });
 }
 
-fn download_lists() -> Result<Vec<String>, String> {
+/// Filter lists as WebKit content rules (JSON), and how many rules.
+fn convert(lists: Vec<String>) -> Result<(String, usize), String> {
+    let converting = Instant::now();
+    let mut set = FilterSet::new(true);
+    for text in lists {
+        set.add_filter_list(text, ParseOptions::default());
+    }
+    let (rules, _) = set
+        .into_content_blocking()
+        .map_err(|_| "could not convert the lists".to_string())?;
+    let count = rules.len();
+    let json = serde_json::to_string(&rules).map_err(|e| e.to_string())?;
+    eprintln!(
+        "[shield] {count} rules ({} KB) converted in {:?}",
+        json.len() / 1024,
+        converting.elapsed()
+    );
+    Ok((json, count))
+}
+
+fn download_lists(sources: &[(&str, &str)]) -> Result<Vec<String>, String> {
     let client = reqwest::blocking::Client::builder()
         .user_agent(concat!("PEEPWICK-Browser/", env!("CARGO_PKG_VERSION")))
         .timeout(Duration::from_secs(60))
         .build()
         .map_err(|e| e.to_string())?;
     let mut lists = Vec::new();
-    for (name, url) in LISTS {
+    for &(name, url) in sources {
         let path = list_path(name);
         let text = match client
             .get(url)
@@ -394,5 +498,22 @@ mod site_tests {
             Some("localhost")
         );
         assert_eq!(site_of("about:blank"), None);
+    }
+
+    #[test]
+    fn turns_lists_into_webkit_rules() {
+        let list = "[Adblock Plus 2.0]\n! Title: Test\n||ads.example^\n##.cookie-banner\nnews.example##.newsletter-popup\n";
+        let (json, count) = super::convert(vec![list.to_string()]).unwrap();
+        let rules: serde_json::Value = serde_json::from_str(&json).unwrap();
+        let rules = rules.as_array().unwrap();
+        assert_eq!(rules.len(), count);
+        let action = |kind: &str, needle: &str| {
+            rules
+                .iter()
+                .any(|rule| rule["action"]["type"] == kind && rule.to_string().contains(needle))
+        };
+        assert!(action("block", "ads"));
+        assert!(action("css-display-none", ".cookie-banner"));
+        assert!(action("css-display-none", ".newsletter-popup"));
     }
 }

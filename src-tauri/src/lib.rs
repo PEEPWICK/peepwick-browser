@@ -125,7 +125,7 @@ pub fn run() {
             history::open();
             // What the last run should have cleared as it closed goes before any page opens.
             cleardata::at_startup();
-            shield::start(app.handle().clone());
+            shield::start();
             safebrowsing::start();
             let cwd = std::env::current_dir().unwrap_or_default();
             session::restore(app.handle(), urls_from(std::env::args().skip(1), &cwd))?;
