@@ -61,8 +61,10 @@ It is written in Rust with [Tauri](https://tauri.app/), and draws pages with
 ## Private by default
 
 - **Shield.** Ads and trackers are blocked with the EasyList and EasyPrivacy lists, compiled into
-  WebKit's own content blocking rules. If a site needs it, switch the shield off for that site
-  alone.
+  WebKit's own content blocking rules; the strict level also hides cookie notices and other
+  annoyances. The shield's button shows how many requests it stopped on the page and where they
+  went, and the new tab page counts the week's. If a site needs it, switch the shield off for that
+  site alone.
 - **Dangerous site warnings.** Sites known for malware or phishing don't open; a warning stands in
   their place. The lists come from the malware-filter project and are checked on your computer, so
   the addresses you visit never leave the browser.
