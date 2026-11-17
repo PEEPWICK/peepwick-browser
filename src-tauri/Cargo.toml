@@ -57,3 +57,5 @@ x509-parser = "0.18.1"
 openssl = "0.10"
 # Backups are gzipped JSON, as the Electron version wrote them.
 flate2 = "1"
+# Imported cookies go into WebKit's cookie jar as libsoup cookies (the version WebKit uses).
+soup = { package = "soup3", version = "0.5" }

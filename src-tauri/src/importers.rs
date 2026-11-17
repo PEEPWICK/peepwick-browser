@@ -1,21 +1,23 @@
 //! Importing from other browsers on this computer, the Chromium family and the Firefox family
 //! (Snap and Flatpak installs included): bookmarks, with the icons of the bookmarked sites,
 //! history, saved passwords (browsercrypto.rs decrypts them, with the browser's key from the
-//! desktop's keyring or Firefox's primary password), and form entries and addresses. Browsers
-//! keep their databases locked while they run, so SQLite files are copied to a private temporary
-//! folder and read from there. Only files on this computer are read; nothing is sent anywhere.
-//! Cookies come with that feature.
+//! desktop's keyring or Firefox's primary password), form entries and addresses, and cookies,
+//! which go into WebKit's cookie jar so sites stay signed in. Browsers keep their databases
+//! locked while they run, so SQLite files are copied to a private temporary folder and read from
+//! there. Only files on this computer are read; nothing is sent anywhere.
 
+use std::cell::{Cell, RefCell};
 use std::collections::{HashMap, HashSet};
 use std::os::unix::fs::{DirBuilderExt, MetadataExt};
 use std::path::{Path, PathBuf};
+use std::rc::Rc;
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use base64::Engine;
 use rusqlite::Connection;
 use serde_json::{Value, json};
-use webkit2gtk::glib;
+use webkit2gtk::{CookieManager, CookieManagerExt, WebsiteDataManagerExt, gio, glib};
 
 use crate::bookmarks::{self, Draft, DraftTree, Parsed};
 use crate::browsercrypto::{self, ChromiumKeys, FirefoxError};
@@ -169,10 +171,21 @@ fn chromium_kinds(dir: &Path) -> Vec<&'static str> {
     if dir.join("History").is_file() {
         kinds.push("history");
     }
+    if chromium_cookie_dir(dir).is_some() {
+        kinds.push("cookies");
+    }
     if dir.join("Web Data").is_file() {
         kinds.push("autofill");
     }
     kinds
+}
+
+/// Where a Chromium profile keeps its cookies: in Network/ since Chromium 96, before that in the
+/// profile itself.
+fn chromium_cookie_dir(dir: &Path) -> Option<PathBuf> {
+    [dir.join("Network"), dir.to_path_buf()]
+        .into_iter()
+        .find(|folder| folder.join("Cookies").is_file())
 }
 
 fn firefox_kinds(dir: &Path) -> Vec<&'static str> {
@@ -185,6 +198,9 @@ fn firefox_kinds(dir: &Path) -> Vec<&'static str> {
     }
     if dir.join("places.sqlite").is_file() {
         kinds.push("history");
+    }
+    if dir.join("cookies.sqlite").is_file() {
+        kinds.push("cookies");
     }
     if dir.join("formhistory.sqlite").is_file() || dir.join("autofill-profiles.json").is_file() {
         kinds.push("autofill");
@@ -897,6 +913,204 @@ fn firefox_passwords(dir: &Path, primary: &str) -> Result<FirefoxLogins, String>
     Ok(FirefoxLogins::Read(logins, never))
 }
 
+// ── Cookies ─────────────────────────────────────────────────────────────────────
+
+/// The most cookies one import brings, as in the Electron version.
+const MAX_COOKIES: usize = 20_000;
+/// How many cookies go to WebKit at once.
+const COOKIE_BATCH: usize = 200;
+
+/// A cookie on its way into WebKit's jar.
+#[derive(Clone, Debug, PartialEq)]
+pub struct CookieRow {
+    /// With a leading dot for a domain cookie, bare for a host-only one: the same in both
+    /// browsers' files and in libsoup.
+    host: String,
+    name: String,
+    value: String,
+    path: String,
+    /// Seconds since 1970.
+    expires: i64,
+    secure: bool,
+    http_only: bool,
+    /// 0 none, 1 lax, 2 strict, as both browsers number them; anything else leaves WebKit's own.
+    same_site: i64,
+}
+
+fn now_seconds() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_secs() as i64)
+}
+
+/// From Chromium 130 on (cookie database version 24) a decrypted value starts with the SHA-256
+/// of the cookie's domain, so values can't be moved between domains.
+fn strip_domain_hash<'a>(plain: &'a [u8], host: &str) -> &'a [u8] {
+    if plain.len() >= 32 && plain[..32] == openssl::sha::sha256(host.as_bytes()) {
+        &plain[32..]
+    } else {
+        plain
+    }
+}
+
+/// Chromium's cookies that outlive a session and haven't expired, with their values decrypted
+/// (v10, v11). (cookies, how many couldn't be decrypted)
+fn chromium_cookies(dir: &Path, keys: &ChromiumKeys) -> Result<(Vec<CookieRow>, usize), String> {
+    let Some(folder) = chromium_cookie_dir(dir) else {
+        return Ok((Vec::new(), 0));
+    };
+    with_copy(&folder, "Cookies", |db| {
+        let version: i64 = db
+            .query_row("SELECT value FROM meta WHERE key = 'version'", [], |row| {
+                row.get::<_, String>(0)
+            })
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(0);
+        let now = now_seconds();
+        let mut select = db.prepare(
+            "SELECT host_key, name, value, encrypted_value, path,
+               CASE WHEN expires_utc > 0 THEN expires_utc / 1000000 - 11644473600 ELSE 0 END,
+               is_secure, is_httponly, samesite, is_persistent
+             FROM cookies",
+        )?;
+        let mut rows = select.query([])?;
+        let (mut cookies, mut undecrypted) = (Vec::new(), 0);
+        while let Some(row) = rows.next()? {
+            let expires: i64 = row.get(5)?;
+            if row.get::<_, i64>(9)? == 0 || expires < now {
+                continue;
+            }
+            let host: String = row.get(0)?;
+            let encrypted = row.get::<_, Option<Vec<u8>>>(3)?.unwrap_or_default();
+            let value = if encrypted.is_empty() {
+                row.get::<_, Option<String>>(2)?.unwrap_or_default()
+            } else {
+                let Some(plain) = browsercrypto::decrypt_chromium(&encrypted, keys) else {
+                    undecrypted += 1;
+                    continue;
+                };
+                let plain = if version >= 24 {
+                    strip_domain_hash(&plain, &host)
+                } else {
+                    &plain
+                };
+                String::from_utf8_lossy(plain).into_owned()
+            };
+            cookies.push(CookieRow {
+                host,
+                name: row.get(1)?,
+                value,
+                path: row
+                    .get::<_, Option<String>>(4)?
+                    .filter(|p| !p.is_empty())
+                    .unwrap_or_else(|| "/".into()),
+                expires,
+                secure: row.get::<_, i64>(6)? != 0,
+                http_only: row.get::<_, i64>(7)? != 0,
+                same_site: row.get::<_, Option<i64>>(8)?.unwrap_or(-1),
+            });
+        }
+        Ok((cookies, undecrypted))
+    })
+}
+
+/// Firefox's cookies outside containers and private windows, not expired. Newer versions keep
+/// the expiry in milliseconds.
+fn firefox_cookies(dir: &Path) -> Result<Vec<CookieRow>, String> {
+    with_copy(dir, "cookies.sqlite", |db| {
+        let now = now_seconds();
+        let mut select = db.prepare(
+            "SELECT host, name, value, path, expiry, isSecure, isHttpOnly, sameSite
+             FROM moz_cookies WHERE originAttributes = ''",
+        )?;
+        let rows = select.query_map([], |row| {
+            let expiry: i64 = row.get(4)?;
+            Ok(CookieRow {
+                host: row.get(0)?,
+                name: row.get(1)?,
+                value: row.get(2)?,
+                path: row
+                    .get::<_, Option<String>>(3)?
+                    .filter(|p| !p.is_empty())
+                    .unwrap_or_else(|| "/".into()),
+                expires: if expiry > 100_000_000_000 {
+                    expiry / 1000
+                } else {
+                    expiry
+                },
+                secure: row.get::<_, i64>(5)? != 0,
+                http_only: row.get::<_, i64>(6)? != 0,
+                same_site: row.get::<_, Option<i64>>(7)?.unwrap_or(-1),
+            })
+        })?;
+        Ok(rows
+            .filter_map(Result::ok)
+            .filter(|cookie| cookie.expires >= now)
+            .collect())
+    })
+}
+
+/// Puts cookies into the normal windows' jar (WebKit's), a batch at a time, on the main
+/// thread; `done` gets how many WebKit took. Those it refuses (odd names or domains) are left.
+pub fn set_cookies(cookies: Vec<CookieRow>, done: impl FnOnce(usize) + 'static) {
+    type Done = Box<dyn FnOnce(usize)>;
+    struct Jar {
+        manager: CookieManager,
+        left: RefCell<std::vec::IntoIter<CookieRow>>,
+        taken: Cell<usize>,
+        done: RefCell<Option<Done>>,
+    }
+    fn next_batch(jar: Rc<Jar>) {
+        let batch: Vec<CookieRow> = jar.left.borrow_mut().by_ref().take(COOKIE_BATCH).collect();
+        if batch.is_empty() {
+            let done = jar.done.borrow_mut().take();
+            if let Some(done) = done {
+                done(jar.taken.get());
+            }
+            return;
+        }
+        let pending = Rc::new(Cell::new(batch.len()));
+        for row in batch {
+            let mut cookie = soup::Cookie::new(&row.name, &row.value, &row.host, &row.path, -1);
+            if let Ok(expires) = glib::DateTime::from_unix_utc(row.expires) {
+                cookie.set_expires(&expires);
+            }
+            cookie.set_secure(row.secure);
+            cookie.set_http_only(row.http_only);
+            match row.same_site {
+                0 => cookie.set_same_site_policy(soup::SameSitePolicy::None),
+                1 => cookie.set_same_site_policy(soup::SameSitePolicy::Lax),
+                2 => cookie.set_same_site_policy(soup::SameSitePolicy::Strict),
+                _ => {}
+            }
+            let (next, pending) = (jar.clone(), pending.clone());
+            jar.manager
+                .add_cookie(&mut cookie, None::<&gio::Cancellable>, move |result| {
+                    if result.is_ok() {
+                        next.taken.set(next.taken.get() + 1);
+                    }
+                    pending.set(pending.get() - 1);
+                    if pending.get() == 0 {
+                        next_batch(next);
+                    }
+                });
+        }
+    }
+    let Some(manager) = crate::window::browsing_data().and_then(|data| data.cookie_manager())
+    else {
+        return done(0);
+    };
+    let mut cookies = cookies;
+    cookies.truncate(MAX_COOKIES);
+    next_batch(Rc::new(Jar {
+        manager,
+        left: RefCell::new(cookies.into_iter()),
+        taken: Cell::new(0),
+        done: RefCell::new(Some(Box::new(done))),
+    }));
+}
+
 // ── Form entries and addresses ──────────────────────────────────────────────────
 
 /// Chromium's address field types (its server field types) that we keep.
@@ -1076,6 +1290,8 @@ pub struct Imported {
     passwords: Option<(Vec<PlainLogin>, Vec<String>)>,
     /// Addresses and form entries, which are kept with the passwords' key too.
     autofill: Option<(Vec<Address>, Vec<FormEntry>)>,
+    /// Cookies, which WebKit takes a moment later (`set_cookies`).
+    cookies: Option<Vec<CookieRow>>,
     needs_primary: bool,
     failed: Vec<&'static str>,
 }
@@ -1085,6 +1301,11 @@ impl Imported {
     /// entries are kept with it.
     pub fn needs_key(&self) -> bool {
         self.passwords.is_some() || self.autofill.is_some()
+    }
+
+    /// The cookies read, to hand to `set_cookies` after `finish`.
+    pub fn take_cookies(&mut self) -> Option<Vec<CookieRow>> {
+        self.cookies.take()
     }
 }
 
@@ -1106,9 +1327,12 @@ pub fn read(source_id: &str, kinds: &[String], primary: &str) -> Option<Imported
         favicons: 0,
         passwords: None,
         autofill: None,
+        cookies: None,
         needs_primary: false,
         failed: Vec::new(),
     };
+    // A Chromium browser's keys come from the keyring once, for passwords and cookies both.
+    let mut chromium_keys: Option<ChromiumKeys> = None;
     if wants("bookmarks") {
         match read_bookmarks(source.family, &source.dir, &Labels::current()) {
             Ok(parsed) => {
@@ -1127,8 +1351,9 @@ pub fn read(source_id: &str, kinds: &[String], primary: &str) -> Option<Imported
     if wants("passwords") {
         match source.family {
             Family::Chromium => {
-                let keys = browsercrypto::chromium_keys(source.browser);
-                match chromium_passwords(&source.dir, &keys) {
+                let keys = chromium_keys
+                    .get_or_insert_with(|| browsercrypto::chromium_keys(source.browser));
+                match chromium_passwords(&source.dir, keys) {
                     Ok((logins, never, undecrypted)) => {
                         if undecrypted > 0 && logins.is_empty() {
                             imported.failed.push("passwords");
@@ -1159,6 +1384,29 @@ pub fn read(source_id: &str, kinds: &[String], primary: &str) -> Option<Imported
             Err(error) => {
                 crate::log_error!("[import] history failed: {error}");
                 imported.failed.push("history");
+            }
+        }
+    }
+    if wants("cookies") {
+        let read = match source.family {
+            Family::Chromium => {
+                let keys = chromium_keys
+                    .get_or_insert_with(|| browsercrypto::chromium_keys(source.browser));
+                chromium_cookies(&source.dir, keys)
+            }
+            Family::Firefox => firefox_cookies(&source.dir).map(|cookies| (cookies, 0)),
+        };
+        match read {
+            Ok((cookies, undecrypted)) => {
+                // None of them could be read: the keyring stayed locked, or the key changed.
+                if undecrypted > 0 && cookies.is_empty() {
+                    imported.failed.push("cookies");
+                }
+                imported.cookies = Some(cookies);
+            }
+            Err(error) => {
+                crate::log_error!("[import] cookies failed: {error}");
+                imported.failed.push("cookies");
             }
         }
     }
@@ -1385,5 +1633,187 @@ mod tests {
         );
         assert_eq!(found[1].id, "chromium:1");
         let _ = std::fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    fn strips_chromiums_domain_hash() {
+        let hashed = [openssl::sha::sha256(b".example.com").as_slice(), b"value"].concat();
+        assert_eq!(strip_domain_hash(&hashed, ".example.com"), b"value");
+        assert_eq!(strip_domain_hash(&hashed, "example.com"), hashed.as_slice());
+        assert_eq!(strip_domain_hash(b"short", "example.com"), b"short");
+    }
+
+    #[test]
+    fn reads_chromium_and_firefox_cookies() {
+        use crate::browsercrypto::write;
+        let dir = std::env::temp_dir().join(format!("peepwick-cookie-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let now = now_seconds();
+        // Chromium 130's layout: Network/Cookies, database version 24.
+        let chrome = dir.join("chrome");
+        std::fs::create_dir_all(chrome.join("Network")).unwrap();
+        let db = Connection::open(chrome.join("Network/Cookies")).unwrap();
+        db.execute_batch(
+            "CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT);
+             INSERT INTO meta VALUES ('version', '24');
+             CREATE TABLE cookies (host_key TEXT, name TEXT, value TEXT, encrypted_value BLOB,
+               path TEXT, expires_utc INTEGER, is_secure INTEGER, is_httponly INTEGER,
+               samesite INTEGER, is_persistent INTEGER);",
+        )
+        .unwrap();
+        let chromium_time = |seconds: i64| (seconds + 11_644_473_600) * 1_000_000;
+        let (later, earlier) = (chromium_time(now + 86_400), chromium_time(now - 86_400));
+        let key = crate::browsercrypto::chromium_key(b"peanuts");
+        let hashed = [
+            openssl::sha::sha256(b"localhost").as_slice(),
+            "değer".as_bytes(),
+        ]
+        .concat();
+        let mut insert = db
+            .prepare("INSERT INTO cookies VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)")
+            .unwrap();
+        // host, name, value, encrypted value, path, expiry, secure, HttpOnly, SameSite, persistent
+        type Row<'a> = (
+            &'a str,
+            &'a str,
+            &'a str,
+            Vec<u8>,
+            &'a str,
+            i64,
+            i64,
+            i64,
+            i64,
+            i64,
+        );
+        let rows: [Row; 6] = [
+            (
+                "localhost",
+                "sid",
+                "",
+                write::chromium(&hashed, &key, "v10"),
+                "/",
+                later,
+                0,
+                1,
+                1,
+                1,
+            ),
+            (
+                ".example.com",
+                "pref",
+                "",
+                write::chromium("dark", &key, "v10"),
+                "/a",
+                later,
+                1,
+                0,
+                0,
+                1,
+            ),
+            (
+                "localhost",
+                "plain",
+                "açık",
+                Vec::new(),
+                "",
+                later,
+                0,
+                0,
+                -1,
+                1,
+            ),
+            ("localhost", "session", "x", Vec::new(), "/", 0, 0, 0, -1, 0),
+            (
+                "localhost",
+                "old",
+                "x",
+                Vec::new(),
+                "/",
+                earlier,
+                0,
+                0,
+                -1,
+                1,
+            ),
+            (
+                "localhost",
+                "broken",
+                "",
+                b"v10not-aes".to_vec(),
+                "/",
+                later,
+                0,
+                0,
+                -1,
+                1,
+            ),
+        ];
+        for r in rows {
+            insert
+                .execute(rusqlite::params![
+                    r.0, r.1, r.2, r.3, r.4, r.5, r.6, r.7, r.8, r.9
+                ])
+                .unwrap();
+        }
+        drop(insert);
+        drop(db);
+        let (cookies, undecrypted) = chromium_cookies(&chrome, &write::keys()).unwrap();
+        assert_eq!(undecrypted, 1);
+        let seen: Vec<(&str, &str, &str, &str, bool, bool, i64)> = cookies
+            .iter()
+            .map(|c| {
+                let (host, name, value, path) = (&c.host, &c.name, &c.value, &c.path);
+                (
+                    host.as_str(),
+                    name.as_str(),
+                    value.as_str(),
+                    path.as_str(),
+                    c.secure,
+                    c.http_only,
+                    c.same_site,
+                )
+            })
+            .collect();
+        assert_eq!(
+            seen,
+            [
+                ("localhost", "sid", "değer", "/", false, true, 1),
+                (".example.com", "pref", "dark", "/a", true, false, 0),
+                ("localhost", "plain", "açık", "/", false, false, -1),
+            ]
+        );
+        assert!((cookies[0].expires - (now + 86_400)).abs() <= 1);
+
+        // Firefox: containers and private windows stay out; newer versions count milliseconds.
+        let firefox = dir.join("firefox");
+        std::fs::create_dir_all(&firefox).unwrap();
+        let db = Connection::open(firefox.join("cookies.sqlite")).unwrap();
+        db.execute_batch(
+            "CREATE TABLE moz_cookies (originAttributes TEXT NOT NULL DEFAULT '', host TEXT,
+               name TEXT, value TEXT, path TEXT, expiry INTEGER, isSecure INTEGER,
+               isHttpOnly INTEGER, sameSite INTEGER);",
+        )
+        .unwrap();
+        let ms = (now + 3_600) * 1000;
+        db.execute(
+            "INSERT INTO moz_cookies VALUES ('', 'localhost', 'ff', '1', '/', ?1, 0, 1, 2),
+               ('^userContextId=1', 'localhost', 'box', '1', '/', ?1, 0, 0, 0),
+               ('', '.example.org', 'stale', '1', '/', ?2, 0, 0, 0),
+               ('', '.example.org', 'seconds', '2', '', ?3, 1, 0, 0)",
+            rusqlite::params![ms, now - 10, now + 60],
+        )
+        .unwrap();
+        drop(db);
+        let cookies = firefox_cookies(&firefox).unwrap();
+        let names: Vec<(&str, i64, &str)> = cookies
+            .iter()
+            .map(|c| (c.name.as_str(), c.expires, c.path.as_str()))
+            .collect();
+        assert_eq!(
+            names,
+            [("ff", now + 3_600, "/"), ("seconds", now + 60, "/")]
+        );
+        assert!(cookies[0].http_only && cookies[0].same_site == 2);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

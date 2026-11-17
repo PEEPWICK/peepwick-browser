@@ -341,6 +341,35 @@ async fn run(app: &AppHandle, win: &Rc<BrowserWindow>, step: &Value, out: &str) 
                 eprintln!("[harness] passwords imported {result}");
             }
         }
+        // The cookies the normal windows' jar holds for an address, HttpOnly ones too.
+        "cookies" => {
+            use webkit2gtk::{CookieManagerExt, WebsiteDataManagerExt};
+            let Some(manager) = window::browsing_data().and_then(|data| data.cookie_manager())
+            else {
+                eprintln!("[harness] cookies: no jar");
+                return;
+            };
+            let listed: Vec<String> = match manager.cookies_future(get("uri")).await {
+                Ok(mut cookies) => cookies
+                    .iter_mut()
+                    .map(|c| {
+                        format!(
+                            "{}={} domain={} path={} secure={} httpOnly={} sameSite={:?} expires={}",
+                            c.name().unwrap_or_default(),
+                            c.value().unwrap_or_default(),
+                            c.domain().unwrap_or_default(),
+                            c.path().unwrap_or_default(),
+                            c.is_secure(),
+                            c.is_http_only(),
+                            c.same_site_policy(),
+                            c.expires().map(|e| e.to_unix()).unwrap_or(0)
+                        )
+                    })
+                    .collect(),
+                Err(error) => vec![format!("error {error}")],
+            };
+            eprintln!("[harness] cookies {} {listed:?}", get("uri"));
+        }
         // Background tabs idle for longer than "idleMs" sleep now, as the minute timer does.
         "sleepTabs" => {
             let idle = step["idleMs"].as_u64().unwrap_or(0);

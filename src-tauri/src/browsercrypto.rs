@@ -426,15 +426,23 @@ pub(crate) mod write {
         base64::engine::general_purpose::STANDARD.encode(der)
     }
 
-    pub fn chromium(plain: &str, key: &[u8; 16], prefix: &str) -> Vec<u8> {
+    pub fn chromium(plain: impl AsRef<[u8]>, key: &[u8; 16], prefix: &str) -> Vec<u8> {
         let body = encrypt(
             Cipher::aes_128_cbc(),
             key,
             Some(&CHROMIUM_IV),
-            plain.as_bytes(),
+            plain.as_ref(),
         )
         .unwrap();
         [prefix.as_bytes(), &body].concat()
+    }
+
+    /// A browser's keys without its keyring: the fixed v10 key and the empty v11 one.
+    pub fn keys() -> ChromiumKeys {
+        ChromiumKeys {
+            v10: chromium_key(b"peanuts"),
+            v11: vec![chromium_key(b"")],
+        }
     }
 }
 

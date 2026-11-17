@@ -127,16 +127,33 @@ pub async fn pw_invoke(
         })
         .await
         .map_err(|e| e.to_string())?;
-        let Some(read) = read else {
+        let Some(mut read) = read else {
             return Ok(Value::Null);
         };
         if read.needs_key() {
             crate::passwords::ready(true).await;
         }
-        return on_main(&app, &label, move |_| {
+        let cookies = read.take_cookies();
+        let mut result = on_main(&app, &label, move |_| {
             importers::finish(read.clone(), skip_duplicates)
         })
-        .await;
+        .await?;
+        // Cookies go into WebKit's jar; the dialog says how many it took.
+        if let Some(cookies) = cookies {
+            let (tx, rx) = tokio::sync::oneshot::channel::<usize>();
+            let tx = std::sync::Arc::new(std::sync::Mutex::new(Some(tx)));
+            on_main(&app, &label, move |_| {
+                let tx = tx.clone();
+                importers::set_cookies(cookies.clone(), move |taken| {
+                    if let Some(tx) = tx.lock().ok().and_then(|mut tx| tx.take()) {
+                        let _ = tx.send(taken);
+                    }
+                });
+            })
+            .await?;
+            result["cookies"] = json!(rx.await.unwrap_or(0));
+        }
+        return Ok(result);
     }
     // The task manager: which tabs live where comes from the main thread, the processes'
     // memory and processor use from /proc, off it.
