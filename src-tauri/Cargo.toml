@@ -52,8 +52,6 @@ tauri-plugin-single-instance = "2.5.5"
 tauri-plugin-updater = "2.14.1"
 regex = "1"
 x509-parser = "0.18.1"
-# Saved passwords: AES-256-GCM with a key the desktop's Secret Service keeps, and the
-# ciphers other browsers use, for importing theirs. Both are already linked (native-tls,
-# tauri-plugin-single-instance).
+# Saved passwords: AES-256-GCM, and the ciphers other browsers use, for importing theirs.
+# Already linked through native-tls. The Secret Service is reached through gio's D-Bus.
 openssl = "0.10"
-zbus = "5"

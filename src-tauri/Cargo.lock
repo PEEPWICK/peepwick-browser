@@ -2875,7 +2875,6 @@ dependencies = [
  "url",
  "webkit2gtk",
  "x509-parser",
- "zbus",
 ]
 
 [[package]]
