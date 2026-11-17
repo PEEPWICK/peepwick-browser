@@ -41,8 +41,21 @@ fn main() {
 fn build_web_extension() {
     let source = "webext/peepwick-webext.c";
     println!("cargo:rerun-if-changed={source}");
-    let built =
-        PathBuf::from(std::env::var("OUT_DIR").expect("cargo sets OUT_DIR")).join("webext.so");
+    let out_dir = PathBuf::from(std::env::var("OUT_DIR").expect("cargo sets OUT_DIR"));
+    // The forms script goes into the extension as bytes: no quoting to get wrong.
+    let script = "webext/forms.js";
+    println!("cargo:rerun-if-changed={script}");
+    let bytes = std::fs::read(script).expect("webext/forms.js is part of the source");
+    let mut header = String::from(
+        "/* Made by build.rs from webext/forms.js. */\nstatic const char FORMS_JS[] = {",
+    );
+    for (i, byte) in bytes.iter().chain(&[0]).enumerate() {
+        header.push_str(if i % 16 == 0 { "\n    " } else { " " });
+        header.push_str(&format!("0x{byte:02x},"));
+    }
+    header.push_str("\n};\n");
+    std::fs::write(out_dir.join("forms-js.h"), header).expect("could not write forms-js.h");
+    let built = out_dir.join("webext.so");
     let flags = Command::new("pkg-config")
         .args(["--cflags", "--libs", "webkit2gtk-web-extension-4.1"])
         .output()
@@ -62,6 +75,7 @@ fn build_web_extension() {
             "-Wextra",
             "-Wno-unused-parameter",
         ])
+        .arg(format!("-I{}", out_dir.display()))
         .args(["-Wl,--as-needed", "-s", "-o"])
         .arg(&built)
         .arg(source)

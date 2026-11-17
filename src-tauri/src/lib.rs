@@ -15,6 +15,7 @@ mod diagnostics;
 mod downloads;
 mod focus;
 mod fonts;
+mod formdata;
 #[cfg(any(debug_assertions, feature = "harness"))]
 mod harness;
 mod history;
@@ -148,6 +149,7 @@ pub fn run() {
                 bookmarks::flush();
                 readinglist::flush();
                 passwords::flush();
+                formdata::flush();
                 downloads::flush();
                 permissions::flush();
                 // After the saves: it may wait a moment for speech-dispatcher.

@@ -230,7 +230,6 @@ export function BackupRestoreDialog({ token, name }: { token: string; name: stri
             ))}
           </div>
         )}
-        {(summary.autofillLater ?? 0) > 0 && <p className="setting-hint">{t('backup.autofillLater', { n: summary.autofillLater ?? 0 })}</p>}
         <p className="setting-hint">{t('backup.restoreMerge')}</p>
         {error && <span className="field-error">{error}</span>}
         <div className="panel-actions">

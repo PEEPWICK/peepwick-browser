@@ -224,6 +224,28 @@ fn decrypt(secret: &str) -> Option<String> {
     unseal(secret, key)
 }
 
+/// For autofill's other data (formdata.rs), sealed the same way with the same key.
+pub(crate) fn seal_text(plain: &str) -> Option<String> {
+    encrypt(plain)
+}
+
+pub(crate) fn open_text(secret: &str) -> Option<String> {
+    decrypt(secret)
+}
+
+/// Whether sealing works now: the key is known, or there's no keyring and the fixed key stands in.
+pub(crate) fn can_seal() -> bool {
+    matches!(keyring(), Keyring::Ready(_) | Keyring::Unavailable)
+}
+
+/// Whether the keyring has been asked and answered: what the key can't open now, it never will.
+pub(crate) fn key_settled() -> bool {
+    matches!(
+        keyring(),
+        Keyring::Ready(_) | Keyring::Unavailable | Keyring::Missing
+    )
+}
+
 // ── The list ────────────────────────────────────────────────────────────────────
 
 /// Milliseconds, read leniently: a number written as a float still counts.

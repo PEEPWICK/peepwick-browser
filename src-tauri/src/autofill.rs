@@ -1,12 +1,12 @@
-//! Signing in with saved passwords: what a page's form script reports (the "forms" world of
-//! webext/peepwick-webext.c), the list of saved logins under a field, filling what the person
-//! picks, and "Save password?" after a sign-in.
+//! Autofill: what a page's form script reports (webext/forms.js, in the "forms" world of
+//! webext/peepwick-webext.c), the list under a field (saved logins, a strong password, saved
+//! addresses, values typed into the same kind of field before), filling what the person picks,
+//! "Save password?" after a sign-in, and remembering what a sent form held (formdata.rs).
 //!
 //! The list is the interface's popup.html in a small view of its own over the page, so the page
-//! keeps the keyboard: the page script passes on the keys that move through the list. The
-//! page's address always comes from WebKit through the extension, never from what the page
-//! says, and only a tab's main frame takes part. Addresses and other form entries come with
-//! the rest of autofill.
+//! keeps the keyboard: the page script passes on the keys that move through the list, and what
+//! is typed, which narrows it. The page's address always comes from WebKit through the
+//! extension, never from what the page says, and only a tab's main frame takes part.
 
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
@@ -24,7 +24,8 @@ use webkit2gtk::{
 };
 
 use crate::actions::open_page;
-use crate::i18n::t;
+use crate::formdata::{self, Address};
+use crate::i18n::{fold, t};
 use crate::passwords::{self, Offer, PlainLogin};
 use crate::tab::Tab;
 use crate::window::{self, BrowserWindow};
@@ -47,13 +48,24 @@ enum FieldKind {
     Username,
     Password,
     NewPassword,
+    /// Any other text field: addresses and values typed before.
+    Text,
 }
 
 #[derive(Clone)]
 enum Pick {
     Login(String),
     Generated(String),
+    Value(String),
+    Address(Box<Address>),
     Manage,
+    ManageAddresses,
+}
+
+impl Pick {
+    fn manages(&self) -> bool {
+        matches!(self, Pick::Manage | Pick::ManageAddresses)
+    }
 }
 
 struct Suggestion {
@@ -62,12 +74,24 @@ struct Suggestion {
     pick: Pick,
 }
 
-/// The field a window's list belongs to.
-struct Active {
+/// The field with focus in a window's tab, as its page reported it.
+#[derive(Clone)]
+struct Focus {
     tab_id: u32,
     origin: String,
+    kind: FieldKind,
     /// The field, in the page's CSS pixels: x, y, width, height.
     rect: (f64, f64, f64, f64),
+    /// For other text fields: what the field is called (to remember values by), what's in it,
+    /// and which part of an address it asks for.
+    key: String,
+    value: String,
+    address: Option<&'static str>,
+}
+
+/// The list a window shows under a field.
+struct Active {
+    focus: Focus,
     suggestions: Vec<Suggestion>,
     selected: i32,
 }
@@ -100,6 +124,8 @@ struct Pending {
 }
 
 thread_local! {
+    /// Kept while the field has focus, list or not: typing can bring the list back.
+    static FOCUS: RefCell<HashMap<u32, Focus>> = RefCell::new(HashMap::new());
     static ACTIVE: RefCell<HashMap<u32, Active>> = RefCell::new(HashMap::new());
     static POPUPS: RefCell<HashMap<u32, Rc<Popup>>> = RefCell::new(HashMap::new());
     static HIDE_TIMERS: RefCell<HashMap<u32, glib::SourceId>> = RefCell::new(HashMap::new());
@@ -156,10 +182,28 @@ pub fn page_message(tab: &Rc<Tab>, page: &WebView, kind: &str, payload: &str, ur
     }
     match kind {
         "focus" => focused(&win, tab, page, origin, &payload),
+        "input" => typed(&win, tab, page, &payload),
         "blur" => blurred(&win),
         "key" => key(&win, payload.as_str().unwrap_or_default()),
         _ => {}
     }
+}
+
+/// The field's place in the page, from a page message.
+fn rect_of(payload: &Value) -> Option<(f64, f64, f64, f64)> {
+    let number = |key: &str| {
+        payload
+            .get("rect")
+            .and_then(|r| r.get(key))
+            .and_then(Value::as_f64)
+            .filter(|n| n.is_finite())
+    };
+    Some((
+        number("x")?,
+        number("y")?,
+        number("width")?,
+        number("height")?,
+    ))
 }
 
 fn focused(
@@ -174,21 +218,85 @@ fn focused(
         Some("username") => FieldKind::Username,
         Some("password") => FieldKind::Password,
         Some("new-password") => FieldKind::NewPassword,
-        _ => return hide(win),
+        Some("text") => FieldKind::Text,
+        _ => {
+            FOCUS.with(|focus| focus.borrow_mut().remove(&win.id));
+            return hide(win);
+        }
     };
-    let number = |key: &str| {
-        payload
-            .get("rect")
-            .and_then(|r| r.get(key))
-            .and_then(Value::as_f64)
-            .filter(|n| n.is_finite())
-    };
-    let (Some(x), Some(y), Some(width), Some(height)) =
-        (number("x"), number("y"), number("width"), number("height"))
-    else {
+    let Some(rect) = rect_of(payload) else {
+        FOCUS.with(|focus| focus.borrow_mut().remove(&win.id));
         return hide(win);
     };
-    let suggestions = suggestions_for(win, &origin, kind);
+    let text = |key: &str, max: usize| {
+        clip(
+            payload.get(key).and_then(Value::as_str).unwrap_or_default(),
+            max,
+        )
+    };
+    let address = payload
+        .get("address")
+        .and_then(Value::as_str)
+        .and_then(|part| formdata::ADDRESS_FIELDS.into_iter().find(|f| *f == part));
+    let focus = Focus {
+        tab_id: tab.id,
+        origin,
+        kind,
+        rect,
+        key: text("key", 100),
+        value: text("value", 200),
+        address,
+    };
+    FOCUS.with(|f| f.borrow_mut().insert(win.id, focus));
+    refresh(win, page);
+}
+
+/// What's typed into a text field narrows its list, or brings it back.
+fn typed(win: &Rc<BrowserWindow>, tab: &Rc<Tab>, page: &WebView, payload: &Value) {
+    let updated = FOCUS.with(|focus| {
+        let mut focus = focus.borrow_mut();
+        let field = focus.get_mut(&win.id)?;
+        // Logins and strong passwords don't narrow as you type.
+        if field.tab_id != tab.id || field.kind != FieldKind::Text {
+            return None;
+        }
+        field.value = clip(
+            payload
+                .get("value")
+                .and_then(Value::as_str)
+                .unwrap_or_default(),
+            200,
+        );
+        if let Some(rect) = rect_of(payload) {
+            field.rect = rect;
+        }
+        Some(())
+    });
+    if updated.is_some() {
+        cancel_hide(win.id);
+        refresh(win, page);
+    }
+}
+
+/// Shows the list for the window's field with what fits it now, or hides it.
+fn refresh(win: &Rc<BrowserWindow>, page: &WebView) {
+    let Some(focus) = FOCUS.with(|f| f.borrow().get(&win.id).cloned()) else {
+        return hide(win);
+    };
+    if focus.kind == FieldKind::Text && settings::get().form_fill && !formdata::ensure_open() {
+        // The saved data waits for the key: the list comes once it has been read.
+        let (win_id, tab_id) = (win.id, focus.tab_id);
+        formdata::when_open(false, move || {
+            let still = FOCUS.with(|f| f.borrow().get(&win_id).is_some_and(|f| f.tab_id == tab_id));
+            if let (true, true, Some(win)) = (formdata::ensure_open(), still, window_by_id(win_id))
+                && let Some(page) = page_of(&win, tab_id)
+            {
+                refresh(&win, &page);
+            }
+        });
+        return hide(win);
+    }
+    let suggestions = suggestions_for(win, &focus);
     if suggestions.is_empty() {
         return hide(win);
     }
@@ -196,9 +304,7 @@ fn focused(
         active.borrow_mut().insert(
             win.id,
             Active {
-                tab_id: tab.id,
-                origin,
-                rect: (x, y, width, height),
+                focus,
                 suggestions,
                 selected: -1,
             },
@@ -207,14 +313,15 @@ fn focused(
     show(win, page);
 }
 
-fn suggestions_for(win: &BrowserWindow, origin: &str, kind: FieldKind) -> Vec<Suggestion> {
-    if !settings::get().password_fill {
-        return Vec::new();
-    }
+fn suggestions_for(win: &BrowserWindow, focus: &Focus) -> Vec<Suggestion> {
+    let prefs = settings::get();
     let mut out = Vec::new();
-    match kind {
+    match focus.kind {
         FieldKind::Username | FieldKind::Password => {
-            for login in passwords::credentials_for(origin) {
+            if !prefs.password_fill {
+                return out;
+            }
+            for login in passwords::credentials_for(&focus.origin) {
                 let detail = if login.exact {
                     "••••••••".to_string()
                 } else {
@@ -232,17 +339,18 @@ fn suggestions_for(win: &BrowserWindow, origin: &str, kind: FieldKind) -> Vec<Su
             }
         }
         FieldKind::NewPassword => {
-            if win.incognito {
-                return Vec::new();
+            if !prefs.password_fill || win.incognito {
+                return out;
             }
             let Some(password) = passwordcsv::generate_password() else {
-                return Vec::new();
+                return out;
             };
             out.push(Suggestion {
                 item: json!({ "kind": "generate", "label": t("autofill.generate"), "detail": password }),
                 pick: Pick::Generated(password),
             });
         }
+        FieldKind::Text => return text_suggestions(focus, prefs.form_fill, prefs.language),
     }
     if !out.is_empty() {
         out.push(Suggestion {
@@ -253,11 +361,58 @@ fn suggestions_for(win: &BrowserWindow, origin: &str, kind: FieldKind) -> Vec<Su
     out
 }
 
+/// For other text fields: saved addresses whose part for this field goes on from what's typed,
+/// then values typed into fields of the same name before.
+fn text_suggestions(focus: &Focus, form_fill: bool, lang: settings::Lang) -> Vec<Suggestion> {
+    let mut out: Vec<Suggestion> = Vec::new();
+    if !form_fill {
+        return out;
+    }
+    let typed = fold(focus.value.trim(), lang);
+    if let Some(part) = focus.address {
+        for address in formdata::addresses() {
+            let value = address.field(part).to_string();
+            if value.is_empty() || !fold(&value, lang).starts_with(&typed) {
+                continue;
+            }
+            let detail: Vec<&str> = [&address.name, &address.street, &address.city]
+                .into_iter()
+                .map(String::as_str)
+                .filter(|v| !v.is_empty() && *v != value)
+                .collect();
+            out.push(Suggestion {
+                item: json!({ "kind": "address", "label": value, "detail": detail.join(", ") }),
+                pick: Pick::Address(Box::new(address)),
+            });
+        }
+    }
+    if !focus.key.is_empty() {
+        for value in formdata::suggest(&focus.key, &focus.value) {
+            if out.iter().any(|s| s.item["label"] == value.as_str()) {
+                continue;
+            }
+            out.push(Suggestion {
+                item: json!({ "kind": "value", "label": value }),
+                pick: Pick::Value(value),
+            });
+        }
+    }
+    if out.iter().any(|s| matches!(s.pick, Pick::Address(_))) {
+        out.push(Suggestion {
+            item: json!({ "kind": "manage", "label": t("autofill.manageAddresses") }),
+            pick: Pick::ManageAddresses,
+        });
+    }
+    out.truncate(8);
+    out
+}
+
 fn blurred(win: &BrowserWindow) {
     cancel_hide(win.id);
     let win_id = win.id;
     let timer = glib::timeout_add_local_once(BLUR_GRACE, move || {
         HIDE_TIMERS.with(|timers| timers.borrow_mut().remove(&win_id));
+        FOCUS.with(|focus| focus.borrow_mut().remove(&win_id));
         if let Some(win) = window_by_id(win_id) {
             hide(&win);
         }
@@ -406,9 +561,13 @@ fn show(win: &Rc<BrowserWindow>, page: &WebView) {
             let rows = state
                 .suggestions
                 .iter()
-                .filter(|s| !matches!(s.pick, Pick::Manage))
+                .filter(|s| !s.pick.manages())
                 .count() as i32;
-            (state.rect, rows, rows < state.suggestions.len() as i32)
+            (
+                state.focus.rect,
+                rows,
+                rows < state.suggestions.len() as i32,
+            )
         })
     }) else {
         return;
@@ -445,7 +604,7 @@ fn render(win: &BrowserWindow) {
                     "lang": settings::get().language,
                 }),
                 s.selected,
-                s.tab_id,
+                s.focus.tab_id,
             )
         })
     }) else {
@@ -471,18 +630,24 @@ pub fn hide(win: &BrowserWindow) {
     if let Some(popup) = POPUPS.with(|popups| popups.borrow().get(&win.id).cloned()) {
         popup.view.hide();
     }
-    if let Some(page) = state.and_then(|state| page_of(win, state.tab_id)) {
+    if let Some(page) = state.and_then(|state| page_of(win, state.focus.tab_id)) {
         tell_page(&page, json!({ "type": "popup", "open": false }));
     }
 }
 
 /// Closes the list if it belongs to this tab: its page is going.
 pub fn hide_tab(win: &BrowserWindow, tab_id: u32) {
+    FOCUS.with(|focus| {
+        let mut focus = focus.borrow_mut();
+        if focus.get(&win.id).is_some_and(|f| f.tab_id == tab_id) {
+            focus.remove(&win.id);
+        }
+    });
     if ACTIVE.with(|active| {
         active
             .borrow()
             .get(&win.id)
-            .is_some_and(|a| a.tab_id == tab_id)
+            .is_some_and(|a| a.focus.tab_id == tab_id)
     }) {
         hide(win);
     }
@@ -491,6 +656,7 @@ pub fn hide_tab(win: &BrowserWindow, tab_id: u32) {
 /// A window closed: its list and its questions go with it.
 pub fn forget(win_id: u32) {
     cancel_hide(win_id);
+    FOCUS.with(|focus| focus.borrow_mut().remove(&win_id));
     ACTIVE.with(|active| active.borrow_mut().remove(&win_id));
     POPUPS.with(|popups| popups.borrow_mut().remove(&win_id));
     let ids: Vec<u32> = PENDING.with(|pending| {
@@ -548,10 +714,13 @@ fn popup_message(win_id: u32, text: &str) {
 fn pick(win: &Rc<BrowserWindow>, index: usize) {
     let Some((tab_id, origin, pick)) = ACTIVE.with(|active| {
         active.borrow().get(&win.id).and_then(|state| {
-            state
-                .suggestions
-                .get(index)
-                .map(|s| (state.tab_id, state.origin.clone(), s.pick.clone()))
+            state.suggestions.get(index).map(|s| {
+                (
+                    state.focus.tab_id,
+                    state.focus.origin.clone(),
+                    s.pick.clone(),
+                )
+            })
         })
     }) else {
         return;
@@ -580,9 +749,25 @@ fn pick(win: &Rc<BrowserWindow>, index: usize) {
             &origin,
             json!({ "type": "generated", "password": password }),
         ),
+        Pick::Value(value) => fill(
+            win,
+            tab_id,
+            &origin,
+            json!({ "type": "value", "value": value }),
+        ),
+        Pick::Address(address) => fill(
+            win,
+            tab_id,
+            &origin,
+            json!({ "type": "address", "address": address }),
+        ),
         Pick::Manage => {
             hide(win);
             open_page(win, "passwords", "");
+        }
+        Pick::ManageAddresses => {
+            hide(win);
+            open_page(win, "settings", "autofill");
         }
     }
 }
@@ -618,7 +803,7 @@ pub fn describe(win: &BrowserWindow) -> String {
                 .collect();
             format!(
                 "tab={} origin={} selected={} items={labels:?}",
-                a.tab_id, a.origin, a.selected
+                a.focus.tab_id, a.focus.origin, a.selected
             )
         })
     });
@@ -640,7 +825,31 @@ pub fn describe(win: &BrowserWindow) -> String {
 // ── Saving after a sign-in ─────────────────────────────────────────────────────
 
 fn submitted(win: &BrowserWindow, origin: &str, payload: &Value) {
-    if win.incognito || !settings::get().password_save {
+    if win.incognito {
+        return;
+    }
+    let prefs = settings::get();
+    // What the form's text fields held, to suggest again.
+    if prefs.form_fill {
+        let sent: Vec<(String, String)> = payload
+            .get("entries")
+            .and_then(Value::as_array)
+            .map(|entries| {
+                entries
+                    .iter()
+                    .take(50)
+                    .filter_map(|e| {
+                        let key = e.get("key")?.as_str()?;
+                        Some((clip(key, 100), clip(e.get("value")?.as_str()?, 500)))
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+        if !sent.is_empty() {
+            formdata::when_open(true, move || formdata::remember(&sent));
+        }
+    }
+    if !prefs.password_save {
         return;
     }
     let text = |key: &str| payload.get(key).and_then(Value::as_str).unwrap_or_default();

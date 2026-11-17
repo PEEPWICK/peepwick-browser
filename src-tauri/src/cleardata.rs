@@ -122,6 +122,7 @@ pub fn counts(range: u64, done: impl FnOnce(Value) + 'static) {
         history: history::count_visits(since as i64),
         downloads: downloads::count_since(since),
         permissions: permissions::count(),
+        forms: crate::formdata::count_entries(since),
         passwords: crate::passwords::count(),
         ..Counts::default()
     };
@@ -160,7 +161,11 @@ fn clear(since: u64, kinds: &[ClearKind], done: impl FnOnce() + 'static) {
     if has(ClearKind::Permissions) {
         permissions::clear();
     }
-    // Saved passwords go whatever the range, as in 0.1.x; form entries aren't kept yet.
+    // Form entries for the range; saved addresses stay, as in 0.1.x.
+    if has(ClearKind::Forms) {
+        crate::formdata::clear_entries(since);
+    }
+    // Saved passwords go whatever the range, as in 0.1.x.
     if has(ClearKind::Passwords) {
         crate::passwords::clear();
     }

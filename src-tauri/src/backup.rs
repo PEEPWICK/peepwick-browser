@@ -1,12 +1,12 @@
 //! Encrypted backups, as the Electron version made them (its backup.ts): settings, bookmarks,
-//! spaces (and optionally their tabs), focus history, site permissions, and optionally saved
-//! passwords and browsing history, in one password-protected file the person keeps wherever
-//! they like (the format is backupfile.rs). No cloud: moving it to another computer is up to
-//! them. Restoring merges into what is already here and never deletes anything.
+//! spaces (and optionally their tabs), focus history, site permissions, addresses and form
+//! entries, and optionally saved passwords and browsing history, in one password-protected file
+//! the person keeps wherever they like (the format is backupfile.rs). No cloud: moving it to
+//! another computer is up to them. Restoring merges into what is already here and never deletes
+//! anything.
 //!
 //! A backup made with 0.1.x opens here, so it is also the way to bring 0.1.x's data over. Its
-//! list of Chrome extensions has nothing to go to here and is left out; its addresses and form
-//! entries wait until autofill takes them, and the restore dialog says so.
+//! list of Chrome extensions has nothing to go to here and is left out.
 
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -19,6 +19,7 @@ use gtk::prelude::*;
 use serde_json::{Map, Value, json};
 
 use crate::backupfile;
+use crate::formdata::{self, Address, FormEntry};
 use crate::i18n::t;
 use crate::tab::{SavedTab, now_ms};
 use crate::window::{self, BrowserWindow, OpenOptions, WORKSPACE_ICONS};
@@ -105,13 +106,14 @@ pub fn local_counts() -> Value {
         "tabs": tabs,
         "focus": stats::active_days(),
         "permissions": permissions::count(),
+        "autofill": formdata::addresses().len() + formdata::count_entries(0),
         "passwords": passwords::count(),
         "history": history::count_visits(0),
     })
 }
 
-/// A new backup's contents: the chosen kinds, in the Electron version's layout. Passwords need
-/// the key (`passwords::ready`) first.
+/// A new backup's contents: the chosen kinds, in the Electron version's layout. Passwords,
+/// addresses and form entries need the key (`passwords::ready`) first.
 pub fn collect(categories: &[String]) -> Value {
     let has = |category: &str| wanted(categories, category);
     let mut payload = json!({
@@ -140,6 +142,12 @@ pub fn collect(categories: &[String]) -> Value {
     }
     if has("permissions") {
         payload["permissions"] = permissions::export();
+    }
+    if has("autofill") && formdata::ensure_open() {
+        payload["autofill"] = json!({
+            "addresses": formdata::addresses(),
+            "entries": formdata::entries(),
+        });
     }
     if has("history") {
         payload["history"] = history::export_visits()
@@ -319,6 +327,11 @@ fn counts(payload: &Value) -> Map<String, Value> {
             .sum();
         counts.insert("permissions".into(), answers.into());
     }
+    if payload["autofill"].is_object() {
+        let entries = list(&payload["autofill"]["addresses"]).len()
+            + list(&payload["autofill"]["entries"]).len();
+        counts.insert("autofill".into(), entries.into());
+    }
     if let Some(visits) = payload["history"].as_array() {
         counts.insert("history".into(), visits.len().into());
     }
@@ -349,9 +362,6 @@ pub fn unlock(token: &str, password: &str) -> Value {
         "counts": counts(&payload),
         // Chrome extensions (0.1.x) have nothing to go to here.
         "extensions": [],
-        // 0.1.x's addresses and form entries, which can't be restored yet.
-        "autofillLater": list(&payload["autofill"]["addresses"]).len()
-            + list(&payload["autofill"]["entries"]).len(),
     });
     match opened().get_mut(token) {
         Some(file) => file.payload = Some(payload),
@@ -360,13 +370,16 @@ pub fn unlock(token: &str, password: &str) -> Value {
     summary
 }
 
-/// Whether restoring needs the passwords' key: the person chose passwords and there are some.
-pub fn restores_passwords(token: &str, categories: &[String]) -> bool {
-    wanted(categories, "passwords")
-        && opened()
-            .get(token)
-            .and_then(|file| file.payload.as_ref())
-            .is_some_and(|payload| !list(&payload["passwords"]["logins"]).is_empty())
+/// Whether restoring needs the passwords' key: the person chose passwords, or addresses and
+/// form entries, and there are some.
+pub fn needs_key(token: &str, categories: &[String]) -> bool {
+    opened()
+        .get(token)
+        .and_then(|file| file.payload.as_ref())
+        .is_some_and(|payload| {
+            (wanted(categories, "passwords") && !list(&payload["passwords"]["logins"]).is_empty())
+                || (wanted(categories, "autofill") && payload["autofill"].is_object())
+        })
 }
 
 /// Brings the chosen kinds in: what happened, or null when the file was forgotten meanwhile.
@@ -406,6 +419,11 @@ pub fn restore(win: &Rc<BrowserWindow>, token: &str, categories: &[String]) -> V
     } else {
         0
     };
+    let autofill = if has("autofill") {
+        restore_autofill(&payload["autofill"])
+    } else {
+        0
+    };
     json!({
         "settings": settings,
         "bookmarks": bookmarks,
@@ -416,7 +434,7 @@ pub fn restore(win: &Rc<BrowserWindow>, token: &str, categories: &[String]) -> V
         "extensions": 0,
         "history": history,
         "passwords": passwords,
-        "autofill": 0,
+        "autofill": autofill,
     })
 }
 
@@ -572,6 +590,23 @@ fn restore_history(saved: &Value) -> usize {
     added
 }
 
+/// The backup's addresses and form entries, as an import: what is here already is left out.
+fn restore_autofill(saved: &Value) -> usize {
+    if !saved.is_object() || !passwords::can_seal() || !formdata::ensure_open() {
+        return 0;
+    }
+    let addresses: Vec<Address> = list(&saved["addresses"])
+        .iter()
+        .map(Address::from_value)
+        .collect();
+    let entries: Vec<FormEntry> = list(&saved["entries"])
+        .iter()
+        .filter_map(FormEntry::from_value)
+        .collect();
+    let (addresses, entries) = formdata::import(addresses, entries);
+    addresses + entries
+}
+
 /// The backup's logins, as an import: a login already here keeps the newer password.
 fn restore_passwords(saved: &Value) -> usize {
     let text = |value: &Value| value.as_str().map(str::to_string);
@@ -634,6 +669,7 @@ mod tests {
                 "tabs": 1,
                 "focus": 1,
                 "permissions": 2,
+                "autofill": 1,
                 "history": 1,
                 "passwords": 0,
             })

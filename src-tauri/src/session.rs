@@ -122,6 +122,7 @@ pub fn save_before_exit() {
     crate::bookmarks::flush();
     crate::readinglist::flush();
     crate::passwords::flush();
+    crate::formdata::flush();
     crate::downloads::flush();
     crate::permissions::flush();
 }

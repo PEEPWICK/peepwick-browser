@@ -15,9 +15,10 @@
  *   playing ("media"), and "media-toggle" pauses what plays in all of a page's frames, or
  *   plays again what it paused. This runs in a script world of its own, apart from the page's
  *   scripts.
- * - Saved passwords: in a page's main frame, another world of its own notices sign-in fields
- *   getting focus and sign-ins being sent, and tells the browser ("forms"), with the page's
- *   address from WebKit, never from the page. The browser answers with what to fill ("forms").
+ * - Autofill: in a page's main frame, another world of its own (webext/forms.js) notices
+ *   sign-in and other form fields getting focus and forms being sent, and tells the browser
+ *   ("forms"), with the page's address from WebKit, never from the page. The browser answers
+ *   with what to fill ("forms").
  *
  * The browser hands each new web process its settings as it starts and sends a "config"
  * message when they change (src/window.rs): (gpc, https-only, sites allowed over HTTP).
@@ -320,133 +321,17 @@ toggle_media (WebKitWebPage *page)
            || in_frames (page, "__peepwickPlayFirst()", FALSE);
 }
 
-/* ── Saved passwords ───────────────────────────────────────────────────────────────── */
+/* ── Autofill ───────────────────────────────────────────────────────────────── */
 
 static WebKitScriptWorld *forms_world = NULL;
 /* Tabs' processes get settings; reader views' don't, and have no sign-in forms. */
 static gboolean has_config = FALSE;
 
-/* Set up in a page's main frame as its window is: tells the browser about sign-in fields
- * getting focus or losing it, keys that move through the browser's list of saved logins while
- * it's open, and sign-ins being sent; fills in what the browser sends back. */
-static const char FORMS_JS[] =
-    "(() => {\n"
-    "  const send = globalThis.__peepwickFormsSend\n"
-    "  delete globalThis.__peepwickFormsSend\n"
-    "  const tell = (type, payload) => send(type, JSON.stringify(payload === undefined ? null : payload))\n"
-    "  const TEXT_TYPES = new Set(['text', 'email', 'tel', 'url', 'number', 'search'])\n"
-    "  const visible = (el) => {\n"
-    "    const r = el.getBoundingClientRect()\n"
-    "    return r.width > 0 && r.height > 0 && getComputedStyle(el).visibility !== 'hidden'\n"
-    "  }\n"
-    "  const inputsIn = (scope) => [...scope.querySelectorAll('input')].filter((i) => !i.disabled && !i.readOnly && visible(i))\n"
-    "  const passwordFields = (scope) => inputsIn(scope).filter((i) => i.type === 'password')\n"
-    "  const scopeOf = (input) => input.form || document\n"
-    "  const usernameFor = (password) => {\n"
-    "    const inputs = inputsIn(scopeOf(password)).filter((i) => TEXT_TYPES.has(i.type))\n"
-    "    const tagged = inputs.find((i) => /\\b(username|email)\\b/.test(i.autocomplete))\n"
-    "    if (tagged) return tagged\n"
-    "    // Otherwise the last text field before the password.\n"
-    "    return inputs.filter((i) => i.compareDocumentPosition(password) & Node.DOCUMENT_POSITION_FOLLOWING).at(-1) || null\n"
-    "  }\n"
-    "  const classify = (input) => {\n"
-    "    if (input.type === 'password') {\n"
-    "      const several = passwordFields(scopeOf(input)).length >= 2\n"
-    "      return /new-password/.test(input.autocomplete) || several ? 'new-password' : 'password'\n"
-    "    }\n"
-    "    if (!TEXT_TYPES.has(input.type) || input.autocomplete === 'off' || /one-time-code|cc-/.test(input.autocomplete)) return null\n"
-    "    if (/\\busername\\b/.test(input.autocomplete)) return 'username'\n"
-    "    const passwords = passwordFields(scopeOf(input))\n"
-    "    return passwords.length > 0 && usernameFor(passwords[0]) === input ? 'username' : null\n"
-    "  }\n"
-    "  const setValue = (input, value) => {\n"
-    "    // The prototype's setter, so frameworks that track the value see a real change.\n"
-    "    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, value)\n"
-    "    input.dispatchEvent(new Event('input', { bubbles: true }))\n"
-    "    input.dispatchEvent(new Event('change', { bubbles: true }))\n"
-    "  }\n"
-    "  const rectOf = (input) => {\n"
-    "    const r = input.getBoundingClientRect()\n"
-    "    return { x: r.left, y: r.top, width: r.width, height: r.height }\n"
-    "  }\n"
-    "  let active = null\n"
-    "  let popupOpen = false\n"
-    "  let popupSelected = false\n"
-    "  let lastSubmit = ''\n"
-    "  document.addEventListener('focusin', (event) => {\n"
-    "    const input = event.target\n"
-    "    if (!(input instanceof HTMLInputElement)) return\n"
-    "    const kind = classify(input)\n"
-    "    if (!kind) return\n"
-    "    active = input\n"
-    "    tell('focus', { kind, rect: rectOf(input) })\n"
-    "  }, true)\n"
-    "  document.addEventListener('focusout', (event) => {\n"
-    "    if (event.target === active) tell('blur')\n"
-    "  }, true)\n"
-    "  // A sign-in, or a new password being set: the browser may offer to save it.\n"
-    "  const capture = (scope) => {\n"
-    "    const passwords = passwordFields(scope).filter((p) => p.value)\n"
-    "    if (passwords.length === 0) return\n"
-    "    const many = passwords.length >= 2\n"
-    "    // In change-password forms the new password is the second field.\n"
-    "    const password = many ? passwords[1].value : passwords[0].value\n"
-    "    const user = usernameFor(passwords[0])\n"
-    "    const username = user ? user.value : ''\n"
-    "    const signature = username + '\\u0000' + password\n"
-    "    if (signature === lastSubmit) return\n"
-    "    lastSubmit = signature\n"
-    "    setTimeout(() => { lastSubmit = '' }, 3000)\n"
-    "    tell('submit', { username, password, newPassword: many || passwords.some((p) => /new-password/.test(p.autocomplete)) })\n"
-    "  }\n"
-    "  document.addEventListener('keydown', (event) => {\n"
-    "    if (!active || event.target !== active) return\n"
-    "    if (popupOpen && ['ArrowDown', 'ArrowUp', 'Escape', 'Tab'].includes(event.key)) {\n"
-    "      if (event.key !== 'Tab') event.preventDefault()\n"
-    "      tell('key', event.key)\n"
-    "      return\n"
-    "    }\n"
-    "    if (popupOpen && popupSelected && event.key === 'Enter') {\n"
-    "      event.preventDefault()\n"
-    "      tell('key', 'Enter')\n"
-    "      return\n"
-    "    }\n"
-    "    if (event.key === 'Enter') capture(scopeOf(active))\n"
-    "  }, true)\n"
-    "  document.addEventListener('submit', (event) => {\n"
-    "    if (event.target instanceof HTMLFormElement) capture(event.target)\n"
-    "  }, true)\n"
-    "  document.addEventListener('click', (event) => {\n"
-    "    const target = event.target instanceof Element ? event.target.closest('button, input[type=submit], input[type=button], [role=button]') : null\n"
-    "    if (!target) return\n"
-    "    const scope = target.closest('form') || document\n"
-    "    if (passwordFields(scope).some((p) => p.value)) capture(scope)\n"
-    "  }, true)\n"
-    "  // The list under a field follows it; when it moves, the browser closes the list.\n"
-    "  addEventListener('scroll', () => popupOpen && tell('blur'), true)\n"
-    "  addEventListener('resize', () => popupOpen && tell('blur'))\n"
-    "  globalThis.__peepwickFormsReceive = (json) => {\n"
-    "    const message = JSON.parse(json)\n"
-    "    if (message.type === 'popup') {\n"
-    "      popupOpen = message.open === true\n"
-    "      popupSelected = message.selected === true\n"
-    "      return\n"
-    "    }\n"
-    "    const field = active\n"
-    "    if (!field || !field.isConnected) return\n"
-    "    const scope = scopeOf(field)\n"
-    "    if (message.type === 'login') {\n"
-    "      const password = field.type === 'password' ? field : passwordFields(scope)[0]\n"
-    "      const user = password ? usernameFor(password) : field\n"
-    "      if (user && message.username) setValue(user, message.username)\n"
-    "      if (password && typeof message.password === 'string') setValue(password, message.password)\n"
-    "    } else if (message.type === 'generated' && typeof message.password === 'string') {\n"
-    "      // Every password field of a sign-up form: the password and its confirmation.\n"
-    "      for (const p of passwordFields(scope).filter((p) => !/current-password/.test(p.autocomplete))) setValue(p, message.password)\n"
-    "    }\n"
-    "    field.focus()\n"
-    "  }\n"
-    "})()\n";
+/* Set up in a page's main frame as its window is: webext/forms.js, which build.rs turns into
+ * FORMS_JS. It tells the browser about sign-in and other form fields getting focus or losing it,
+ * typing in them, keys that move through the browser's list while it's open, and forms being
+ * sent; it fills in what the browser sends back. */
+#include "forms-js.h"
 
 static void
 forms_send (const char *type, const char *payload, gpointer data)

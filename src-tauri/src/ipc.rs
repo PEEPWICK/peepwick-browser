@@ -52,6 +52,14 @@ pub async fn pw_invoke(
     args: Vec<Value>,
 ) -> Result<Value, String> {
     let label = webview.label().to_string();
+    // Saved addresses and form entries: sealed with the passwords' key, read (or made) first.
+    if let Some(create) = crate::formdata::invoke_needs_key(&method) {
+        crate::passwords::ready(create).await;
+        return on_main(&app, &label, move |_| {
+            crate::formdata::invoke(&method, &args)
+        })
+        .await;
+    }
     // Saved passwords: the keyring's key is read, or made, off the main thread first.
     if let Some(create) = crate::passwords::invoke_needs_key(&method) {
         crate::passwords::ready(create).await;
@@ -64,6 +72,12 @@ pub async fn pw_invoke(
         method.as_str(),
         "siteInfo" | "siteClearData" | "clearData" | "clearDataCounts"
     ) {
+        // Form entries are counted, or cleared for a range, with the key.
+        if method.starts_with("clearData")
+            && on_main(&app, &label, |_| crate::formdata::needs_key()).await?
+        {
+            crate::passwords::ready(false).await;
+        }
         // WebKit answers these later (cookies, site data): the reply waits for it.
         let (tx, rx) = tokio::sync::oneshot::channel::<Value>();
         let tx = std::sync::Arc::new(std::sync::Mutex::new(Some(tx)));
@@ -116,7 +130,7 @@ pub async fn pw_invoke(
         let Some(read) = read else {
             return Ok(Value::Null);
         };
-        if read.has_passwords() {
+        if read.needs_key() {
             crate::passwords::ready(true).await;
         }
         return on_main(&app, &label, move |_| {
@@ -154,7 +168,7 @@ pub async fn pw_invoke(
         info.is_default_browser = default.await.unwrap_or(false);
         return to_json(info);
     }
-    if method.starts_with("backup") && method != "backupCounts" {
+    if method.starts_with("backup") {
         return backup_call(&app, &label, &method, &args).await;
     }
     on_main(&app, &label, move |win| invoke(win, &method, &args)).await?
@@ -169,7 +183,18 @@ async fn backup_call(
     args: &[Value],
 ) -> Result<Value, String> {
     let token = short(args.first(), 64);
+    // Addresses and form entries are counted and copied with the key.
+    let open_form_data = async || -> Result<(), String> {
+        if on_main(app, label, |_| crate::formdata::needs_key()).await? {
+            crate::passwords::ready(false).await;
+        }
+        Ok(())
+    };
     match method {
+        "backupCounts" => {
+            open_form_data().await?;
+            on_main(app, label, |_| crate::backup::local_counts()).await
+        }
         "backupExport" => {
             let categories = ids(args.first());
             let password = text(args.get(1)).to_string();
@@ -179,6 +204,9 @@ async fn backup_call(
             }
             if categories.iter().any(|c| c == "passwords") {
                 crate::passwords::ready(false).await;
+            }
+            if categories.iter().any(|c| c == "autofill") {
+                open_form_data().await?;
             }
             let chosen = on_main(app, label, |win| {
                 (!win.incognito)
@@ -221,7 +249,7 @@ async fn backup_call(
         }
         "backupRestore" => {
             let categories = ids(args.get(1));
-            if crate::backup::restores_passwords(&token, &categories) {
+            if crate::backup::needs_key(&token, &categories) {
                 crate::passwords::ready(true).await;
             }
             on_main(app, label, move |win| {
@@ -400,13 +428,10 @@ pub(crate) fn invoke(
             })
             .unwrap_or(Value::Null),
         "tasks" => to_json(crate::tasks::rows(crate::tasks::tab_processes()))?,
-        "backupCounts" => crate::backup::local_counts(),
         "report" => crate::diagnostics::report(),
-        "extensionsList"
-        | "shieldReport"
-        | "addressesList"
-        | "translationLanguages"
-        | "translationModels" => json!([]),
+        "extensionsList" | "shieldReport" | "translationLanguages" | "translationModels" => {
+            json!([])
+        }
         _ => {
             eprintln!("[ipc] not ported yet: invoke {method}");
             Value::Null
@@ -806,6 +831,11 @@ pub(crate) fn send(win: &Rc<BrowserWindow>, method: &str, args: &[Value]) {
         }
         "passwordNeverRemove" => crate::passwords::remove_never(text(arg(0))),
         "backupCancel" => crate::backup::forget(text(arg(0))),
+        "addressRemove" => {
+            let id = short(arg(0), 64);
+            crate::formdata::when_open(false, move || crate::formdata::remove_address(&id));
+        }
+        "formEntriesClear" => crate::formdata::clear_entries(0),
         _ => eprintln!("[ipc] not ported yet: send {method}"),
     }
 }

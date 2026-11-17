@@ -340,6 +340,51 @@ async fn run(app: &AppHandle, win: &Rc<BrowserWindow>, step: &Value, out: &str) 
                 eprintln!("[harness] passwords imported {result}");
             }
         }
+        // Keys pressed as the keyboard presses them, so a page sees trusted input: "text" types
+        // characters, then "keys" presses named keys (Down, Return, BackSpace). To the active
+        // page, or with "window" to the focused field of the window with that title (a file
+        // dialog, which runs while the browser waits for it).
+        "type" => {
+            let target: Option<gtk::Widget> = if get("window").is_empty() {
+                win.active_tab()
+                    .and_then(|t| t.shown_view())
+                    .map(gtk::prelude::Cast::upcast)
+            } else {
+                gtk::Window::list_toplevels()
+                    .into_iter()
+                    .filter_map(|w| gtk::prelude::Cast::downcast::<gtk::Window>(w).ok())
+                    .find(|w| {
+                        gtk::prelude::GtkWindowExt::title(w).as_deref() == Some(get("window"))
+                    })
+                    .map(gtk::prelude::Cast::upcast)
+            };
+            let Some(view) = target else {
+                eprintln!("[harness] type: nothing to type into");
+                return;
+            };
+            // Named keys may hold Ctrl: "ctrl+l".
+            let mut keys: Vec<(u32, u32)> = Vec::new();
+            for name in step["keys"].as_array().into_iter().flatten() {
+                let Some(name) = name.as_str() else { continue };
+                let (state, name) = match name.strip_prefix("ctrl+") {
+                    Some(rest) => (gtk::gdk::ffi::GDK_CONTROL_MASK, rest),
+                    None => (0, name),
+                };
+                if let Ok(name) = std::ffi::CString::new(name) {
+                    keys.push((
+                        unsafe { gtk::gdk::ffi::gdk_keyval_from_name(name.as_ptr()) },
+                        state,
+                    ));
+                }
+            }
+            let typed = get("text")
+                .chars()
+                .map(|c| (unsafe { gtk::gdk::ffi::gdk_unicode_to_keyval(c as u32) }, 0));
+            for (keyval, state) in typed.chain(keys) {
+                press_key(&view, keyval, state);
+                glib::timeout_future(Duration::from_millis(40)).await;
+            }
+        }
         // Backups without their file dialogs: what the export dialog offers, a backup written
         // to a path, and a file opened into the restore dialog (unlocked through the UI).
         "backupCounts" => eprintln!("[harness] backup counts {}", crate::backup::local_counts()),
@@ -373,6 +418,54 @@ async fn run(app: &AppHandle, win: &Rc<BrowserWindow>, step: &Value, out: &str) 
             }
         }
         other => eprintln!("[harness] unknown step {other}"),
+    }
+}
+
+/// One key pressed and let go, handed to the widget as GTK hands it the keyboard's: a page view
+/// gets it directly, a window passes it to its focused widget.
+fn press_key(widget: &gtk::Widget, keyval: u32, state: u32) {
+    use gtk::gdk::ffi as gdk;
+    use gtk::glib::translate::ToGlibPtr;
+    let Some(window) = widget.window() else {
+        return;
+    };
+    let toplevel = gtk::glib::object::ObjectExt::is::<gtk::Window>(widget);
+    unsafe {
+        let display = gdk::gdk_window_get_display(window.to_glib_none().0);
+        let seat = gdk::gdk_display_get_default_seat(display);
+        let keyboard = if seat.is_null() {
+            std::ptr::null_mut()
+        } else {
+            gdk::gdk_seat_get_keyboard(seat)
+        };
+        let mut keys: *mut gdk::GdkKeymapKey = std::ptr::null_mut();
+        let mut count = 0;
+        let mut keycode = 0;
+        let keymap = gdk::gdk_keymap_get_for_display(display);
+        if gdk::gdk_keymap_get_entries_for_keyval(keymap, keyval, &mut keys, &mut count) != 0 {
+            if count > 0 {
+                keycode = (*keys).keycode as u16;
+            }
+            glib::ffi::g_free(keys.cast());
+        }
+        for kind in [gdk::GDK_KEY_PRESS, gdk::GDK_KEY_RELEASE] {
+            let event = gdk::gdk_event_new(kind);
+            let key = event.cast::<gdk::GdkEventKey>();
+            // Freeing the event lets go of this reference.
+            (*key).window = window.to_glib_full();
+            (*key).keyval = keyval;
+            (*key).state = state;
+            (*key).hardware_keycode = keycode;
+            if !keyboard.is_null() {
+                gdk::gdk_event_set_device(event, keyboard);
+            }
+            if toplevel {
+                gtk::ffi::gtk_main_do_event(event);
+            } else {
+                gtk::ffi::gtk_widget_event(widget.to_glib_none().0, event);
+            }
+            gdk::gdk_event_free(event);
+        }
     }
 }
 

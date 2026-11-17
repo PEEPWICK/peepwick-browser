@@ -1,10 +1,10 @@
 //! Importing from other browsers on this computer, the Chromium family and the Firefox family
 //! (Snap and Flatpak installs included): bookmarks, with the icons of the bookmarked sites,
-//! history, and saved passwords (browsercrypto.rs decrypts them, with the browser's key from the
-//! desktop's keyring or Firefox's primary password). Browsers keep their databases locked while
-//! they run, so SQLite files are copied to a private temporary folder and read from there. Only
-//! files on this computer are read; nothing is sent anywhere. Cookies and form data come with
-//! those features.
+//! history, saved passwords (browsercrypto.rs decrypts them, with the browser's key from the
+//! desktop's keyring or Firefox's primary password), and form entries and addresses. Browsers
+//! keep their databases locked while they run, so SQLite files are copied to a private temporary
+//! folder and read from there. Only files on this computer are read; nothing is sent anywhere.
+//! Cookies come with that feature.
 
 use std::collections::{HashMap, HashSet};
 use std::os::unix::fs::{DirBuilderExt, MetadataExt};
@@ -19,6 +19,7 @@ use webkit2gtk::glib;
 
 use crate::bookmarks::{self, Draft, DraftTree, Parsed};
 use crate::browsercrypto::{self, ChromiumKeys, FirefoxError};
+use crate::formdata::{Address, FormEntry};
 use crate::history::{self, Visit};
 use crate::i18n::{Var, t, tv};
 use crate::pages;
@@ -168,6 +169,9 @@ fn chromium_kinds(dir: &Path) -> Vec<&'static str> {
     if dir.join("History").is_file() {
         kinds.push("history");
     }
+    if dir.join("Web Data").is_file() {
+        kinds.push("autofill");
+    }
     kinds
 }
 
@@ -181,6 +185,9 @@ fn firefox_kinds(dir: &Path) -> Vec<&'static str> {
     }
     if dir.join("places.sqlite").is_file() {
         kinds.push("history");
+    }
+    if dir.join("formhistory.sqlite").is_file() || dir.join("autofill-profiles.json").is_file() {
+        kinds.push("autofill");
     }
     kinds
 }
@@ -890,6 +897,173 @@ fn firefox_passwords(dir: &Path, primary: &str) -> Result<FirefoxLogins, String>
     Ok(FirefoxLogins::Read(logins, never))
 }
 
+// ── Form entries and addresses ──────────────────────────────────────────────────
+
+/// Chromium's address field types (its server field types) that we keep.
+fn chromium_address_part(kind: i64) -> Option<&'static str> {
+    Some(match kind {
+        7 => "name",
+        9 => "email",
+        14 => "phone",
+        60 => "organization",
+        // The whole street address; 30 is its first line.
+        77 | 30 => "street",
+        33 => "city",
+        34 => "state",
+        35 => "postalCode",
+        36 => "country",
+        _ => return None,
+    })
+}
+
+/// Chromium's Web Data: what was typed into fields (seconds since 1970) and saved addresses,
+/// one row per field in the current schema, one row per address in the old one.
+fn chromium_autofill(dir: &Path) -> Result<(Vec<Address>, Vec<FormEntry>), String> {
+    with_copy(dir, "Web Data", |db| {
+        let entries = (|| -> rusqlite::Result<Vec<FormEntry>> {
+            let mut select =
+                db.prepare("SELECT name, value, count, date_last_used FROM autofill")?;
+            let rows = select.query_map([], |row| {
+                Ok((
+                    row.get::<_, Option<String>>(0)?,
+                    row.get::<_, Option<String>>(1)?,
+                    row.get::<_, Option<i64>>(2)?,
+                    row.get::<_, Option<i64>>(3)?,
+                ))
+            })?;
+            Ok(rows
+                .filter_map(Result::ok)
+                .filter_map(|(name, value, count, used)| {
+                    Some(FormEntry {
+                        key: name?.to_lowercase(),
+                        value: value?,
+                        count: count.unwrap_or(1).max(0) as u64,
+                        last_used: used.unwrap_or(0).max(0) as u64 * 1000,
+                    })
+                })
+                .collect())
+        })()
+        .unwrap_or_default();
+        let tokens = |table: &str| -> rusqlite::Result<Vec<Address>> {
+            let mut select = db.prepare(&format!("SELECT guid, type, value FROM {table}"))?;
+            let rows = select.query_map([], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, i64>(1)?,
+                    row.get::<_, Option<String>>(2)?,
+                ))
+            })?;
+            let mut by_guid: Vec<(String, Value)> = Vec::new();
+            for (guid, kind, value) in rows.filter_map(Result::ok) {
+                let (Some(part), Some(value)) = (chromium_address_part(kind), value) else {
+                    continue;
+                };
+                if value.is_empty() {
+                    continue;
+                }
+                let at = match by_guid.iter().position(|(g, _)| *g == guid) {
+                    Some(at) => at,
+                    None => {
+                        by_guid.push((guid, json!({})));
+                        by_guid.len() - 1
+                    }
+                };
+                let address = &mut by_guid[at].1;
+                // A whole street address beats a first line.
+                if part != "street" || kind == 77 || address.get("street").is_none() {
+                    address[part] = json!(value);
+                }
+            }
+            Ok(by_guid
+                .iter()
+                .map(|(_, a)| Address::from_value(a))
+                .collect())
+        };
+        let addresses = tokens("address_type_tokens")
+            .or_else(|_| tokens("local_addresses_type_tokens"))
+            .or_else(|_| {
+                let mut select = db.prepare(
+                    "SELECT p.company_name, p.street_address, p.city, p.state, p.zipcode, p.country_code,
+                       (SELECT full_name FROM autofill_profile_names n WHERE n.guid = p.guid LIMIT 1),
+                       (SELECT email FROM autofill_profile_emails e WHERE e.guid = p.guid LIMIT 1),
+                       (SELECT number FROM autofill_profile_phones f WHERE f.guid = p.guid LIMIT 1)
+                     FROM autofill_profiles p",
+                )?;
+                let rows = select.query_map([], |row| {
+                    let text = |i: usize| row.get::<_, Option<String>>(i).map(Option::unwrap_or_default);
+                    Ok(Address::from_value(&json!({
+                        "organization": text(0)?,
+                        "street": text(1)?,
+                        "city": text(2)?,
+                        "state": text(3)?,
+                        "postalCode": text(4)?,
+                        "country": text(5)?,
+                        "name": text(6)?,
+                        "email": text(7)?,
+                        "phone": text(8)?,
+                    })))
+                })?;
+                Ok::<_, rusqlite::Error>(rows.filter_map(Result::ok).collect())
+            })
+            .unwrap_or_default();
+        Ok((addresses, entries))
+    })
+}
+
+/// Firefox's formhistory.sqlite (microseconds) and its saved addresses (autofill-profiles.json).
+fn firefox_autofill(dir: &Path) -> Result<(Vec<Address>, Vec<FormEntry>), String> {
+    let entries = if dir.join("formhistory.sqlite").is_file() {
+        with_copy(dir, "formhistory.sqlite", |db| {
+            let mut select =
+                db.prepare("SELECT fieldname, value, timesUsed, lastUsed FROM moz_formhistory")?;
+            let rows = select.query_map([], |row| {
+                Ok(FormEntry {
+                    key: row.get::<_, String>(0)?.to_lowercase(),
+                    value: row.get(1)?,
+                    count: row.get::<_, Option<i64>>(2)?.unwrap_or(1).max(0) as u64,
+                    last_used: (row.get::<_, Option<i64>>(3)?.unwrap_or(0).max(0) / 1000) as u64,
+                })
+            })?;
+            Ok(rows.filter_map(Result::ok).collect())
+        })?
+    } else {
+        Vec::new()
+    };
+    let json: Value = std::fs::read(dir.join("autofill-profiles.json"))
+        .ok()
+        .and_then(|bytes| serde_json::from_slice(&bytes).ok())
+        .unwrap_or(Value::Null);
+    let addresses = json["addresses"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .map(|a| {
+            let text = |key: &str| a[key].as_str().unwrap_or("").trim().to_string();
+            let mut name = text("name");
+            if name.is_empty() {
+                name = ["given-name", "additional-name", "family-name"]
+                    .into_iter()
+                    .map(text)
+                    .filter(|part| !part.is_empty())
+                    .collect::<Vec<_>>()
+                    .join(" ");
+            }
+            Address::from_value(&json!({
+                "name": name,
+                "organization": text("organization"),
+                "street": text("street-address"),
+                "city": text("address-level2"),
+                "state": text("address-level1"),
+                "postalCode": text("postal-code"),
+                "country": text("country"),
+                "phone": text("tel"),
+                "email": text("email"),
+            }))
+        })
+        .collect();
+    Ok((addresses, entries))
+}
+
 /// What was read from a profile, for the main thread to put in place.
 #[derive(Clone, Debug)]
 pub struct Imported {
@@ -900,14 +1074,17 @@ pub struct Imported {
     /// Logins in the clear and the sites never to save for: they stay in memory, on their way
     /// into ours.
     passwords: Option<(Vec<PlainLogin>, Vec<String>)>,
+    /// Addresses and form entries, which are kept with the passwords' key too.
+    autofill: Option<(Vec<Address>, Vec<FormEntry>)>,
     needs_primary: bool,
     failed: Vec<&'static str>,
 }
 
 impl Imported {
-    /// Whether putting it in place needs the passwords' key.
-    pub fn has_passwords(&self) -> bool {
-        self.passwords.is_some()
+    /// Whether putting it in place needs the passwords' key: passwords, addresses and form
+    /// entries are kept with it.
+    pub fn needs_key(&self) -> bool {
+        self.passwords.is_some() || self.autofill.is_some()
     }
 }
 
@@ -928,6 +1105,7 @@ pub fn read(source_id: &str, kinds: &[String], primary: &str) -> Option<Imported
         history: None,
         favicons: 0,
         passwords: None,
+        autofill: None,
         needs_primary: false,
         failed: Vec::new(),
     };
@@ -984,6 +1162,19 @@ pub fn read(source_id: &str, kinds: &[String], primary: &str) -> Option<Imported
             }
         }
     }
+    if wants("autofill") {
+        let read = match source.family {
+            Family::Chromium => chromium_autofill(&source.dir),
+            Family::Firefox => firefox_autofill(&source.dir),
+        };
+        match read {
+            Ok(autofill) => imported.autofill = Some(autofill),
+            Err(error) => {
+                crate::log_error!("[import] form data failed: {error}");
+                imported.failed.push("autofill");
+            }
+        }
+    }
     Some(imported)
 }
 
@@ -1009,6 +1200,16 @@ pub fn finish(mut imported: Imported, skip_duplicates: bool) -> Value {
         if added + duplicates == 0 && !logins.is_empty() && !imported.failed.contains(&"passwords")
         {
             imported.failed.push("passwords");
+        }
+    }
+    if let Some((addresses, entries)) = imported.autofill.take() {
+        // Kept only with a key to seal them: a keyring that stayed locked keeps them out.
+        if crate::passwords::can_seal() && crate::formdata::ensure_open() {
+            let (addresses, entries) = crate::formdata::import(addresses, entries);
+            result["addresses"] = json!(addresses);
+            result["formEntries"] = json!(entries);
+        } else if !imported.failed.contains(&"autofill") {
+            imported.failed.push("autofill");
         }
     }
     if imported.needs_primary {
