@@ -114,9 +114,11 @@ screen, from the .deb or the AppImage alike. Links from other apps open as new t
 you used last, and a second launch never starts a second browser on the same profile. Play, pause
 and mute what plays in any tab from the toolbar, sound from a page's frames included. The task
 manager (<kbd>Shift</kbd>+<kbd>Esc</kbd>) shows the memory and processor use of each tab and
-process, and ends a page that hangs. When something breaks, Settings › Report a bug shows a short
-report (version, system, error codes, never addresses or file names) to copy, or to send to
-GitHub's bug form with the details filled in.
+process, and ends a page that hangs. Back up your settings, bookmarks, spaces, focus history and
+site permissions, and if you choose your open tabs, passwords and history, into one file encrypted
+with a password of yours. Restoring it on another computer adds what's missing and deletes nothing.
+When something breaks, Settings › Report a bug shows a short report (version, system, error codes,
+never addresses or file names) to copy, or to send to GitHub's bug form with the details filled in.
 
 ## Install
 
