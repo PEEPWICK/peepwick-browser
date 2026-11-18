@@ -112,8 +112,10 @@ It is written in Rust with [Tauri](https://tauri.app/), and draws pages with
 Downloads with progress and speed: open, show in folder, retry, move to the trash; choose the
 folder, or be asked where to save each file. Per-site zoom with a default zoom and font size.
 Find on page, print, save a page as one .mhtml file, and the Web Inspector (<kbd>F12</kbd>).
-Spelling suggestions in text fields. Make it your default browser from Settings or the welcome
-screen, from the .deb or the AppImage alike. Links from other apps open as new tabs in the window
+Spelling suggestions in text fields. Translate a page on this computer with the models Firefox
+uses, about 40 languages: each pair is downloaded once, the first time you need it, and the page's
+text never leaves the browser. Links and footnotes keep their place, and Show original puts the
+page back as it was. Make it your default browser from Settings or the welcome screen, from the .deb or the AppImage alike. Links from other apps open as new tabs in the window
 you used last, and a second launch never starts a second browser on the same profile. Play, pause
 and mute what plays in any tab from the toolbar, sound from a page's frames included. The task
 manager (<kbd>Shift</kbd>+<kbd>Esc</kbd>) shows the memory and processor use of each tab and
@@ -191,6 +193,7 @@ PEEPWICK Browser has no telemetry and no account. On its own, it talks only to t
 | `malware-filter.gitlab.io` | Lists of dangerous sites for the warnings (from its mirror, `curbengh.github.io`, when it doesn't answer) | First start, then every 12 hours |
 | `raw.githubusercontent.com` | The update list: the newest version and its signatures | 15 seconds after start, then every four hours |
 | `github.com` (Releases) | Downloading an update | Only when there is a new version |
+| `firefox.settings.services.mozilla.com`, `firefox-settings-attachments.cdn.mozilla.net` | Mozilla's list of translation models, and the models themselves | The list when you open the translate bar (at most once a week); a model when you first translate between two languages |
 | Your search engine | Search suggestions | Only if you turn suggestions on (off by default) |
 
 Pages you visit load as in any browser, and WebKit fetches their icons along with them. A link you
@@ -253,6 +256,10 @@ already installed.
 - Reader view runs Mozilla's Readability in a script world of its own and shows the article in a
   WebKit view of its own, with scripts off. Read aloud talks to speech-dispatcher, the speech
   service of Linux desktops, over its socket.
+- Page translation runs Bergamot, the engine behind Firefox's translations, as WebAssembly in a
+  worker of an interface page that is never shown. Sentences go to it in blocks from a script world
+  of their own, and the translation comes back into the page's own nodes, so its scripts keep
+  working.
 - History and site icons are stored in SQLite (rusqlite); bookmarks, downloads and site permissions
   in JSON files.
 - Fingerprinting protection, cookie banner rejection and Global Privacy Control's
@@ -273,8 +280,8 @@ already installed.
 PEEPWICK Browser is free software under the [GNU General Public License v3.0](LICENSE).
 It includes WebKitGTK (LGPL-2.1 and BSD), Tauri (MIT or Apache-2.0), the gtk-rs and webkit2gtk-rs
 bindings (MIT), adblock-rust (MPL-2.0), SQLite (public domain) through rusqlite (MIT), React (MIT),
-Mozilla's Readability (Apache-2.0), and the Archivo, Newsreader and IBM Plex Mono typefaces (SIL
-Open Font License 1.1). The AppImage also carries GStreamer and its plugins (LGPL-2.1).
+Mozilla's Readability (Apache-2.0), the Bergamot translator (MPL-2.0), and the Archivo, Newsreader
+and IBM Plex Mono typefaces (SIL Open Font License 1.1). The AppImage also carries GStreamer and its plugins (LGPL-2.1).
 
 The PEEPWICK name and the Double-Eye W mark identify PEEPWICK and are not part of the GPL grant.
 If you distribute a modified version, please give it your own name and icon.
