@@ -108,7 +108,7 @@ async fn run(app: &AppHandle, win: &Rc<BrowserWindow>, step: &Value, out: &str) 
                 .values()
                 .map(|t| {
                     format!(
-                        "{} {} loading={} {:?} reader={}/{} zoom={:.2} find={} media={:?} audible={} sleeping={} blocked={}",
+                        "{} {} loading={} {:?} reader={}/{} zoom={:.2} find={} media={:?} audible={} sleeping={} blocked={} lang={:?} translation={}",
                         t.id,
                         t.url,
                         t.loading,
@@ -120,7 +120,12 @@ async fn run(app: &AppHandle, win: &Rc<BrowserWindow>, step: &Value, out: &str) 
                         t.media,
                         t.audible,
                         t.sleeping,
-                        t.blocked
+                        t.blocked,
+                        t.page_lang,
+                        t.translation
+                            .as_ref()
+                            .map(|v| v.to_string())
+                            .unwrap_or_else(|| "none".into())
                     )
                 })
                 .collect();

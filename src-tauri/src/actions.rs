@@ -188,6 +188,12 @@ pub fn is_available(win: &BrowserWindow, id: &str) -> bool {
                 })
         }
         "reading-list" => true,
+        "translate" => active.as_ref().is_some_and(|tab| {
+            tab.page().is_none() && !tab.has_interstitial() && {
+                let url = tab.url();
+                url.starts_with("http:") || url.starts_with("https:")
+            }
+        }),
         "passwords" | "backup" => !win.incognito,
         _ => false,
     }
@@ -248,6 +254,13 @@ pub fn run_command(win: &Rc<BrowserWindow>, id: &str) {
             }
         }
         "reading-list" => open_page(win, "reading", ""),
+        "translate" => {
+            if is_available(win, "translate")
+                && let Some(tab) = win.active_tab()
+            {
+                crate::translation::offer(&tab);
+            }
+        }
         "passwords" => open_page(win, "passwords", ""),
         "backup" => open_page(win, "settings", "backup"),
         "report" => open_page(win, "settings", "report"),
@@ -258,7 +271,7 @@ pub fn run_command(win: &Rc<BrowserWindow>, id: &str) {
 }
 
 /// The commands the command bar offers, in order.
-pub const COMMANDS: [&str; 26] = [
+pub const COMMANDS: [&str; 27] = [
     "new-tab",
     "new-window",
     "new-incognito",
@@ -281,6 +294,7 @@ pub const COMMANDS: [&str; 26] = [
     "passwords",
     "reading-add",
     "reading-list",
+    "translate",
     "backup",
     "report",
     "task-manager",

@@ -13,8 +13,9 @@ use javascriptcore::ValueExt;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use webkit2gtk::{
-    SecurityManagerExt, SettingsExt, URISchemeRequest, URISchemeRequestExt, UserContentManager,
-    WebContext, WebContextExt, WebView, WebViewExt, WebsiteDataManager, gio, glib,
+    SecurityManagerExt, SettingsExt, URISchemeRequest, URISchemeRequestExt, URISchemeResponse,
+    URISchemeResponseExt, UserContentManager, WebContext, WebContextExt, WebView, WebViewExt,
+    WebsiteDataManager, gio, glib,
 };
 
 use crate::i18n::{self, Var};
@@ -315,6 +316,26 @@ pub fn respond(request: &URISchemeRequest, body: glib::Bytes, content_type: &str
     let length = body.len() as i64;
     let stream = gio::MemoryInputStream::from_bytes(&body);
     request.finish(&stream, length, Some(content_type));
+}
+
+/// A response whose type a page's fetch() sees as well: without headers, a custom scheme's
+/// response has none to show. With `any_origin`, pages of other origins may read it.
+pub fn respond_with_headers(
+    request: &URISchemeRequest,
+    body: glib::Bytes,
+    content_type: &str,
+    any_origin: bool,
+) {
+    let stream = gio::MemoryInputStream::from_bytes(&body);
+    let response = URISchemeResponse::new(&stream, body.len() as i64);
+    response.set_content_type(content_type);
+    let headers = soup::MessageHeaders::new(soup::MessageHeadersType::Response);
+    headers.append("Content-Type", content_type);
+    if any_origin {
+        headers.append("Access-Control-Allow-Origin", "*");
+    }
+    response.set_http_headers(headers);
+    request.finish_with_response(&response);
 }
 
 pub fn not_found(request: &URISchemeRequest) {

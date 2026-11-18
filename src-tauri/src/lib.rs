@@ -49,6 +49,7 @@ mod stats;
 mod store;
 mod tab;
 mod tasks;
+mod translation;
 mod updater;
 mod window;
 mod zoom;

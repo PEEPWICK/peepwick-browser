@@ -86,6 +86,11 @@ pub struct Tab {
     /// Requests the shield stopped on the current page, and from which hosts.
     pub blocked: Cell<u32>,
     blocked_hosts: RefCell<HashMap<String, u32>>,
+    /// The page's language, when it could be translated (translation.rs), and the translate bar.
+    pub(crate) page_lang: RefCell<Option<String>>,
+    pub(crate) translation: RefCell<Option<crate::translation::TranslationState>>,
+    /// Bumped whenever a translation should stop: a new one, a new page, the bar closing.
+    pub(crate) translation_run: Cell<u32>,
     pub last_active: Cell<u64>,
     pub opener_id: Cell<Option<u32>>,
     /// History to restore when the view is made: a tab restored from the last session, or
@@ -129,6 +134,9 @@ impl Tab {
             find: RefCell::new(None),
             blocked: Cell::new(0),
             blocked_hosts: RefCell::new(HashMap::new()),
+            page_lang: RefCell::new(None),
+            translation: RefCell::new(None),
+            translation_run: Cell::new(0),
             last_active: Cell::new(now_ms()),
             opener_id: Cell::new(None),
             saved_history: RefCell::new(history),
@@ -152,7 +160,7 @@ impl Tab {
         self.win.upgrade()
     }
 
-    fn changed(&self) {
+    pub(crate) fn changed(&self) {
         if let Some(win) = self.window() {
             win.mark_dirty();
         }
@@ -737,8 +745,12 @@ impl Tab {
             reader: self.reader.borrow().is_some(),
             find: self.find.borrow().as_ref().map(|f| json!(f)),
             media: self.media.get(),
-            page_lang: None,
-            translation: None,
+            page_lang: self.page_lang.borrow().clone(),
+            translation: self
+                .translation
+                .borrow()
+                .as_ref()
+                .and_then(|state| serde_json::to_value(state).ok()),
         }
     }
 
@@ -785,7 +797,10 @@ impl Tab {
                     tab.close_reader();
                     tab.reader_available.set(false);
                 }
-                LoadEvent::Finished if tab.shows_web() => tab.check_reader(view),
+                LoadEvent::Finished if tab.shows_web() => {
+                    tab.check_reader(view);
+                    crate::translation::detect(&tab);
+                }
                 LoadEvent::Committed if tab.holds_page() => {
                     // The gate keeps the address it holds.
                     security::https_settled(tab.id);
@@ -838,6 +853,7 @@ impl Tab {
                     }
                     tab.blocked.set(0);
                     tab.blocked_hosts.borrow_mut().clear();
+                    crate::translation::new_page(&tab);
                 }
                 _ => {}
             }

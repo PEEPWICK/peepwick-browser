@@ -22,6 +22,10 @@
  *   sign-in and other form fields getting focus and forms being sent, and tells the browser
  *   ("forms"), with the page's address from WebKit, never from the page. The browser answers
  *   with what to fill ("forms").
+ * - Page translation: the browser runs its scripts in a world named "peepwick-translate"
+ *   (src/translation.rs). WebKitGTK gives a world the browser names a fresh start on every
+ *   call unless it exists here, so it is made here: a page's text nodes and their originals stay
+ *   in it between the calls that translate the page a block at a time and the one that undoes it.
  *
  * The browser hands each new web process its settings as it starts and sends a "config"
  * message when they change (src/window.rs): (gpc, https-only, sites allowed over HTTP).
@@ -327,6 +331,8 @@ toggle_media (WebKitWebPage *page)
 /* ── Autofill ───────────────────────────────────────────────────────────────── */
 
 static WebKitScriptWorld *forms_world = NULL;
+/* Kept for the process's life, nothing more: see the comment at the top. */
+static WebKitScriptWorld *translate_world = NULL;
 /* Tabs' processes get settings; reader views' don't, and have no sign-in forms. */
 static gboolean has_config = FALSE;
 
@@ -513,6 +519,7 @@ webkit_web_extension_initialize_with_user_data (WebKitWebExtension *extension,
     forms_world = webkit_script_world_new_with_name ("peepwick-forms");
     g_signal_connect (forms_world, "window-object-cleared", G_CALLBACK (on_forms_window_cleared),
                       NULL);
+    translate_world = webkit_script_world_new_with_name ("peepwick-translate");
     g_signal_connect (extension, "page-created", G_CALLBACK (on_page_created), NULL);
     g_signal_connect (extension, "user-message-received", G_CALLBACK (on_message), NULL);
 }

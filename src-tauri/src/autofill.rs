@@ -465,8 +465,9 @@ fn key(win: &Rc<BrowserWindow>, key: &str) {
 
 // ── The list ────────────────────────────────────────────────────────────────────
 
-/// popup.html: from the development server while developing, from the build's own files after.
-fn popup_url(win: &BrowserWindow) -> String {
+/// One of the interface's pages (popup.html, translator.html): from the development server while
+/// developing, from the build's own files after.
+pub(crate) fn interface_url(win: &BrowserWindow, page: &str) -> String {
     if tauri::is_dev()
         && let Some(url) = win
             .app_handle()
@@ -474,15 +475,16 @@ fn popup_url(win: &BrowserWindow) -> String {
             .build
             .dev_url
             .as_ref()
-            .and_then(|dev| dev.join("popup.html").ok())
+            .and_then(|dev| dev.join(page).ok())
     {
         return url.to_string();
     }
-    format!("{SCHEME}://ui/popup.html")
+    format!("{SCHEME}://ui/{page}")
 }
 
-/// Serves the interface's own files (popup.html and what it loads) at peepwick-ui://ui/.
-fn register_scheme(app: AppHandle, context: &WebContext) {
+/// Serves the interface's own files (popup.html, translator.html and what they load) at
+/// peepwick-ui://ui/, in the interface's WebKit context.
+pub(crate) fn register_scheme(app: AppHandle, context: &WebContext) {
     if SCHEMES.with(|known| known.borrow().contains(context)) {
         return;
     }
@@ -506,7 +508,14 @@ fn serve(app: &AppHandle, request: &URISchemeRequest) {
     match app.asset_resolver().get(path) {
         Some(asset) => {
             let mime = asset.mime_type().to_string();
-            crate::reader::respond(request, glib::Bytes::from_owned(asset.bytes), &mime);
+            // With the header: the translation engine's WebAssembly is compiled as it streams
+            // in, which wants application/wasm.
+            crate::reader::respond_with_headers(
+                request,
+                glib::Bytes::from_owned(asset.bytes),
+                &mime,
+                false,
+            );
         }
         None => crate::reader::not_found(request),
     }
@@ -549,7 +558,7 @@ fn popup_for(win: &Rc<BrowserWindow>) -> Option<Rc<Popup>> {
             popup.loaded.set(false);
         }
     });
-    view.load_uri(&popup_url(win));
+    view.load_uri(&interface_url(win, "popup.html"));
     POPUPS.with(|popups| popups.borrow_mut().insert(win.id, popup.clone()));
     Some(popup)
 }

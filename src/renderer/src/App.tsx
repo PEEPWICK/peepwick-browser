@@ -229,7 +229,7 @@ export function App() {
             {state.permission && <PermissionBar prompt={state.permission} />}
             {findOpen && tab && !tab.page && <FindBar tab={tab} onClose={() => setFindOpen(false)} />}
             {listening && tab && canListen(tab) && <ListenBar key={tab.id} tab={tab} uiLang={settings.language} onClose={() => setListening(false)} />}
-            {tab?.translation && <TranslateBar tab={tab} />}
+            {tab?.translation && !tab.page && <TranslateBar tab={tab} />}
           </div>
           <Content />
         </main>

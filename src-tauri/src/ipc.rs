@@ -164,6 +164,13 @@ pub async fn pw_invoke(
             .map_err(|e| e.to_string())?;
         return to_json(rows);
     }
+    // Translation's languages: Firefox's model records may have to be fetched first.
+    if method == "translationLanguages" {
+        return tauri::async_runtime::spawn_blocking(crate::translation::languages)
+            .await
+            .map(Value::from)
+            .map_err(|e| e.to_string());
+    }
     // Read aloud's voices come from speech-dispatcher, which may first have to start.
     if method == "speechVoices" {
         return to_json(crate::speech::voices().await);
@@ -451,7 +458,8 @@ pub(crate) fn invoke(
                 .map(|tab| tab.blocked_report(12))
                 .unwrap_or_default(),
         )?,
-        "extensionsList" | "translationLanguages" | "translationModels" => json!([]),
+        "translationModels" => crate::translation::models(),
+        "extensionsList" => json!([]),
         _ => {
             eprintln!("[ipc] not ported yet: invoke {method}");
             Value::Null
@@ -851,6 +859,22 @@ pub(crate) fn send(win: &Rc<BrowserWindow>, method: &str, args: &[Value]) {
         }
         "passwordNeverRemove" => crate::passwords::remove_never(text(arg(0))),
         "backupCancel" => crate::backup::forget(text(arg(0))),
+        "translation" => {
+            // Language codes as the models name them.
+            let lang = |i: usize| {
+                arg(i)
+                    .and_then(Value::as_str)
+                    .filter(|code| {
+                        (2..=3).contains(&code.len())
+                            && code.bytes().all(|b| b.is_ascii_lowercase())
+                    })
+                    .map(str::to_string)
+            };
+            if let Some(tab) = tab(0) {
+                crate::translation::action(&tab, text(arg(1)), lang(2), lang(3));
+            }
+        }
+        "translationRemove" => crate::translation::remove_model(text(arg(0)), text(arg(1))),
         "addressRemove" => {
             let id = short(arg(0), 64);
             crate::formdata::when_open(false, move || crate::formdata::remove_address(&id));

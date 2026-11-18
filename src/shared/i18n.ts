@@ -898,7 +898,7 @@ const tr = {
   'translate.error.unsupported': 'Bu diller arasında çeviri modeli yok.',
   'translate.error.failed': 'Sayfa çevrilemedi.',
   'settings.translationModels': 'Çeviri modelleri',
-  'settings.translationModelsHint': 'Sayfa çevirisi için indirilen diller. Modeller Bergamot projesinden gelir: Almanca, Fransızca, İspanyolca, İtalyanca, Rusça ve diğer bazı diller İngilizceye çevrilebilir; Türkçe model henüz yok. Kaldırılan bir model gerektiğinde yeniden indirilir.',
+  'settings.translationModelsHint': 'Sayfa çevirisi için indirilen diller. Modeller Firefox\'un çevirilerinde kullanılanlar (Mozilla): Türkçe dahil 40 kadar dil, çoğu İngilizceye ve İngilizceden; öteki çiftler İngilizce üzerinden çevrilir. Kaldırılan bir model gerektiğinde yeniden indirilir.',
   'settings.translationModelsEmpty': 'Henüz indirilmiş bir model yok.',
 } as const
 
@@ -1800,7 +1800,7 @@ const en: Record<MessageKey, string> = {
   'translate.error.unsupported': 'There\'s no translation model between these languages.',
   'translate.error.failed': 'The page couldn\'t be translated.',
   'settings.translationModels': 'Translation models',
-  'settings.translationModelsHint': 'Languages downloaded for page translation. Models come from the Bergamot project: German, French, Spanish, Italian, Russian and some other languages can be translated into English; there is no Turkish model yet. A removed model is downloaded again when needed.',
+  'settings.translationModelsHint': 'Languages downloaded for page translation. The models are the ones Firefox translates with (from Mozilla): about 40 languages including Turkish, most of them into and out of English; other pairs go through English. A removed model is downloaded again when needed.',
   'settings.translationModelsEmpty': 'No models downloaded yet.',
 }
 
