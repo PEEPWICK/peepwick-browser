@@ -943,6 +943,21 @@ const COLLECT: &str = r#"(() => {
     end(null)
   }
   if (document.body) visit(document.body)
+  // Attributes people read or hear: tooltips, image descriptions, field hints, labels for
+  // screen readers, option groups' names, the words on input buttons. A submit button's value
+  // goes with the form when it has a name, so that one stays.
+  const NAMES = ['title', 'alt', 'placeholder', 'aria-label', 'aria-description', 'label', 'value']
+  const quiet = memo((el) => el.getAttribute('translate') === 'no' || el.classList.contains('notranslate') || el.isContentEditable || (!!el.parentElement && quiet(el.parentElement)))
+  const shown = (el, name) =>
+    name === 'label' ? ['OPTGROUP', 'OPTION', 'TRACK'].includes(el.tagName) : name !== 'value' || (el.tagName === 'INPUT' && (el.type === 'button' || el.type === 'reset' || (el.type === 'submit' && !el.name)))
+  const attributes = []
+  for (const el of document.body?.querySelectorAll('[title], [alt], [placeholder], [aria-label], [aria-description], [label], input[value]') ?? []) {
+    if (el.namespaceURI !== 'http://www.w3.org/1999/xhtml' || quiet(el)) continue
+    for (const name of NAMES) {
+      const original = el.getAttribute(name)
+      if (original && /\p{L}/u.test(original) && shown(el, name)) attributes.push({ el, name, original, text: original.replace(/\s+/g, ' ').trim() })
+    }
+  }
   // Children in this order before `next`, moving only what isn't in its place.
   const order = (parent, children, next) => {
     let ref = next?.parentNode === parent ? next : null
@@ -1102,7 +1117,19 @@ const COLLECT: &str = r#"(() => {
         } catch {}
       })
     },
+    applyAttributes(start, translations) {
+      translations.forEach((text, i) => {
+        const entry = attributes[start + i]
+        // Left alone when the page changed it meanwhile.
+        if (!entry || typeof text !== 'string' || entry.el.getAttribute(entry.name) !== entry.original) return
+        entry.el.setAttribute(entry.name, text)
+        entry.translated = text
+      })
+    },
     restore() {
+      for (const entry of attributes) {
+        if (entry.translated !== undefined && entry.el.getAttribute(entry.name) === entry.translated) entry.el.setAttribute(entry.name, entry.original)
+      }
       for (const unit of [...units].reverse()) {
         try {
           undo(unit)
@@ -1112,7 +1139,7 @@ const COLLECT: &str = r#"(() => {
     },
   }
   window.__pwTranslation = state
-  return JSON.stringify({ texts: units.map((unit) => unit.html), title: document.title })
+  return JSON.stringify({ texts: units.map((unit) => unit.html), attributes: attributes.map((entry) => entry.text), title: document.title })
 })()"#;
 
 const RESTORE: &str =
@@ -1122,6 +1149,14 @@ const RESTORE: &str =
 fn apply_script(start: usize, texts: &[Value]) -> String {
     format!(
         "window.__pwTranslation?.apply({start}, {})",
+        Value::Array(texts.to_vec())
+    )
+}
+
+/// Puts the translations of attributes `start` on in place.
+fn attributes_script(start: usize, texts: &[Value]) -> String {
+    format!(
+        "window.__pwTranslation?.applyAttributes({start}, {})",
         Value::Array(texts.to_vec())
     )
 }
@@ -1154,18 +1189,22 @@ async fn in_page(view: &WebView, script: &str) -> Result<String, String> {
         .map_err(|e| format!("failed: {}", e.message()))
 }
 
-/// Translates the page in place, a block of runs at a time. Ok(false) when it stopped partway
-/// because `cancelled` said so.
+/// Translates the page in place, a block of runs at a time, then its attributes; `text_done`
+/// hears when the text is in place. Ok(false) when it stopped partway because `cancelled` said
+/// so.
 async fn translate_page(
     view: &WebView,
     from: &str,
     to: &str,
     progress: impl Fn(f64),
+    text_done: impl Fn(),
     cancelled: impl Fn() -> bool,
 ) -> Result<bool, String> {
     let collected: Value =
         serde_json::from_str(&in_page(view, COLLECT).await?).map_err(|e| format!("failed: {e}"))?;
     let texts: Vec<String> = serde_json::from_value(collected["texts"].clone()).unwrap_or_default();
+    let attributes: Vec<String> =
+        serde_json::from_value(collected["attributes"].clone()).unwrap_or_default();
     let title = collected["title"].as_str().unwrap_or("").trim().to_string();
     // What COLLECT left in the world has to be there for the rest (see WORLD): without the
     // extension's world, the page would stay as it is while the bar said it was translated.
@@ -1182,19 +1221,66 @@ async fn translate_page(
             in_page(view, &title_script(&title)).await?;
         }
     }
-    let mut done: HashMap<String, Option<String>> = HashMap::new();
     let total = texts.len().max(1);
-    for range in blocks(&texts) {
-        let block = &texts[range.clone()];
+    let report = |done: usize| progress(done as f64 / total as f64);
+    if !translate_list(
+        view,
+        (from, to),
+        &texts,
+        true,
+        apply_script,
+        &report,
+        &cancelled,
+    )
+    .await?
+    {
+        return Ok(false);
+    }
+    // The page reads translated now. Attributes (a page may have thousands of tooltips) follow
+    // without holding up the bar; ones the engine can't take stay as they are.
+    text_done();
+    let attributes_done = translate_list(
+        view,
+        (from, to),
+        &attributes,
+        false,
+        attributes_script,
+        &|_| {},
+        &cancelled,
+    )
+    .await;
+    match attributes_done {
+        Ok(finished) => Ok(finished),
+        Err(error) => {
+            eprintln!("[translation] attributes: {error}");
+            Ok(true)
+        }
+    }
+}
+
+/// Translates a list a block at a time, the same text once, and puts each block in place with
+/// `apply`; `done` hears how many are in place. Ok(false) when `cancelled` said to stop.
+async fn translate_list(
+    view: &WebView,
+    (from, to): (&str, &str),
+    list: &[String],
+    html: bool,
+    apply: fn(usize, &[Value]) -> String,
+    done: &impl Fn(usize),
+    cancelled: &impl Fn() -> bool,
+) -> Result<bool, String> {
+    let mut known: HashMap<String, Option<String>> = HashMap::new();
+    for range in blocks(list) {
+        let block = &list[range.clone()];
         let mut wanted: Vec<String> = Vec::new();
         for text in block {
-            if !done.contains_key(text) && !wanted.contains(text) {
+            if !known.contains_key(text) && !wanted.contains(text) {
                 wanted.push(text.clone());
             }
         }
         if !wanted.is_empty() {
-            let translated = translate_texts(from, to, wanted.clone(), true).await?;
-            done.extend(wanted.into_iter().zip(translated));
+            let translated = translate_texts(from, to, wanted.clone(), html).await?;
+            known.extend(wanted.into_iter().zip(translated));
         }
         if cancelled() {
             return Ok(false);
@@ -1202,14 +1288,15 @@ async fn translate_page(
         let values: Vec<Value> = block
             .iter()
             .map(|text| {
-                done.get(text)
+                known
+                    .get(text)
                     .cloned()
                     .flatten()
                     .map_or(Value::Null, Value::String)
             })
             .collect();
-        in_page(view, &apply_script(range.start, &values)).await?;
-        progress(range.end as f64 / total as f64);
+        in_page(view, &apply(range.start, &values)).await?;
+        done(range.end);
     }
     Ok(true)
 }
@@ -1435,6 +1522,14 @@ async fn run_translation(
         |fraction| {
             if let Some(tab) = current(tab) {
                 update(&tab, run, |state| state.progress = fraction);
+            }
+        },
+        || {
+            if let Some(tab) = current(tab) {
+                update(&tab, run, |state| {
+                    state.status = "done";
+                    state.progress = 1.0;
+                });
             }
         },
         || current(tab).is_none(),
