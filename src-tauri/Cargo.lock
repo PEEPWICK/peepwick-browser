@@ -2874,7 +2874,7 @@ dependencies = [
 
 [[package]]
 name = "peepwick-browser"
-version = "0.2.8"
+version = "0.2.9"
 dependencies = [
  "adblock",
  "base64 0.22.1",
