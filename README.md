@@ -114,8 +114,9 @@ folder, or be asked where to save each file. Per-site zoom with a default zoom a
 Find on page, print, save a page as one .mhtml file, and the Web Inspector (<kbd>F12</kbd>).
 Spelling suggestions in text fields. Translate a page on this computer with the models Firefox
 uses, about 40 languages: each pair is downloaded once, the first time you need it, and the page's
-text never leaves the browser. Links and footnotes keep their place, and Show original puts the
-page back as it was. Make it your default browser from Settings or the welcome screen, from the .deb or the AppImage alike. Links from other apps open as new tabs in the window
+text never leaves the browser. The language is told by the text itself, links and footnotes keep
+their place, tooltips and form hints are translated too, and Show original puts the page back as
+it was. Make it your default browser from Settings or the welcome screen, from the .deb or the AppImage alike. Links from other apps open as new tabs in the window
 you used last, and a second launch never starts a second browser on the same profile. Play, pause
 and mute what plays in any tab from the toolbar, sound from a page's frames included. The task
 manager (<kbd>Shift</kbd>+<kbd>Esc</kbd>) shows the memory and processor use of each tab and
