@@ -59,3 +59,4 @@ openssl = "0.10"
 flate2 = "1"
 # Imported cookies go into WebKit's cookie jar as libsoup cookies (the version WebKit uses).
 soup = { package = "soup3", version = "0.5" }
+whatlang = "0.18.0"

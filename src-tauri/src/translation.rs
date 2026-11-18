@@ -261,6 +261,68 @@ pub fn normalize_lang(tag: &str) -> Option<String> {
     valid_code(base).then(|| base.to_string())
 }
 
+// ── The page's language ───────────────────────────────────────────────────────
+
+/// whatlang's languages, ISO 639-3 as it names them, and the two letters pages and the models
+/// use.
+#[rustfmt::skip]
+const DETECTABLE: [(&str, &str); 70] = [
+    ("afr", "af"), ("aka", "ak"), ("amh", "am"), ("ara", "ar"), ("aze", "az"), ("bel", "be"),
+    ("ben", "bn"), ("bul", "bg"), ("cat", "ca"), ("ces", "cs"), ("cmn", "zh"), ("cym", "cy"),
+    ("dan", "da"), ("deu", "de"), ("ell", "el"), ("eng", "en"), ("epo", "eo"), ("est", "et"),
+    ("fin", "fi"), ("fra", "fr"), ("guj", "gu"), ("heb", "he"), ("hin", "hi"), ("hrv", "hr"),
+    ("hun", "hu"), ("hye", "hy"), ("ind", "id"), ("ita", "it"), ("jav", "jv"), ("jpn", "ja"),
+    ("kan", "kn"), ("kat", "ka"), ("khm", "km"), ("kor", "ko"), ("lat", "la"), ("lav", "lv"),
+    ("lit", "lt"), ("mal", "ml"), ("mar", "mr"), ("mkd", "mk"), ("mya", "my"), ("nep", "ne"),
+    ("nld", "nl"), ("nob", "nb"), ("ori", "or"), ("pan", "pa"), ("pes", "fa"), ("pol", "pl"),
+    ("por", "pt"), ("ron", "ro"), ("rus", "ru"), ("sin", "si"), ("slk", "sk"), ("slv", "sl"),
+    ("sna", "sn"), ("spa", "es"), ("srp", "sr"), ("swe", "sv"), ("tam", "ta"), ("tel", "te"),
+    ("tgl", "tl"), ("tha", "th"), ("tuk", "tk"), ("tur", "tr"), ("ukr", "uk"), ("urd", "ur"),
+    ("uzb", "uz"), ("vie", "vi"), ("yid", "yi"), ("zul", "zu"),
+];
+
+/// Languages close enough for the detector to take one for the other on a page's worth of
+/// text: between these, the page's own word stands.
+const CLOSE: [&[&str]; 6] = [
+    &["hr", "sr", "bs"],
+    &["ms", "id"],
+    &["da", "nb", "nn", "no"],
+    &["cs", "sk"],
+    &["tr", "az"],
+    &["bg", "mk"],
+];
+
+/// The language the text is in, when the detector is sure of it.
+fn detect_text(text: &str) -> Option<&'static str> {
+    let info = whatlang::detect(text).filter(|info| info.is_reliable())?;
+    let code = info.lang().code();
+    DETECTABLE
+        .iter()
+        .find(|(three, _)| *three == code)
+        .map(|(_, two)| *two)
+}
+
+/// The page's language: what its text is in when that's certain, else what the page says.
+/// Templates often say "en" whatever the page is in; but the page's word stands for languages
+/// the detector doesn't know and between close ones it may confuse.
+fn page_language(attribute: Option<String>, text: &str) -> Option<String> {
+    let Some(detected) = detect_text(text) else {
+        return attribute;
+    };
+    match attribute {
+        Some(said)
+            if said == detected
+                || !DETECTABLE.iter().any(|(_, two)| *two == said)
+                || CLOSE
+                    .iter()
+                    .any(|group| group.contains(&said.as_str()) && group.contains(&detected)) =>
+        {
+            Some(said)
+        }
+        _ => Some(detected.to_string()),
+    }
+}
+
 fn step_known(from: &str, to: &str) -> bool {
     (to == PIVOT && INTO_ENGLISH.contains(&from))
         || (from == PIVOT && FROM_ENGLISH.contains(&to))
@@ -773,12 +835,33 @@ const WORLD: &str = "peepwick-translate";
 const BLOCK_CHARS: usize = 2000;
 const BLOCK_RUNS: usize = 40;
 
-const DETECT: &str = "document.documentElement.lang || document.querySelector('meta[http-equiv=\"content-language\" i]')?.content || ''";
+/// What the page says its language is, and some of its text to tell it by: up to 2000
+/// characters from its main part, leaving out code and what the page marks translate="no".
+const DETECT: &str = r#"(() => {
+  const SKIP = new Set(['SCRIPT', 'STYLE', 'NOSCRIPT', 'TEMPLATE', 'TEXTAREA', 'CODE', 'PRE', 'KBD', 'SAMP', 'SVG', 'MATH'])
+  const root = document.querySelector('main, article, [role=main]') || document.body
+  let text = ''
+  if (root) {
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+      acceptNode: (node) => {
+        if (!/\p{L}/u.test(node.data)) return NodeFilter.FILTER_SKIP
+        for (let el = node.parentElement; el && el !== root.parentElement; el = el.parentElement) {
+          if (SKIP.has(el.tagName.toUpperCase()) || el.getAttribute('translate') === 'no' || el.classList.contains('notranslate')) return NodeFilter.FILTER_SKIP
+        }
+        return node.parentElement.checkVisibility?.() === false ? NodeFilter.FILTER_SKIP : NodeFilter.FILTER_ACCEPT
+      },
+    })
+    while (text.length < 2000 && walker.nextNode()) text += walker.currentNode.data.replace(/\s+/g, ' ') + ' '
+  }
+  const lang = document.documentElement.lang || document.querySelector('meta[http-equiv="content-language" i]')?.content || ''
+  return JSON.stringify({ lang, text: text.slice(0, 2000) })
+})()"#;
 
 /// The page's text in runs: the text and inline elements between two block-level ones, as
 /// markup the engine translates whole sentences of, as Firefox does. Inline elements go in
 /// numbered, so the translation says where each one goes; ones it must not touch (code, images,
-/// what the page marks translate="no") go in as numbered images. Putting a translation in place
+/// what the page marks translate="no") go in with what they show, or as numbered images when
+/// they show no text, and come out as they were. Putting a translation in place
 /// keeps the page's own nodes: text nodes get the new words, elements stay with their parents
 /// and only change places, so the page's scripts still find what they made. Undoing puts every
 /// word and place back. A run the page changed meanwhile is left as it is.
@@ -1206,11 +1289,15 @@ pub fn detect(tab: &Rc<Tab>) {
         if tab.translation_run.get() != run {
             return;
         }
+        let found: Value = found
+            .and_then(|text| serde_json::from_str(&text).ok())
+            .unwrap_or_default();
         let target = default_target();
-        let lang = found
-            .as_deref()
-            .and_then(normalize_lang)
-            .filter(|lang| can_translate(lang, &target));
+        let lang = page_language(
+            found["lang"].as_str().and_then(normalize_lang),
+            found["text"].as_str().unwrap_or(""),
+        )
+        .filter(|lang| can_translate(lang, &target));
         if *tab.page_lang.borrow() != lang {
             tab.page_lang.replace(lang);
             tab.changed();
@@ -1469,6 +1556,51 @@ mod tests {
         assert!(!can_translate("az", "en"));
         assert!(!can_translate("ja", "en"));
         assert!(!can_translate("en", "en"));
+    }
+
+    const TURKISH: &str = "Bugün hava çok güzel. Öğleden sonra yağmur bekleniyor, akşam ise rüzgar \
+        hafifleyecek. Tarayıcı sayfaları bilgisayarınızda çeviriyor ve metin hiçbir yere \
+        gönderilmiyor. Haberlerin devamı için sayfayı aşağı kaydırabilirsiniz.";
+    const ENGLISH: &str = "The weather is lovely today. Rain is expected in the afternoon, and the \
+        wind will ease in the evening. The browser translates pages on your computer and the text \
+        is never sent anywhere. Scroll down the page to read more of the news.";
+    const INDONESIAN: &str = "Cuaca hari ini sangat cerah. Hujan diperkirakan turun pada sore hari \
+        dan angin akan mereda pada malam hari. Peramban menerjemahkan halaman di komputer Anda dan \
+        teksnya tidak pernah dikirim ke mana pun. Gulir ke bawah untuk membaca berita lainnya.";
+    const JAPANESE: &str = "今日はとても良い天気です。午後には雨が降る予定で、夕方には風が弱まります。\
+        ブラウザはお使いのコンピューターでページを翻訳し、テキストはどこにも送信されません。";
+
+    #[test]
+    fn tells_the_language_by_the_text_when_sure() {
+        assert_eq!(detect_text(TURKISH), Some("tr"));
+        assert_eq!(detect_text(ENGLISH), Some("en"));
+        assert_eq!(detect_text(JAPANESE), Some("ja"));
+        assert_eq!(detect_text("OK"), None);
+        assert_eq!(detect_text(""), None);
+        assert_eq!(DETECTABLE.len(), whatlang::Lang::all().len());
+        for lang in whatlang::Lang::all() {
+            assert!(
+                DETECTABLE.iter().any(|(three, _)| *three == lang.code()),
+                "{lang:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn trusts_the_text_over_a_template_but_not_between_close_languages() {
+        let lang = |said: Option<&str>, text| page_language(said.map(str::to_string), text);
+        // A template's "en" on a Turkish page; no attribute at all.
+        assert_eq!(lang(Some("en"), TURKISH).as_deref(), Some("tr"));
+        assert_eq!(lang(None, TURKISH).as_deref(), Some("tr"));
+        assert_eq!(lang(Some("tr"), TURKISH).as_deref(), Some("tr"));
+        assert_eq!(lang(Some("en"), JAPANESE).as_deref(), Some("ja"));
+        // Too little text: the page's word.
+        assert_eq!(lang(Some("de"), "OK").as_deref(), Some("de"));
+        assert_eq!(lang(None, "OK"), None);
+        // The detector knows no Malay or Albanian, and may take Malay for Indonesian.
+        assert_eq!(lang(Some("ms"), INDONESIAN).as_deref(), Some("ms"));
+        assert_eq!(lang(Some("sq"), ENGLISH).as_deref(), Some("sq"));
+        assert_eq!(lang(Some("az"), TURKISH).as_deref(), Some("az"));
     }
 
     #[test]
