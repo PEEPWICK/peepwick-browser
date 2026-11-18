@@ -21,7 +21,8 @@ use serde::Serialize;
 use serde_json::{Value, json};
 use webkit2gtk::{
     SecurityManagerExt, URISchemeRequest, URISchemeRequestExt, UserContentManager,
-    UserContentManagerExt, WebContext, WebContextExt, WebView, WebViewExt,
+    UserContentManagerExt, UserMessage, UserMessageExt, WebContext, WebContextExt, WebView,
+    WebViewExt,
 };
 
 use crate::tab::Tab;
@@ -637,10 +638,15 @@ fn engine() -> Result<Rc<Engine>, String> {
     window.add(&view);
     window.show_all();
     view.load_uri(&crate::autofill::interface_url(&win, "translator.html"));
-    // Its page gone, its answers never come: the requests waiting fail, and the next gets a
-    // new engine.
+    // Its page gone, or never there, its answers never come: the requests waiting fail at once,
+    // and the next gets a new engine.
     view.connect_web_process_terminated(|_, _| {
         glib::idle_add_local_once(unload);
+    });
+    view.connect_load_failed(|_, _, uri, error| {
+        crate::log_error!("[translation] the engine's page didn't load ({uri}): {error}");
+        glib::idle_add_local_once(unload);
+        false
     });
     let engine = Rc::new(Engine {
         window,
@@ -1211,6 +1217,8 @@ async fn translate_page(
     if in_page(view, "typeof window.__pwTranslation").await? != "object" {
         return Err("failed: the page's script world forgot the translation".into());
     }
+    // The other frames' text, now, so the bar's progress counts it.
+    let frames = collect_frames(view, from).await;
     if !title.is_empty() {
         // A title the engine can't take leaves the title as it is.
         let translated = translate_texts(from, to, vec![title], false).await;
@@ -1221,14 +1229,15 @@ async fn translate_page(
             in_page(view, &title_script(&title)).await?;
         }
     }
-    let total = texts.len().max(1);
+    let total = (texts.len() + frames.iter().map(|f| f.texts.len()).sum::<usize>()).max(1);
     let report = |done: usize| progress(done as f64 / total as f64);
+    let pair = (from, to);
     if !translate_list(
         view,
-        (from, to),
+        Place::Main,
+        pair,
         &texts,
-        true,
-        apply_script,
+        Kind::Runs,
         &report,
         &cancelled,
     )
@@ -1236,36 +1245,158 @@ async fn translate_page(
     {
         return Ok(false);
     }
+    // Then the text of the page's other frames.
+    let mut done = texts.len();
+    for frame in &frames {
+        let before = done;
+        let place = Place::Frame(frame.id);
+        let report = |n: usize| report(before + n);
+        if !translate_list(
+            view,
+            place,
+            pair,
+            &frame.texts,
+            Kind::Runs,
+            &report,
+            &cancelled,
+        )
+        .await?
+        {
+            return Ok(false);
+        }
+        done += frame.texts.len();
+    }
     // The page reads translated now. Attributes (a page may have thousands of tooltips) follow
     // without holding up the bar; ones the engine can't take stay as they are.
     text_done();
-    let attributes_done = translate_list(
-        view,
-        (from, to),
-        &attributes,
-        false,
-        attributes_script,
-        &|_| {},
-        &cancelled,
-    )
-    .await;
-    match attributes_done {
-        Ok(finished) => Ok(finished),
-        Err(error) => {
-            eprintln!("[translation] attributes: {error}");
-            Ok(true)
+    let attributes = std::iter::once((Place::Main, &attributes))
+        .chain(frames.iter().map(|f| (Place::Frame(f.id), &f.attributes)));
+    for (place, list) in attributes {
+        match translate_list(
+            view,
+            place,
+            pair,
+            list,
+            Kind::Attributes,
+            &|_| {},
+            &cancelled,
+        )
+        .await
+        {
+            Ok(true) => {}
+            Ok(false) => return Ok(false),
+            Err(error) => {
+                eprintln!("[translation] attributes: {error}");
+                break;
+            }
         }
     }
+    Ok(true)
+}
+
+/// Where a script of the translation runs: the page's main frame, or another of its frames by
+/// WebKit's id for it.
+#[derive(Clone, Copy)]
+enum Place {
+    Main,
+    Frame(u64),
+}
+
+/// Runs a script in the translation's world in the page's frames other than the main one,
+/// through the web process extension (webext/peepwick-webext.c), as the browser's own calls
+/// reach only the main frame. `frame` 0 is all of them. Each frame's answer, by frame; none
+/// when there is no extension to ask.
+async fn in_frames(view: &WebView, frame: u64, script: &str) -> Vec<(u64, String)> {
+    let message = UserMessage::new("translate-frames", Some(&(frame, script).to_variant()));
+    view.send_message_to_page_future(&message)
+        .await
+        .ok()
+        .and_then(|reply| reply.parameters())
+        .and_then(|parameters| parameters.get::<Vec<(u64, String)>>())
+        .unwrap_or_default()
+}
+
+async fn run_in(view: &WebView, place: Place, script: &str) -> Result<(), String> {
+    match place {
+        Place::Main => in_page(view, script).await.map(drop),
+        // A frame gone meanwhile has nothing to change.
+        Place::Frame(id) => {
+            in_frames(view, id, script).await;
+            Ok(())
+        }
+    }
+}
+
+/// What a list holds: a page's runs, as markup, or its attributes, as plain text.
+#[derive(Clone, Copy, PartialEq)]
+enum Kind {
+    Runs,
+    Attributes,
+}
+
+/// A frame's runs and attributes, as COLLECT gives them.
+struct FrameText {
+    id: u64,
+    texts: Vec<String>,
+    attributes: Vec<String>,
+}
+
+/// The text of the page's other frames that is in the language translated from: a frame in
+/// another one (an embedded post in English, say) stays as it is, when the detector is sure.
+async fn collect_frames(view: &WebView, from: &str) -> Vec<FrameText> {
+    in_frames(view, 0, COLLECT)
+        .await
+        .into_iter()
+        .filter_map(|(id, answer)| {
+            let collected: Value = serde_json::from_str(&answer).ok()?;
+            let list = |key: &str| -> Vec<String> {
+                serde_json::from_value(collected[key].clone()).unwrap_or_default()
+            };
+            let (texts, attributes) = (list("texts"), list("attributes"));
+            let mut sample = String::new();
+            for text in &texts {
+                if sample.len() > 2000 {
+                    break;
+                }
+                sample.push_str(&markup_text(text));
+                sample.push(' ');
+            }
+            let same = page_language(Some(from.to_string()), &sample).as_deref() == Some(from);
+            (same && !(texts.is_empty() && attributes.is_empty())).then_some(FrameText {
+                id,
+                texts,
+                attributes,
+            })
+        })
+        .collect()
+}
+
+/// The words in a run's markup, to tell their language by: the tags out, the three escapes
+/// back.
+fn markup_text(html: &str) -> String {
+    let mut text = String::with_capacity(html.len());
+    let mut in_tag = false;
+    for c in html.chars() {
+        match c {
+            '<' => in_tag = true,
+            '>' if in_tag => in_tag = false,
+            _ if !in_tag => text.push(c),
+            _ => {}
+        }
+    }
+    text.replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("&amp;", "&")
 }
 
 /// Translates a list a block at a time, the same text once, and puts each block in place with
 /// `apply`; `done` hears how many are in place. Ok(false) when `cancelled` said to stop.
 async fn translate_list(
     view: &WebView,
+    place: Place,
     (from, to): (&str, &str),
     list: &[String],
-    html: bool,
-    apply: fn(usize, &[Value]) -> String,
+    kind: Kind,
     done: &impl Fn(usize),
     cancelled: &impl Fn() -> bool,
 ) -> Result<bool, String> {
@@ -1279,7 +1410,7 @@ async fn translate_list(
             }
         }
         if !wanted.is_empty() {
-            let translated = translate_texts(from, to, wanted.clone(), html).await?;
+            let translated = translate_texts(from, to, wanted.clone(), kind == Kind::Runs).await?;
             known.extend(wanted.into_iter().zip(translated));
         }
         if cancelled() {
@@ -1295,7 +1426,11 @@ async fn translate_list(
                     .map_or(Value::Null, Value::String)
             })
             .collect();
-        in_page(view, &apply(range.start, &values)).await?;
+        let apply = match kind {
+            Kind::Runs => apply_script(range.start, &values),
+            Kind::Attributes => attributes_script(range.start, &values),
+        };
+        run_in(view, place, &apply).await?;
         done(range.end);
     }
     Ok(true)
@@ -1549,6 +1684,8 @@ fn revert(tab: &Rc<Tab>) {
             None::<&gio::Cancellable>,
             |_| {},
         );
+        let frames = UserMessage::new("translate-frames", Some(&(0u64, RESTORE).to_variant()));
+        view.send_message_to_page(&frames, None::<&gio::Cancellable>, |_| {});
     }
     if let Some(previous) = previous {
         choose(tab, previous.from, previous.to);
@@ -1696,6 +1833,19 @@ mod tests {
         assert_eq!(lang(Some("ms"), INDONESIAN).as_deref(), Some("ms"));
         assert_eq!(lang(Some("sq"), ENGLISH).as_deref(), Some("sq"));
         assert_eq!(lang(Some("az"), TURKISH).as_deref(), Some("az"));
+    }
+
+    #[test]
+    fn reads_the_words_out_of_runs() {
+        assert_eq!(
+            markup_text(r#"Daha fazla bilgi için <span data-i="0">buraya tıklayın</span>."#),
+            "Daha fazla bilgi için buraya tıklayın."
+        );
+        assert_eq!(
+            markup_text("Fiyat &lt;100&gt; &amp; kargo"),
+            "Fiyat <100> & kargo"
+        );
+        assert_eq!(markup_text(r#"<img data-i="1">"#), "");
     }
 
     #[test]

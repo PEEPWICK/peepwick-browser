@@ -26,6 +26,8 @@
  *   (src/translation.rs). WebKitGTK gives a world the browser names a fresh start on every
  *   call unless it exists here, so it is made here: a page's text nodes and their originals stay
  *   in it between the calls that translate the page a block at a time and the one that undoes it.
+ *   The browser's calls reach only the main frame; "translate-frames" runs one of its scripts
+ *   in the page's other frames, in the same world, and answers each frame's result.
  *
  * The browser hands each new web process its settings as it starts and sends a "config"
  * message when they change (src/window.rs): (gpc, https-only, sites allowed over HTTP).
@@ -193,6 +195,8 @@ on_send_request (WebKitWebPage     *page,
 
 static WebKitWebExtension *web_extension = NULL;
 static WebKitScriptWorld *media_world = NULL;
+/* Page translation's world, kept for the process's life: see the comment at the top. */
+static WebKitScriptWorld *translate_world = NULL;
 
 /* Per page: weak references to its frames, the main frame first. */
 #define PAGE_FRAMES "peepwick-frames"
@@ -318,6 +322,40 @@ in_frames (WebKitWebPage *page, const char *call, gboolean all)
     return done;
 }
 
+/* Runs one of the translation's scripts in the page's frames other than the main one, in its
+ * world: in all of them, or in the one whose id is given. Answers (frame id, result) for each
+ * frame the script ran in without an exception; the result is the script's string, or "". */
+static GVariant *
+translate_frames (WebKitWebPage *page, GVariant *parameters)
+{
+    GVariantBuilder answers;
+    g_variant_builder_init (&answers, G_VARIANT_TYPE ("a(ts)"));
+    GPtrArray *frames = g_object_get_data (G_OBJECT (page), PAGE_FRAMES);
+    guint64 wanted = 0;
+    const char *script = NULL;
+    if (parameters && g_variant_is_of_type (parameters, G_VARIANT_TYPE ("(ts)")))
+        g_variant_get (parameters, "(t&s)", &wanted, &script);
+    for (guint i = 0; script && frames && i < frames->len; i++) {
+        g_autoptr (WebKitFrame) frame = g_weak_ref_get (g_ptr_array_index (frames, i));
+        if (!frame || webkit_frame_is_main_frame (frame))
+            continue;
+        guint64 id = webkit_frame_get_id (frame);
+        if (wanted && id != wanted)
+            continue;
+        g_autoptr (JSCContext) context =
+            webkit_frame_get_js_context_for_script_world (frame, translate_world);
+        g_autoptr (JSCValue) result = jsc_context_evaluate (context, script, -1);
+        if (jsc_context_get_exception (context)) {
+            jsc_context_clear_exception (context);
+            continue;
+        }
+        g_autofree char *text = jsc_value_is_string (result) ? jsc_value_to_string (result)
+                                                             : g_strdup ("");
+        g_variant_builder_add (&answers, "(ts)", id, text);
+    }
+    return g_variant_builder_end (&answers);
+}
+
 /* Pauses what plays in the page, or plays again what this paused; with neither, the page's
  * first video or audio. */
 static gboolean
@@ -331,8 +369,6 @@ toggle_media (WebKitWebPage *page)
 /* ── Autofill ───────────────────────────────────────────────────────────────── */
 
 static WebKitScriptWorld *forms_world = NULL;
-/* Kept for the process's life, nothing more: see the comment at the top. */
-static WebKitScriptWorld *translate_world = NULL;
 /* Tabs' processes get settings; reader views' don't, and have no sign-in forms. */
 static gboolean has_config = FALSE;
 
@@ -401,6 +437,8 @@ on_page_message (WebKitWebPage     *page,
         reply = g_variant_new_int32 (getpid ());
     else if (g_strcmp0 (name, "media-toggle") == 0)
         reply = g_variant_new_boolean (toggle_media (page));
+    else if (g_strcmp0 (name, "translate-frames") == 0)
+        reply = translate_frames (page, webkit_user_message_get_parameters (message));
     else if (g_strcmp0 (name, "forms") == 0) {
         GVariant *parameters = webkit_user_message_get_parameters (message);
         if (parameters && g_variant_is_of_type (parameters, G_VARIANT_TYPE_STRING))
