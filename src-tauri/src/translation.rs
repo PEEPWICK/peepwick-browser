@@ -870,7 +870,9 @@ const DETECT: &str = r#"(() => {
 /// they show no text, and come out as they were. Putting a translation in place
 /// keeps the page's own nodes: text nodes get the new words, elements stay with their parents
 /// and only change places, so the page's scripts still find what they made. Undoing puts every
-/// word and place back. A run the page changed meanwhile is left as it is.
+/// word and place back, but for words the page changed since. A run the page changed before its
+/// translation came is left as it is. From then on the page is watched: what it adds, and runs
+/// it changes, wait in `pending` for the browser to translate (see `follow`).
 const COLLECT: &str = r#"(() => {
   window.__pwTranslation?.restore()
   // Elements whose words belong to the sentence around them while the page shows them inline.
@@ -895,8 +897,8 @@ const COLLECT: &str = r#"(() => {
     if (el.tagName === 'BR' || !(display.startsWith('inline') || display === 'contents' || display === 'none')) return 'apart'
     if (el.matches(FIXED) || el.querySelector(FIXED)) return 'apart'
     if (skipped(el) || display === 'none' || !/\S/.test(el.textContent)) return 'keep'
-    // Footnote marks and the like, with no words: moved whole, as the engine would take them apart.
-    if (!/\p{L}/u.test(el.textContent) && (el.firstElementChild || el.tagName === 'SUP' || el.tagName === 'SUB')) return 'keep'
+    // Footnote marks, numbers, clocks: no words, so moved whole; the engine would take them apart.
+    if (!/\p{L}/u.test(el.textContent)) return 'keep'
     if ((display === 'inline' || display === 'contents') && INLINE.has(el.tagName) && [...el.children].every((child) => kind(child) !== 'apart')) return 'text'
     return 'apart'
   })
@@ -907,8 +909,9 @@ const COLLECT: &str = r#"(() => {
     const text = el.textContent.replace(/[ \t\n\r\f]+/g, ' ').trim()
     return text.length <= 120 ? text : ''
   }
-  // A run's markup, its elements numbered in the order they come.
-  const markup = (nodes, elements) => {
+  // A run's markup, its elements numbered in the order they come. With `bare`, kept elements
+  // without what they show: whether the page changed a run is told by that.
+  const markup = (nodes, elements, bare = false) => {
     let html = ''
     let words = false
     const add = (list) => {
@@ -918,7 +921,7 @@ const COLLECT: &str = r#"(() => {
           words ||= /\p{L}/u.test(node.data)
         } else if (node.nodeType === 1) {
           const i = elements.push(node) - 1
-          if (kind(node) === 'keep') html += shows(node) ? `<span data-i="${i}">${esc(shows(node))}</span>` : `<img data-i="${i}">`
+          if (kind(node) === 'keep') html += shows(node) && !bare ? `<span data-i="${i}">${esc(shows(node))}</span>` : `<img data-i="${i}">`
           else {
             html += `<span data-i="${i}">`
             add(node.childNodes)
@@ -931,19 +934,32 @@ const COLLECT: &str = r#"(() => {
     return { html: html.replace(/[ \t\n\r\f]+/g, ' '), words }
   }
   const units = []
-  const visit = (el) => {
+  // Text nodes holding our words. A run with one (translated nodes the page moved) isn't
+  // collected again: it would go to the engine in the other language.
+  const translated = new WeakSet()
+  const ours = (node) => {
+    if (node.nodeType === 3) return translated.has(node)
+    const walker = document.createTreeWalker(node, NodeFilter.SHOW_TEXT)
+    while (walker.nextNode()) if (translated.has(walker.currentNode)) return true
+    return false
+  }
+  // The runs among an element's children, and with `deep` those of the elements under it.
+  const visit = (el, deep = true) => {
     if (skipped(el)) return
     let run = []
     const end = (next) => {
-      const { html, words } = markup(run, [])
-      if (words) units.push({ parent: el, nodes: run, next, html: html.trim(), lead: html.startsWith(' '), trail: html.endsWith(' ') })
+      const elements = []
+      const { html, words } = markup(run, elements)
+      // What kept elements show goes along as it is now: the engine's answer has that.
+      const shown = elements.map((child) => (kind(child) === 'keep' ? shows(child) : ''))
+      if (words && !run.some(ours)) units.push({ parent: el, nodes: run, next, html: html.trim(), bare: markup(run, [], true).html, shown, lead: html.startsWith(' '), trail: html.endsWith(' ') })
       run = []
     }
     for (const child of [...el.childNodes]) {
       if (child.nodeType === 3 || (child.nodeType === 1 && kind(child) !== 'apart')) run.push(child)
       else if (child.nodeType === 1) {
         end(child)
-        visit(child)
+        if (deep) visit(child)
       }
     }
     end(null)
@@ -956,20 +972,30 @@ const COLLECT: &str = r#"(() => {
   const quiet = memo((el) => el.getAttribute('translate') === 'no' || el.classList.contains('notranslate') || el.isContentEditable || (!!el.parentElement && quiet(el.parentElement)))
   const shown = (el, name) =>
     name === 'label' ? ['OPTGROUP', 'OPTION', 'TRACK'].includes(el.tagName) : name !== 'value' || (el.tagName === 'INPUT' && (el.type === 'button' || el.type === 'reset' || (el.type === 'submit' && !el.name)))
+  const SELECTOR = '[title], [alt], [placeholder], [aria-label], [aria-description], [label], input[value]'
   const attributes = []
-  for (const el of document.body?.querySelectorAll('[title], [alt], [placeholder], [aria-label], [aria-description], [label], input[value]') ?? []) {
-    if (el.namespaceURI !== 'http://www.w3.org/1999/xhtml' || quiet(el)) continue
-    for (const name of NAMES) {
-      const original = el.getAttribute(name)
-      if (original && /\p{L}/u.test(original) && shown(el, name)) attributes.push({ el, name, original, text: original.replace(/\s+/g, ' ').trim() })
+  const noted = new WeakMap()
+  const collectAttributes = (root) => {
+    for (const el of [root, ...root.querySelectorAll(SELECTOR)]) {
+      if (!el.matches(SELECTOR) || el.namespaceURI !== 'http://www.w3.org/1999/xhtml' || quiet(el)) continue
+      const names = noted.get(el) ?? new Set()
+      noted.set(el, names)
+      for (const name of NAMES) {
+        const original = el.getAttribute(name)
+        if (names.has(name) || !original || !/\p{L}/u.test(original) || !shown(el, name)) continue
+        names.add(name)
+        attributes.push({ el, name, original, text: original.replace(/\s+/g, ' ').trim() })
+      }
     }
   }
-  // Children in this order before `next`, moving only what isn't in its place.
-  const order = (parent, children, next) => {
+  if (document.body) collectAttributes(document.body)
+  // Children in this order before `next`, moving only what isn't in its place. A node that is
+  // no longer the parent's stays where the page put it, but for new ones (`adopt`), which go in.
+  const order = (parent, children, next, adopt) => {
     let ref = next?.parentNode === parent ? next : null
     for (let i = children.length - 1; i >= 0; i--) {
       const node = children[i]
-      if (node.parentNode && node.parentNode !== parent) continue
+      if (node.parentNode ? node.parentNode !== parent : !adopt) continue
       if (node.parentNode !== parent || node.nextSibling !== ref) parent.insertBefore(node, ref)
       ref = node
     }
@@ -977,7 +1003,9 @@ const COLLECT: &str = r#"(() => {
   const place = (unit, html) => {
     if (!unit.nodes.every((node) => node.parentNode === unit.parent)) return
     const elements = []
-    if (markup(unit.nodes, elements).html.trim() !== unit.html) return
+    if (markup(unit.nodes, elements, true).html !== unit.bare) return
+    // What each kept element showed when the run went to the engine (a clock may have moved on).
+    const said = new Map(elements.map((el, i) => [el, unit.shown[i] ?? '']))
     const template = document.createElement('template')
     template.innerHTML = (unit.lead ? ' ' : '') + html + (unit.trail ? ' ' : '')
     // Where each element goes: where the translation first has it, or for a kept element, where
@@ -987,13 +1015,13 @@ const COLLECT: &str = r#"(() => {
       const el = elements[Number(node.getAttribute('data-i'))]
       if (!el) continue
       const best = chosen.get(el)
-      const want = kind(el) === 'keep' && shows(el)
+      const want = kind(el) === 'keep' && said.get(el)
       if (!best || (want && !best.textContent.includes(want) && node.textContent.includes(want))) chosen.set(el, node)
     }
     // Text the engine put in a kept element, but for what the element shows (it keeps its own)
     // and stray pieces of that.
     const tidy = (extra, el) => {
-      const want = shows(el)
+      const want = said.get(el)
       const rest = want ? extra.split(want).join('') : extra
       return /\p{L}/u.test(rest) ? rest : rest.replace(/[^\s.,;:!?…]/gu, '')
     }
@@ -1002,7 +1030,7 @@ const COLLECT: &str = r#"(() => {
     const used = new Set()
     // A live parent's own nodes, given what the translation has under it: its elements where
     // the translation puts them, everything else as text in its own text nodes.
-    const merge = (parent, own, translated, next) => {
+    const merge = (parent, own, answer, next) => {
       const owned = new Set(own.filter((node) => node.nodeType === 1))
       const sequence = []
       let text = ''
@@ -1024,7 +1052,7 @@ const COLLECT: &str = r#"(() => {
           }
         }
       }
-      walk(translated)
+      walk(answer)
       if (text) sequence.push(text)
       // Kept elements: the engine's answer for what they show is not used, but it may have
       // taken words of the sentence in with it, or left part of it outside.
@@ -1036,7 +1064,7 @@ const COLLECT: &str = r#"(() => {
           continue
         }
         const [el, translatedEl] = item
-        const want = shows(el)
+        const want = said.get(el)
         const last = () => (typeof list[list.length - 1] === 'string' ? list[list.length - 1] : '')
         const setLast = (text) => {
           if (typeof list[list.length - 1] === 'string') list[list.length - 1] = text
@@ -1078,17 +1106,19 @@ const COLLECT: &str = r#"(() => {
         if (!node) {
           const created = document.createTextNode(item)
           saved.created.push(created)
+          translated.add(created)
           return created
         }
-        saved.texts.push([node, node.data])
+        saved.texts.push([node, node.data, item])
         node.data = item
+        translated.add(node)
         return node
       })
       for (const node of texts) {
-        saved.texts.push([node, node.data])
+        saved.texts.push([node, node.data, ''])
         node.data = ''
       }
-      order(parent, placed, next)
+      order(parent, placed, next, true)
       const inner = (el, translatedEl) => {
         if (kind(el) !== 'text') return
         const children = [...el.childNodes]
@@ -1101,29 +1131,86 @@ const COLLECT: &str = r#"(() => {
     }
     merge(unit.parent, unit.nodes, template.content, unit.next)
   }
+  // Back to the page's words, but where the page changed them since: those stay.
   const undo = (unit) => {
     const saved = unit.saved
     if (!saved) return
     unit.saved = null
-    for (const node of saved.created) node.remove()
-    for (const [node, data] of saved.texts) node.data = data
-    for (const [parent, children, next] of saved.order) order(parent, children, next)
+    for (const node of saved.created) {
+      translated.delete(node)
+      node.remove()
+    }
+    for (const [node, data, set] of saved.texts) {
+      translated.delete(node)
+      if (node.data === set) node.data = data
+    }
+    for (const [parent, children, next] of saved.order) order(parent, children, next, false)
   }
+  // What the page adds or changes from now on: new blocks, to translate, and blocks whose
+  // runs changed, to put back into the page's words and translate again. `pending` hands them
+  // out. The browser asks every second; when it has stopped asking (the bar closed during the
+  // translation, another one started), the watching stops too.
+  const fresh = new Set()
+  const dirty = new Set()
+  const redone = new WeakMap()
+  let asked = Date.now()
+  // The block a node's words belong to; null when they're the page's to keep.
+  const owner = (node) => {
+    let el = node.nodeType === 1 ? node : node.parentElement
+    if (!el || skipped(el)) return null
+    while (el && el !== document.body && kind(el) !== 'apart') {
+      if (kind(el) === 'keep') return null
+      el = el.parentElement
+    }
+    return el
+  }
+  const observer = new MutationObserver((records) => {
+    if (Date.now() - asked > 15000) {
+      observer.disconnect()
+      fresh.clear()
+      dirty.clear()
+      return
+    }
+    for (const record of records) {
+      if (record.type === 'characterData') {
+        const block = record.target.nodeType === 3 && /\p{L}/u.test(record.target.data) && owner(record.target)
+        if (block) dirty.add(block)
+        continue
+      }
+      // Scripts, styles and comments the page adds have no words of its to translate.
+      for (const node of record.addedNodes) {
+        if (node.nodeType === 1) {
+          if (skipped(node)) continue
+          if (kind(node) === 'apart') {
+            fresh.add(node)
+            continue
+          }
+        } else if (node.nodeType !== 3) continue
+        const block = /\p{L}/u.test(node.textContent) && owner(record.target)
+        if (block) dirty.add(block)
+      }
+    }
+  })
+  if (document.body) observer.observe(document.body, { childList: true, characterData: true, subtree: true })
   const state = {
     title: document.title,
     setTitle(text) {
       state.translatedTitle = document.title = text
     },
+    skip: false,
     apply(start, translations) {
+      asked = Date.now()
       translations.forEach((html, i) => {
         const unit = units[start + i]
-        if (!unit || typeof html !== 'string') return
+        if (!unit || unit.dead || typeof html !== 'string') return
         try {
           place(unit, html)
         } catch {}
       })
+      observer.takeRecords()
     },
     applyAttributes(start, translations) {
+      asked = Date.now()
       translations.forEach((text, i) => {
         const entry = attributes[start + i]
         // Left alone when the page changed it meanwhile.
@@ -1132,11 +1219,48 @@ const COLLECT: &str = r#"(() => {
         entry.translated = text
       })
     },
+    // The runs and attributes that came since the last time, numbered on from those before.
+    pending() {
+      asked = Date.now()
+      const start = units.length
+      const attrStart = attributes.length
+      if (!state.skip) {
+        const now = Date.now()
+        const visited = []
+        for (const el of fresh) {
+          fresh.delete(el)
+          if (!el.isConnected || skipped(el) || visited.some((done) => done.contains(el))) continue
+          visit(el)
+          collectAttributes(el)
+          visited.push(el)
+        }
+        for (const el of dirty) {
+          if (!el.isConnected || skipped(el) || visited.some((done) => done.contains(el))) {
+            dirty.delete(el)
+            continue
+          }
+          // A block the page keeps changing (a clock, say) is done again every few seconds at most.
+          if (now - (redone.get(el) ?? 0) < 5000) continue
+          dirty.delete(el)
+          redone.set(el, now)
+          for (const unit of units) {
+            if (unit.parent !== el || unit.dead) continue
+            undo(unit)
+            unit.dead = true
+          }
+          visit(el, false)
+        }
+        observer.takeRecords()
+      }
+      return JSON.stringify({ start, texts: units.slice(start).map((unit) => unit.html), attrStart, attributes: attributes.slice(attrStart).map((entry) => entry.text) })
+    },
     restore() {
+      observer.disconnect()
       for (const entry of attributes) {
         if (entry.translated !== undefined && entry.el.getAttribute(entry.name) === entry.translated) entry.el.setAttribute(entry.name, entry.original)
       }
       for (const unit of [...units].reverse()) {
+        if (unit.dead) continue
         try {
           undo(unit)
         } catch {}
@@ -1145,7 +1269,7 @@ const COLLECT: &str = r#"(() => {
     },
   }
   window.__pwTranslation = state
-  return JSON.stringify({ texts: units.map((unit) => unit.html), attributes: attributes.map((entry) => entry.text), title: document.title })
+  return JSON.stringify({ new: true, start: 0, texts: units.map((unit) => unit.html), attrStart: 0, attributes: attributes.map((entry) => entry.text), title: document.title })
 })()"#;
 
 const RESTORE: &str =
@@ -1234,7 +1358,7 @@ async fn translate_page(
     let pair = (from, to);
     if !translate_list(
         view,
-        Place::Main,
+        (Place::Main, 0),
         pair,
         &texts,
         Kind::Runs,
@@ -1253,7 +1377,7 @@ async fn translate_page(
         let report = |n: usize| report(before + n);
         if !translate_list(
             view,
-            place,
+            (place, 0),
             pair,
             &frame.texts,
             Kind::Runs,
@@ -1274,7 +1398,7 @@ async fn translate_page(
     for (place, list) in attributes {
         match translate_list(
             view,
-            place,
+            (place, 0),
             pair,
             list,
             Kind::Attributes,
@@ -1291,7 +1415,83 @@ async fn translate_page(
             }
         }
     }
+    follow(view, pair, &cancelled).await;
     Ok(true)
+}
+
+/// How often the page is asked for what it added or changed, once translated.
+const FOLLOW_EVERY: Duration = Duration::from_secs(1);
+/// The main frame's new and changed runs and attributes since it was last asked.
+const PENDING: &str = "window.__pwTranslation ? window.__pwTranslation.pending() : ''";
+/// A frame in another language: what it adds stays as it is too.
+const SKIP_FRAME: &str = "if (window.__pwTranslation) window.__pwTranslation.skip = true";
+
+/// While the translation is the tab's: what the page adds or changes, translated as it comes,
+/// in the main frame and the others. A frame that appears, or loads another page, is collected
+/// whole, and translated if it is in the page's language.
+async fn follow(view: &WebView, pair: (&str, &str), cancelled: &impl Fn() -> bool) {
+    let frame_script =
+        format!("window.__pwTranslation ? window.__pwTranslation.pending() : {COLLECT}");
+    loop {
+        glib::timeout_future(FOLLOW_EVERY).await;
+        if cancelled() {
+            return;
+        }
+        // A view gone, or a page no longer there to ask: nothing more to follow.
+        let Ok(main) = in_page(view, PENDING).await else {
+            return;
+        };
+        let mut answers = vec![(Place::Main, main)];
+        let frames = in_frames(view, 0, &frame_script).await;
+        answers.extend(
+            frames
+                .into_iter()
+                .map(|(id, answer)| (Place::Frame(id), answer)),
+        );
+        for (place, answer) in answers {
+            let Ok(news) = serde_json::from_str::<Value>(&answer) else {
+                continue;
+            };
+            let list = |key: &str| -> Vec<String> {
+                serde_json::from_value(news[key].clone()).unwrap_or_default()
+            };
+            let (texts, attributes) = (list("texts"), list("attributes"));
+            if texts.is_empty() && attributes.is_empty() {
+                continue;
+            }
+            if news["new"] == true && !in_language(pair.0, &texts) {
+                let _ = run_in(view, place, SKIP_FRAME).await;
+                continue;
+            }
+            let at = |key: &str| (place, news[key].as_u64().unwrap_or(0) as usize);
+            let runs = translate_list(
+                view,
+                at("start"),
+                pair,
+                &texts,
+                Kind::Runs,
+                &|_| {},
+                cancelled,
+            );
+            // An engine that fails now would fail every second: the following stops.
+            if let Err(error) = runs.await {
+                eprintln!("[translation] what the page added: {error}");
+                return;
+            }
+            let attributes_done = translate_list(
+                view,
+                at("attrStart"),
+                pair,
+                &attributes,
+                Kind::Attributes,
+                &|_| {},
+                cancelled,
+            );
+            if attributes_done.await.is_err() || cancelled() {
+                return;
+            }
+        }
+    }
 }
 
 /// Where a script of the translation runs: the page's main frame, or another of its frames by
@@ -1344,31 +1544,41 @@ struct FrameText {
 /// The text of the page's other frames that is in the language translated from: a frame in
 /// another one (an embedded post in English, say) stays as it is, when the detector is sure.
 async fn collect_frames(view: &WebView, from: &str) -> Vec<FrameText> {
-    in_frames(view, 0, COLLECT)
-        .await
-        .into_iter()
-        .filter_map(|(id, answer)| {
-            let collected: Value = serde_json::from_str(&answer).ok()?;
-            let list = |key: &str| -> Vec<String> {
-                serde_json::from_value(collected[key].clone()).unwrap_or_default()
-            };
-            let (texts, attributes) = (list("texts"), list("attributes"));
-            let mut sample = String::new();
-            for text in &texts {
-                if sample.len() > 2000 {
-                    break;
-                }
-                sample.push_str(&markup_text(text));
-                sample.push(' ');
-            }
-            let same = page_language(Some(from.to_string()), &sample).as_deref() == Some(from);
-            (same && !(texts.is_empty() && attributes.is_empty())).then_some(FrameText {
+    let mut frames = Vec::new();
+    for (id, answer) in in_frames(view, 0, COLLECT).await {
+        let Ok(collected) = serde_json::from_str::<Value>(&answer) else {
+            continue;
+        };
+        let list = |key: &str| -> Vec<String> {
+            serde_json::from_value(collected[key].clone()).unwrap_or_default()
+        };
+        let (texts, attributes) = (list("texts"), list("attributes"));
+        if !in_language(from, &texts) {
+            // What it adds later stays as it is too.
+            in_frames(view, id, SKIP_FRAME).await;
+        } else if !(texts.is_empty() && attributes.is_empty()) {
+            frames.push(FrameText {
                 id,
                 texts,
                 attributes,
-            })
-        })
-        .collect()
+            });
+        }
+    }
+    frames
+}
+
+/// Whether runs are in the language translated from, as far as the detector can tell: unsure,
+/// they are taken to be.
+fn in_language(from: &str, texts: &[String]) -> bool {
+    let mut sample = String::new();
+    for text in texts {
+        if sample.len() > 2000 {
+            break;
+        }
+        sample.push_str(&markup_text(text));
+        sample.push(' ');
+    }
+    page_language(Some(from.to_string()), &sample).as_deref() == Some(from)
 }
 
 /// The words in a run's markup, to tell their language by: the tags out, the three escapes
@@ -1393,7 +1603,7 @@ fn markup_text(html: &str) -> String {
 /// `apply`; `done` hears how many are in place. Ok(false) when `cancelled` said to stop.
 async fn translate_list(
     view: &WebView,
-    place: Place,
+    (place, base): (Place, usize),
     (from, to): (&str, &str),
     list: &[String],
     kind: Kind,
@@ -1427,8 +1637,8 @@ async fn translate_list(
             })
             .collect();
         let apply = match kind {
-            Kind::Runs => apply_script(range.start, &values),
-            Kind::Attributes => attributes_script(range.start, &values),
+            Kind::Runs => apply_script(base + range.start, &values),
+            Kind::Attributes => attributes_script(base + range.start, &values),
         };
         run_in(view, place, &apply).await?;
         done(range.end);
@@ -1692,9 +1902,17 @@ fn revert(tab: &Rc<Tab>) {
     }
 }
 
-/// Hides the bar; a translated page stays translated.
+/// Hides the bar. A translation still going stops; a translated page stays translated, and goes
+/// on being translated as it changes.
 fn close(tab: &Tab) {
-    bump(tab);
+    let translated = tab
+        .translation
+        .borrow()
+        .as_ref()
+        .is_some_and(|state| state.status == "done");
+    if !translated {
+        bump(tab);
+    }
     tab.translation.replace(None);
     tab.changed();
 }
