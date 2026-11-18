@@ -1,20 +1,20 @@
 {
-  "version": "0.2.8",
-  "displayVersion": "0.2.8a",
-  "notes": "PEEPWICK Browser 0.2.8a",
-  "pub_date": "2026-11-17T19:56:08.718Z",
+  "version": "0.2.9",
+  "displayVersion": "0.2.9a",
+  "notes": "PEEPWICK Browser 0.2.9a",
+  "pub_date": "2026-11-18T04:08:02.912Z",
   "platforms": {
     "linux-x86_64-appimage": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVTd0JTcEVwZjJCNUdkK1pVN0lVQXZ1cUNqSlpNSjJQUFVGWithQUtreVNtNGhuaVZPNUF5R1Y4eUlCNyszY1kyTDcyNWdWcjQzc1VXTFNFaXBVbmtETlF6R0JBbzdTNEEwPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk0OTQ1MzYxCWZpbGU6UEVFUFdJQ0sgQnJvd3Nlcl8wLjIuOF9hbWQ2NC5BcHBJbWFnZQl2ZXJzaW9uOjAuMi44CjZuSkpRTjNhOFEwb0Q5cXpkS2czdGJUcmJvSzRwUXVnR3ZpY05DN3htSERyS05XVXZJUFR2YjA3WTFXZGVoQjJLSUlwTUFvdngxN1FVVzNtWVNTaEF3PT0K",
-      "url": "https://github.com/PEEPWICK/peepwick-browser/releases/download/v0.2.8a/peepwick-browser-0.2.8a-x86_64.AppImage"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVTd0JTcEVwZjJCNU8yK1ZOL0VmQ0FFWkkxZTR3YkE4N1dJc3oyM3gxazhsbkNDZkUvbTE5QXhOU045cC92d05MVzRZcm8zaGhLRzNnYzRZVlRIN0kvQy84ZXBRQUk1MUFVPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk0OTc0ODc1CWZpbGU6UEVFUFdJQ0sgQnJvd3Nlcl8wLjIuOV9hbWQ2NC5BcHBJbWFnZQl2ZXJzaW9uOjAuMi45Cm53TW1KNmhxNENtNXJsaE1jc2RVRjdoMjdFM3pWMGxUZ2s2NlJ1Ry9xemsxdGZxR2crWHJPVWRZcW51cVNmVFFwOW9oWEJwcFFkSUJMOFdrYXpDaUFnPT0K",
+      "url": "https://github.com/PEEPWICK/peepwick-browser/releases/download/v0.2.9a/peepwick-browser-0.2.9a-x86_64.AppImage"
     },
     "linux-x86_64-deb": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVTd0JTcEVwZjJCNUFxR085Q1dNdU9lTDVJOWZzN3FwSWhsQ1YxYkNudEdnMUNnZmYwZmtLYWV6dUUwTUVTSDF2eHVRdlJidFV4STRnNjVCVGNiOGo1N1dPeUdzYWw1Q3d3PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk0OTQ1MzYxCWZpbGU6UEVFUFdJQ0sgQnJvd3Nlcl8wLjIuOF9hbWQ2NC5kZWIJdmVyc2lvbjowLjIuOApoSXFyNEw4dENSOXdxc2phbnpJSjIzQlNmRlZQNEpSTFpQN3o3dytwd2EyckRzY0ZKNXpvQjBOMFh2RmJ4TXZmTFJCNTBhZXlPeUQ2cUprQmljQVpEQT09Cg==",
-      "url": "https://github.com/PEEPWICK/peepwick-browser/releases/download/v0.2.8a/peepwick-browser-0.2.8a-amd64.deb"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVTd0JTcEVwZjJCNUZwK1gzNEQ0WkcvR1lPOXByWm5HUWFpb0pnazI5c1dBMGpVL2QvMG9sZVRCOWxIVnhJWUFjL084R2h2R2IramFRRlNsWXAyb3RQOVVKcXJCSENra2djPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk0OTc0ODc1CWZpbGU6UEVFUFdJQ0sgQnJvd3Nlcl8wLjIuOV9hbWQ2NC5kZWIJdmVyc2lvbjowLjIuOQp4YnZVUjRSdDRScHBNc1BROXFVelcwY1pBZHdDYlBXaGQ5QXRiUzJ3bWIydWZJWEtYSGpiWWplWjVvNmpJRWVEc1M0U1doOEtrTFFKRy9hSEU4T3FEUT09Cg==",
+      "url": "https://github.com/PEEPWICK/peepwick-browser/releases/download/v0.2.9a/peepwick-browser-0.2.9a-amd64.deb"
     },
     "linux-x86_64": {
-      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVTd0JTcEVwZjJCNUdkK1pVN0lVQXZ1cUNqSlpNSjJQUFVGWithQUtreVNtNGhuaVZPNUF5R1Y4eUlCNyszY1kyTDcyNWdWcjQzc1VXTFNFaXBVbmtETlF6R0JBbzdTNEEwPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk0OTQ1MzYxCWZpbGU6UEVFUFdJQ0sgQnJvd3Nlcl8wLjIuOF9hbWQ2NC5BcHBJbWFnZQl2ZXJzaW9uOjAuMi44CjZuSkpRTjNhOFEwb0Q5cXpkS2czdGJUcmJvSzRwUXVnR3ZpY05DN3htSERyS05XVXZJUFR2YjA3WTFXZGVoQjJLSUlwTUFvdngxN1FVVzNtWVNTaEF3PT0K",
-      "url": "https://github.com/PEEPWICK/peepwick-browser/releases/download/v0.2.8a/peepwick-browser-0.2.8a-x86_64.AppImage"
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVTd0JTcEVwZjJCNU8yK1ZOL0VmQ0FFWkkxZTR3YkE4N1dJc3oyM3gxazhsbkNDZkUvbTE5QXhOU045cC92d05MVzRZcm8zaGhLRzNnYzRZVlRIN0kvQy84ZXBRQUk1MUFVPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk0OTc0ODc1CWZpbGU6UEVFUFdJQ0sgQnJvd3Nlcl8wLjIuOV9hbWQ2NC5BcHBJbWFnZQl2ZXJzaW9uOjAuMi45Cm53TW1KNmhxNENtNXJsaE1jc2RVRjdoMjdFM3pWMGxUZ2s2NlJ1Ry9xemsxdGZxR2crWHJPVWRZcW51cVNmVFFwOW9oWEJwcFFkSUJMOFdrYXpDaUFnPT0K",
+      "url": "https://github.com/PEEPWICK/peepwick-browser/releases/download/v0.2.9a/peepwick-browser-0.2.9a-x86_64.AppImage"
     }
   }
 }
